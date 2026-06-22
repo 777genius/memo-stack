@@ -83,13 +83,11 @@ _SAFE_REPORT_SCHEMA_KEYS = frozenset(
 )
 
 _CONTENT_TYPES_BY_SUFFIX = {
-    ".flac": "audio/flac",
     ".m4a": "audio/m4a",
     ".mp3": "audio/mpeg",
     ".mp4": "video/mp4",
     ".mpeg": "audio/mpeg",
     ".mpga": "audio/mpga",
-    ".ogg": "audio/ogg",
     ".wav": "audio/wav",
     ".webm": "audio/webm",
 }
@@ -2203,7 +2201,7 @@ def _synthesize_audio_fixtures(
     fixtures: list[tuple[Path, bool]] = []
     if ".wav" in required_suffixes:
         fixtures.append((wav, True))
-    for suffix in (".mp3", ".flac", ".ogg", ".webm", ".m4a", ".mp4", ".mpeg", ".mpga"):
+    for suffix in (".mp3", ".webm", ".m4a", ".mp4", ".mpeg", ".mpga"):
         if suffix not in required_suffixes:
             continue
         transcoded = _synthesize_transcoded_audio_fixture(wav, tmp_dir, suffix=suffix)
@@ -2282,13 +2280,11 @@ def _synthesize_transcoded_audio_fixture(
 
 def _ffmpeg_transcode_config(suffix: str) -> tuple[str, ...] | None:
     return {
-        ".flac": ("-codec:a", "flac"),
         ".m4a": ("-codec:a", "aac", "-b:a", "64k"),
         ".mp3": ("-codec:a", "libmp3lame", "-b:a", "64k"),
         ".mp4": ("-codec:a", "aac", "-b:a", "64k", "-vn"),
         ".mpeg": ("-codec:a", "mp2", "-b:a", "64k"),
         ".mpga": ("-codec:a", "mp2", "-b:a", "64k"),
-        ".ogg": ("-codec:a", "libvorbis", "-b:a", "64k"),
         ".webm": ("-codec:a", "libopus", "-b:a", "32k"),
     }.get(suffix)
 
@@ -2359,10 +2355,6 @@ def _audio_fixture_magic_check(*, path: Path, content_type: str) -> dict[str, ob
 def _audio_magic_matches(*, content_type: str, head: bytes) -> bool:
     if content_type == "audio/wav":
         return len(head) >= 12 and head.startswith(b"RIFF") and head[8:12] == b"WAVE"
-    if content_type == "audio/flac":
-        return head.startswith(b"fLaC")
-    if content_type == "audio/ogg":
-        return head.startswith(b"OggS")
     if content_type in {"audio/mpeg", "audio/mpga"}:
         return head.startswith(b"ID3") or _looks_like_mp3_frame(head)
     if content_type in {"audio/m4a", "audio/webm", "video/mp4"}:

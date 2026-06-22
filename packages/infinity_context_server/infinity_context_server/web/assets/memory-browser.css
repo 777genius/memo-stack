@@ -393,6 +393,28 @@ select:focus {
   background: #f5f9ff;
 }
 
+.first-memory-guidance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.first-memory-guidance span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #40506a;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
 .capture-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

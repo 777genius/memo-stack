@@ -154,6 +154,9 @@
       "firstMemoryAssetCount",
       "firstMemoryReviewCount",
       "firstMemoryGraphCount",
+      "firstMemoryNextStep",
+      "firstMemoryEvidenceKinds",
+      "firstMemoryReviewState",
       "buildDigestButton",
       "runRecallButton",
       "createAnchorButton",
@@ -1178,6 +1181,7 @@
       state.suggestions.filter((suggestion) => suggestion.status === "pending").length +
       state.contextLinkSuggestions.filter((suggestion) => suggestion.status === "pending").length +
       state.anchorMergeSuggestions.length;
+    const evidenceLabels = firstMemoryEvidenceLabels();
     setText(
       els.firstMemoryScopeLabel,
       `${state.spaceSlug || "default"} / ${state.memoryScopeRef || "default"}`,
@@ -1186,6 +1190,68 @@
     setText(els.firstMemoryAssetCount, pluralCount(state.assets.length, "file"));
     setText(els.firstMemoryReviewCount, `${pendingReviewCount} pending`);
     setText(els.firstMemoryGraphCount, pluralCount(state.nodes.length, "node"));
+    setText(els.firstMemoryNextStep, firstMemoryNextStep(pendingReviewCount));
+    setText(els.firstMemoryEvidenceKinds, `Evidence: ${evidenceLabels.join(", ")}`);
+    setText(
+      els.firstMemoryReviewState,
+      pendingReviewCount > 0 ? `Review: ${pendingReviewCount} pending` : "Review: ready",
+    );
+  }
+
+  function firstMemoryNextStep(pendingReviewCount) {
+    if (!state.captures.length && !state.assets.length) {
+      return "Next: Capture";
+    }
+    if (pendingReviewCount > 0) {
+      return "Next: Review";
+    }
+    if (state.nodes.length > 0) {
+      return "Next: Graph";
+    }
+    return "Next: Capture";
+  }
+
+  function firstMemoryEvidenceLabels() {
+    const labels = new Set(["text", "files"]);
+    const modalityLabels = {
+      document: "documents",
+      image: "images/OCR",
+      timed_text: "timed text",
+      audio: "audio transcripts",
+      video: "video timeline",
+      audio_metadata: "audio metadata",
+      video_metadata: "video metadata",
+    };
+    for (const modality of activeExtractionModalities()) {
+      if (modalityLabels[modality]) {
+        labels.add(modalityLabels[modality]);
+      }
+    }
+    return [...labels];
+  }
+
+  function activeExtractionModalities() {
+    const profiles = state.capabilities?.extraction?.profiles_v2;
+    if (!Array.isArray(profiles)) {
+      return [];
+    }
+    const modalities = new Set();
+    for (const profile of profiles) {
+      if (!profile || profile.enabled === false) {
+        continue;
+      }
+      const status = String(profile.status || "").toLowerCase();
+      if (status && !["ok", "degraded"].includes(status)) {
+        continue;
+      }
+      for (const modality of arrayOf(profile.input_modalities)) {
+        const normalized = String(modality || "").trim();
+        if (normalized) {
+          modalities.add(normalized);
+        }
+      }
+    }
+    return [...modalities].sort();
   }
 
   function updateScopeSummary() {

@@ -1391,6 +1391,7 @@ def test_quality_golden_no_candidate_cases_require_abstention_answerability() ->
     for case_id in (
         "unrelated_query_returns_no_context_items",
         "identifier_like_query_deflects_partial_marker",
+        "mixed_language_wrong_project_returns_no_context",
     ):
         required = cases[case_id].required_diagnostics
         assert ("items_used", "eq", 0) in required

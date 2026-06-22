@@ -71,6 +71,56 @@ def test_local_visual_smoke_required_checks_are_hard_gate() -> None:
     ) == ["mcp_session"]
 
 
+def test_local_visual_smoke_requires_first_memory_guidance() -> None:
+    module = _load_module()
+
+    class Response:
+        def __init__(self, *, status_code=200, text="", payload=None):
+            self.status_code = status_code
+            self.text = text
+            self._payload = payload if payload is not None else {}
+
+        @property
+        def is_success(self):
+            return 200 <= self.status_code < 300
+
+        def json(self):
+            return self._payload
+
+    class Client:
+        def get(self, path):
+            if path == "/v1/health":
+                return Response(payload={"status": "ok"})
+            if path == "/v1/capabilities":
+                return Response(payload={"suggestions": {"review_tool_supported": True}})
+            if path == "/ui/":
+                return Response(
+                    text=(
+                        "Infinity Context Browser "
+                        "first-memory-rail "
+                        "firstMemoryNextStep "
+                        "firstMemoryEvidenceKinds "
+                        "firstMemoryReviewState"
+                    )
+                )
+            if path == "/ui/assets/memory-browser.js":
+                return Response(
+                    text=(
+                        "renderFirstMemoryRail "
+                        "firstMemoryEvidenceLabels "
+                        "activeExtractionModalities "
+                        "tabNameFromHash"
+                    )
+                )
+            raise AssertionError(path)
+
+    checks = module._check_http_surfaces(Client())
+
+    assert checks["ui"]["ok"] is False
+    assert checks["ui"]["first_memory_guidance"] is False
+    assert checks["ui_assets"]["ok"] is True
+
+
 def test_local_visual_state_requires_consolidated_capture_and_pending_review() -> None:
     module = _load_module()
 

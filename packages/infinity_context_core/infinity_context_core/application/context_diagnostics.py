@@ -191,6 +191,8 @@ _BUNDLE_COUNTER_KEYS = (
     "query_snippet_source_refs_enriched",
     "media_time_query_items_used",
     "media_time_query_matched_items_used",
+    "requirement_guard_items_considered",
+    "requirement_guard_items_dropped",
     "rendered_chars",
     "max_rendered_chars",
 )
@@ -307,6 +309,8 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "query_snippet_source_refs_enriched": 0,
     "media_time_query_items_used": 0,
     "media_time_query_matched_items_used": 0,
+    "requirement_guard_items_considered": 0,
+    "requirement_guard_items_dropped": 0,
     "rendered_chars": 0,
     "max_rendered_chars": 0,
 }
@@ -315,6 +319,7 @@ _BUNDLE_STATUS_DEFAULTS = {
     "graph_status": "unknown",
     "rag_status": "unknown",
     "artifact_evidence_status": "unknown",
+    "requirement_guard_status": "not_triggered",
 }
 _RETRIEVAL_SOURCE_PRIORITY = {
     "vector_chunks": 0,

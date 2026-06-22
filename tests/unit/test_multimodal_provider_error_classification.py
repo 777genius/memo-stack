@@ -148,7 +148,7 @@ def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_transcription_adapter_accepts_current_flac_and_ogg_types() -> None:
+def test_openai_transcription_adapter_rejects_formats_not_listed_by_current_docs() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key="test-key",
         model="gpt-4o-mini-transcribe",
@@ -165,11 +165,14 @@ def test_openai_transcription_adapter_accepts_current_flac_and_ogg_types() -> No
             )
         )
 
-        assert result.status == "succeeded"
-        assert result.text == "hello audio"
+        assert result.status == "unsupported"
+        assert (
+            result.safe_error_code
+            == "asset_extraction.transcription_unsupported_content_type"
+        )
 
-    assert ".flac" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
-    assert ".ogg" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".flac" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".ogg" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
 
 
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:

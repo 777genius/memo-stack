@@ -144,16 +144,23 @@ def _check_http_surfaces(client: httpx.Client) -> dict[str, Any]:
         "ui": {
             "ok": ui.is_success
             and "Infinity Context Browser" in ui.text
-            and "first-memory-rail" in ui.text,
+            and "first-memory-rail" in ui.text
+            and "first-memory-guidance" in ui.text,
             "status_code": ui.status_code,
             "title_present": "Infinity Context Browser" in ui.text,
             "first_memory_rail": "first-memory-rail" in ui.text,
+            "first_memory_guidance": "first-memory-guidance" in ui.text,
+            "first_memory_next_step": "firstMemoryNextStep" in ui.text,
+            "first_memory_evidence_kinds": "firstMemoryEvidenceKinds" in ui.text,
+            "first_memory_review_state": "firstMemoryReviewState" in ui.text,
             "capture_deep_link": "/ui/#capture",
             "review_deep_link": "/ui/#review",
         },
         "ui_assets": {
             "ok": browser_js.is_success
             and "renderFirstMemoryRail" in browser_js.text
+            and "firstMemoryEvidenceLabels" in browser_js.text
+            and "activeExtractionModalities" in browser_js.text
             and "tabNameFromHash" in browser_js.text,
             "status_code": browser_js.status_code,
         },

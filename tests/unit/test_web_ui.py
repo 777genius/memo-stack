@@ -42,6 +42,9 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "firstMemoryReviewButton" in index.text
     assert "firstMemoryGraphButton" in index.text
     assert "firstMemoryScopeLabel" in index.text
+    assert "firstMemoryNextStep" in index.text
+    assert "firstMemoryEvidenceKinds" in index.text
+    assert "firstMemoryReviewState" in index.text
     assert "captureTextInput" in index.text
     assert "assetFileInput" in index.text
     assert "Save Note" in index.text
@@ -58,6 +61,7 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "capture-grid" in css.text
     assert "first-memory-rail" in css.text
     assert "first-memory-action" in css.text
+    assert "first-memory-guidance" in css.text
     assert "capture-status" in css.text
     assert "overview-grid" in css.text
     assert "overview-card" in css.text
@@ -71,6 +75,8 @@ def test_web_ui_serves_browser_without_openapi_noise(tmp_path) -> None:
     assert "Authorization" in js.text
     assert "infinityContextBrowser" in js.text
     assert "renderFirstMemoryRail" in js.text
+    assert "firstMemoryEvidenceLabels" in js.text
+    assert "activeExtractionModalities" in js.text
     assert "tabNameFromHash" in js.text
     assert "firstMemoryNoteButton" in js.text
     assert "firstMemoryReviewCount" in js.text

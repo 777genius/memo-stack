@@ -36,6 +36,7 @@ from infinity_context_core.application.context_policy import (
     is_context_review_fact_visible,
 )
 from infinity_context_core.application.context_query_intent import (
+    QueryAnchorIntent,
     build_query_anchor_intent,
     match_query_anchor_intent,
     query_anchor_intent_conflicts,
@@ -395,17 +396,26 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        candidate_items = dedupe_rank_items(
+            (
+                *temporal_items,
+                *artifact_evidence_items,
+                *linked_temporal_items,
+                *stale_review_items,
+                *pending_review_items,
+            )
+        )
+        guarded_items, requirement_guard_diagnostics = (
+            _apply_explicit_requirement_guard(
+                query=query.query,
+                query_anchor_intent=query_anchor_intent,
+                items=candidate_items,
+            )
+        )
+        diagnostics.update(requirement_guard_diagnostics)
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
-            items=dedupe_rank_items(
-                (
-                    *temporal_items,
-                    *artifact_evidence_items,
-                    *linked_temporal_items,
-                    *stale_review_items,
-                    *pending_review_items,
-                )
-            ),
+            items=guarded_items,
             token_budget=query.token_budget,
             max_rendered_chars=query.max_rendered_chars,
         )
@@ -969,6 +979,41 @@ def _score_signals(diagnostics: dict[str, object]) -> dict[str, object]:
 def _provenance(diagnostics: dict[str, object]) -> dict[str, object]:
     value = diagnostics.get("provenance")
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _apply_explicit_requirement_guard(
+    *,
+    query: str,
+    query_anchor_intent: QueryAnchorIntent,
+    items: tuple[ContextItem, ...],
+) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=query_anchor_intent,
+        items=items,
+    )
+    requested_anchor_kinds = set(_coverage_strings(coverage.get("requested_anchor_kinds")))
+    missing_anchor_kinds = set(_coverage_strings(coverage.get("missing_anchor_kinds")))
+    diagnostics: dict[str, object] = {
+        "requirement_guard_items_considered": len(items),
+        "requirement_guard_items_dropped": 0,
+    }
+    if "project" in requested_anchor_kinds and "project" in missing_anchor_kinds:
+        diagnostics.update(
+            {
+                "requirement_guard_status": "dropped_missing_project_anchor",
+                "requirement_guard_items_dropped": len(items),
+            }
+        )
+        return (), diagnostics
+    diagnostics["requirement_guard_status"] = "satisfied"
+    return items, diagnostics
+
+
+def _coverage_strings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value if isinstance(item, str) and item)
 
 
 def _fact_score_signals(

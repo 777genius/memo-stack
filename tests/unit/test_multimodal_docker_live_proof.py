@@ -195,13 +195,11 @@ def test_docker_live_proof_runs_compose_flow_and_redacts_token(monkeypatch) -> N
                             "max_provider_upload_bytes": 26214400,
                             "effective_max_upload_bytes": 26214400,
                             "supported_file_types": [
-                                ".flac",
                                 ".m4a",
                                 ".mp3",
                                 ".mp4",
                                 ".mpeg",
                                 ".mpga",
-                                ".ogg",
                                 ".wav",
                                 ".webm",
                             ],

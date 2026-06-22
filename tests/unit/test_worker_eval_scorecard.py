@@ -951,6 +951,9 @@ def test_memory_quality_scorecard_policy_snapshot_documents_top_evidence_floors(
     assert "wrong_project_anchor_deflects_generic_match" in policy[
         "retrieval_context_memory_layer"
     ]["required_quality_case_ids"]
+    assert "mixed_language_wrong_project_returns_no_context" in policy[
+        "retrieval_context_memory_layer"
+    ]["required_quality_case_ids"]
     assert "media_timestamp_query_selects_matching_evidence" in policy[
         "retrieval_context_memory_layer"
     ]["required_quality_case_ids"]
