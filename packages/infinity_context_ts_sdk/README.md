@@ -62,6 +62,41 @@ if (!healthyRetrievalComponents(context.data.diagnostics, ["vector", "graph"])) 
 }
 ```
 
+## Workflow facade
+
+Use `client.workflows` for product integrations that should not hand-build low-level capture enums, source refs and idempotency keys.
+
+```ts
+await memory.workflows.recordFeedback({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  threadExternalRef: "digest-run:2026-06-22",
+  sourceAgent: "social-monitor",
+  sourceId: "feedback:1",
+  sourceActorExternalRef: "user_1",
+  text: "User wants Reddit freshness and primary citations in daily summaries.",
+  idempotencyKey: "feedback:1",
+  factMemoryScopeExternalRef: "topic:ai-agents:preferences",
+  factTags: ["summary", "freshness"],
+});
+
+const brief = await memory.workflows.buildMemoryBrief({
+  query: "What should today's AI digest prioritize?",
+  topic: "AI digest",
+  readScope: ReadScope.external({
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRefs: ["workspace-global", "user:user_1", "topic:ai-agents:preferences"],
+  }),
+  tokenBudget: 1800,
+  maxFacts: 20,
+  maxChunks: 30,
+});
+
+console.log(brief.context.data.rendered_text);
+console.log(brief.digest?.data.rendered_markdown);
+console.log(brief.diagnostics);
+```
+
 ## Context links
 
 Use context links when source evidence, documents, assets or facts should be explicitly connected for graph-aware retrieval and review workflows.
@@ -95,11 +130,12 @@ const capture = await memory.captures.createCapture({
   spaceSlug: "social-monitor:tenant_1:workspace_1",
   memoryScopeExternalRef: "topic:ai-agents:feedback",
   sourceAgent: "social-monitor",
-  sourceKind: "summary_feedback",
+  sourceKind: "hook",
   eventType: "summary.feedback.recorded",
   actorRole: "user",
   text: "User says Reddit source freshness matters for AI agent summaries.",
   evidenceRefs: [{ source_type: "summary", source_id: "summary:1" }],
+  sourceAuthority: "user_statement",
   idempotencyKey: "feedback:1",
   consolidate: true,
 });

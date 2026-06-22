@@ -78,6 +78,7 @@ export class CapturesClient {
     return this.http.request<ApiEnvelope<CreateCaptureData>>({
       method: "POST",
       path: "/v1/captures",
+      idempotencyKey: input.idempotencyKey,
       json: withoutUndefined({
         ...scopeQuery(input),
         source_agent: input.sourceAgent,

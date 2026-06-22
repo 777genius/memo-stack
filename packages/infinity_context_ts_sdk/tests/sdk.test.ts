@@ -149,6 +149,140 @@ describe("InfinityContextClient", () => {
     expect(transport.bodies[0]).not.toHaveProperty("include_stale");
   });
 
+  it("records feedback through the workflow facade with safe capture defaults", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          ...captureRecord("capture_1"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: factRecord("fact_1") }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const result = await client.workflows.recordFeedback({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents:feedback",
+      threadExternalRef: "digest-run:1",
+      sourceAgent: "social-monitor",
+      sourceId: "feedback:1",
+      sourceActorExternalRef: "user_1",
+      text: "User wants Reddit freshness and primary citations in daily summaries.",
+      idempotencyKey: "feedback:1",
+      factMemoryScopeExternalRef: "topic:ai-agents:preferences",
+      factTags: ["summary", "freshness"],
+    });
+
+    expect(result.capture.data.id).toBe("capture_1");
+    expect(result.fact?.data.id).toBe("fact_1");
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/captures",
+      "POST /v1/facts",
+    ]);
+    expect(transport.requests[0]?.headers.get("idempotency-key")).toBe("feedback:1");
+    expect(transport.requests[1]?.headers.get("idempotency-key")).toBe("feedback:1:fact");
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "social-monitor:tenant:workspace",
+      memory_scope_external_ref: "topic:ai-agents:feedback",
+      thread_external_ref: "digest-run:1",
+      source_agent: "social-monitor",
+      source_kind: "hook",
+      event_type: "memory.feedback.recorded",
+      actor_role: "user",
+      source_authority: "user_statement",
+      trust_level: "high",
+      data_classification: "internal",
+      evidence_refs: [{ source_type: "social-monitor", source_id: "feedback:1" }],
+      consolidate: true,
+    });
+    expect(transport.bodies[1]).toMatchObject({
+      space_slug: "social-monitor:tenant:workspace",
+      memory_scope_external_ref: "topic:ai-agents:preferences",
+      thread_external_ref: "digest-run:1",
+      text: "User wants Reddit freshness and primary citations in daily summaries.",
+      kind: "user_preference",
+      category: "feedback",
+      tags: ["summary", "freshness"],
+      ttl_policy: "durable",
+      source_refs: [
+        { source_type: "capture", source_id: "capture_1" },
+        { source_type: "social-monitor", source_id: "feedback:1" },
+      ],
+    });
+  });
+
+  it("builds a memory brief workflow across context, search and digest", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse(contextResponse("brief", {
+        retrieval_sources_used: ["keyword", "vector"],
+        vector_query_count: 2,
+        graph_query_count: 1,
+        rag_query_count: 1,
+      })),
+      jsonResponse(searchResponse({
+        retrieval_sources_used: ["graph"],
+        vector_query_count: 2,
+        graph_query_count: 1,
+      })),
+      jsonResponse(digestResponse("brief")),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const brief = await client.workflows.buildMemoryBrief({
+      query: "What should today's AI digest prioritize?",
+      topic: "AI digest",
+      readScope: ReadScope.external({
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRefs: ["workspace-global", "topic:ai-agents:preferences"],
+      }),
+      tokenBudget: 1200,
+      maxFacts: 12,
+      maxChunks: 8,
+    });
+
+    expect(brief.context.data.bundle_id).toBe("bundle_1");
+    expect(brief.search?.data.items).toHaveLength(1);
+    expect(brief.digest?.data.digest_id).toBe("digest_1");
+    expect(brief.diagnostics).toMatchObject({
+      derivedRetrievalUsed: true,
+      vectorHealthy: true,
+      graphHealthy: true,
+      ragHealthy: true,
+      retrievalSourcesUsed: ["keyword", "vector", "graph"],
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/context",
+      "POST /v1/search",
+      "POST /v1/digest",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      memory_scope_external_refs: ["workspace-global", "topic:ai-agents:preferences"],
+      query: "What should today's AI digest prioritize?",
+      token_budget: 1200,
+      max_facts: 12,
+      max_chunks: 8,
+    });
+    expect(transport.bodies[2]).toMatchObject({
+      topic: "AI digest",
+      token_budget: 1200,
+      max_facts: 12,
+      max_chunks: 8,
+    });
+  });
+
   it("keeps unsafe writes from retrying unless an idempotency key exists", async () => {
     const noRetryTransport = new RecordingTransport([
       jsonResponse({ error: { code: "temporary", message: "try again", retryable: true } }, 503),
