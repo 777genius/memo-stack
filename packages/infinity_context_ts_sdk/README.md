@@ -418,6 +418,37 @@ const usage = await memory.usage.summary({
 console.log(usage.data.plan.tier, usage.data.resources);
 ```
 
+## Snapshot portability
+
+Use `transferMemorySnapshot` for safe backup, restore and migration workflows. The default mode exports a redacted snapshot and previews import safety without mutating memory state.
+
+```ts
+const preview = await memory.workflows.transferMemorySnapshot({
+  sourceSpaceSlug: "social-monitor:tenant_1:workspace_1",
+  sourceMemoryScopeExternalRef: "topic:ai-agents:preferences",
+  targetSpaceSlug: "social-monitor:tenant_1:workspace_1",
+  targetMemoryScopeExternalRef: "topic:ai-agents:preferences-copy",
+});
+
+console.log(preview.diagnostics.warnings);
+console.log(preview.preview?.data);
+```
+
+Confirmed imports require an explicit mode and confirmation flag.
+
+```ts
+await memory.workflows.transferMemorySnapshot({
+  sourceSpaceSlug: "social-monitor:tenant_1:workspace_1",
+  sourceMemoryScopeExternalRef: "topic:ai-agents:preferences",
+  targetSpaceSlug: "social-monitor:tenant_1:workspace_1",
+  targetMemoryScopeExternalRef: "topic:ai-agents:preferences-copy",
+  mode: "confirmed_import",
+  confirmed: true,
+  redacted: false,
+  mergeStrategy: "fail_on_conflict",
+});
+```
+
 ## Recommended Social Monitor mapping
 
 - `spaceSlug`: `social-monitor:{tenantId}:{workspaceId}`

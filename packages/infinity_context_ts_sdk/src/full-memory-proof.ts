@@ -350,22 +350,13 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     continueOnError: true,
   });
   const usage = await options.client.usage.summary({ spaceSlug });
-  const snapshotExport = await options.client.exports.exportMemoryScopeSnapshot({
-    spaceSlug,
-    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+  const snapshotTransfer = await options.client.workflows.transferMemorySnapshot({
+    sourceSpaceSlug: spaceSlug,
+    sourceMemoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    mode: "preview",
     redacted: true,
+    mergeStrategy: "fail_on_conflict",
   });
-  const snapshot = jsonObjectField(snapshotExport, "data");
-  const manifest = jsonObjectField(snapshotExport, "manifest");
-  const snapshotPreview = snapshot === undefined
-    ? undefined
-    : await options.client.exports.previewMemoryScopeSnapshotImport({
-      spaceSlug,
-      memoryScopeExternalRef: "topic:full-memory-proof:feedback",
-      snapshot,
-      ...(manifest === undefined ? {} : { manifest }),
-      mergeStrategy: "fail_on_conflict",
-    });
 
   const query = `${runId} Qdrant Graphiti OpenAI embeddings concise summary freshness degraded retrieval`;
   const context = await pollContext(options, () =>
@@ -419,7 +410,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     maintenancePlanReadable: maintenancePlan.diagnostics.issues.length === 0,
     operationsConsoleReadable: operationsConsole.data.scope !== null,
     usageReadable: usage.data.space_id === space.id,
-    snapshotPreviewSucceeded: jsonObjectField(snapshotPreview, "data") !== undefined,
+    snapshotPreviewSucceeded: jsonObjectField(snapshotTransfer.preview, "data") !== undefined,
   };
   const fullMemoryChecks = {
     capabilitiesFullMemory,
@@ -462,7 +453,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       maintenanceIssueCount: maintenancePlan.diagnostics.issues.length,
       operationsDiagnostics: operationsConsole.data.diagnostics,
       usageResourceCount: usage.data.resources.length,
-      snapshotPreview: jsonObjectField(snapshotPreview, "data") ?? {},
+      snapshotPreview: jsonObjectField(snapshotTransfer.preview, "data") ?? {},
       sourceEvidenceBatchSummary,
     },
     capabilities: {

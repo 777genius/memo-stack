@@ -159,6 +159,9 @@ export type {
   MemoryMaintenanceDiagnostics,
   MemoryMaintenanceQueues,
   MemoryMaintenanceSummary,
+  MemorySnapshotTransferDiagnostics,
+  MemorySnapshotTransferEndpoint,
+  MemorySnapshotTransferMode,
   MemoryWorkflowResources,
   PlanMemoryMaintenanceInput,
   PlanMemoryMaintenanceResult,
@@ -176,5 +179,7 @@ export type {
   RecordSourceEvidenceInput,
   RecordSourceEvidenceLinkSuggestionOptions,
   RecordSourceEvidenceResult,
+  TransferMemorySnapshotInput,
+  TransferMemorySnapshotResult,
   WorkflowStepOptions,
 } from "./workflows/memory.js";

@@ -1269,6 +1269,93 @@ describe("InfinityContextClient", () => {
     ]);
   });
 
+  it("transfers memory snapshots through safe preview and confirmed modes", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { schema_version: "memory_scope_snapshot.v1", facts: [] }, manifest: { sha256: "sha_1" } }),
+      jsonResponse({ data: { dry_run: true, conflicts: [] } }),
+      jsonResponse({ data: { schema_version: "memory_scope_snapshot.v1", facts: [{ id: "fact_1" }] } }),
+      jsonResponse({ data: { imported: true, dry_run: false } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const preview = await client.workflows.transferMemorySnapshot({
+      sourceSpaceSlug: "workspace-source",
+      sourceMemoryScopeExternalRef: "topic:ai-agents",
+      targetSpaceSlug: "workspace-target",
+      targetMemoryScopeExternalRef: "topic:ai-agents-copy",
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_snapshot_transfer" },
+    });
+
+    expect(preview.diagnostics).toMatchObject({
+      mode: "preview",
+      mutated: false,
+      redacted: true,
+      mergeStrategy: "fail_on_conflict",
+    });
+    expect(preview.preview).toMatchObject({ data: { dry_run: true, conflicts: [] } });
+    expect(preview.manifest).toMatchObject({ sha256: "sha_1" });
+
+    await expect(
+      client.workflows.transferMemorySnapshot({
+        sourceSpaceSlug: "workspace-source",
+        sourceMemoryScopeExternalRef: "topic:ai-agents",
+        mode: "confirmed_import",
+      }),
+    ).rejects.toThrow(ValueError);
+
+    const imported = await client.workflows.transferMemorySnapshot({
+      sourceSpaceSlug: "workspace-source",
+      sourceMemoryScopeExternalRef: "topic:ai-agents",
+      targetSpaceSlug: "workspace-target",
+      targetMemoryScopeExternalRef: "topic:ai-agents-copy",
+      mode: "confirmed_import",
+      confirmed: true,
+      redacted: false,
+      mergeStrategy: "replace",
+      sourceName: "sdk-test-transfer",
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_snapshot_transfer" },
+    });
+
+    expect(imported.diagnostics).toMatchObject({
+      mode: "confirmed_import",
+      mutated: true,
+      redacted: false,
+      mergeStrategy: "replace",
+    });
+    expect(imported.importResult).toMatchObject({ data: { imported: true, dry_run: false } });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/export/memory_scope-snapshot",
+      "POST /v1/export/memory_scope-snapshot/preview",
+      "GET /v1/export/memory_scope-snapshot",
+      "POST /v1/export/memory_scope-snapshot/import",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
+      Array.from({ length: 4 }, () => "trace_snapshot_transfer"),
+    );
+    expect(transport.requests[0]?.url.searchParams.get("redacted")).toBe("true");
+    expect(transport.requests[2]?.url.searchParams.get("redacted")).toBe("false");
+    expect(transport.bodies[1]).toMatchObject({
+      space_slug: "workspace-target",
+      memory_scope_external_ref: "topic:ai-agents-copy",
+      snapshot: { schema_version: "memory_scope_snapshot.v1", facts: [{ id: "fact_1" }] },
+      dry_run: false,
+      confirmed: true,
+      merge_strategy: "replace",
+      source_name: "sdk-test-transfer",
+    });
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel snapshot transfer");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+  });
+
   it("keeps unsafe writes from retrying unless an idempotency key exists", async () => {
     const noRetryTransport = new RecordingTransport([
       jsonResponse({ error: { code: "temporary", message: "try again", retryable: true } }, 503),
