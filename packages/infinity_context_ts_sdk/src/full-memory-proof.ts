@@ -51,6 +51,7 @@ export interface FullMemoryProofReport {
     readonly anchorBackfillReadable: boolean;
     readonly memoryBrowserReadable: boolean;
     readonly memoryInspectionReadable: boolean;
+    readonly maintenancePlanReadable: boolean;
     readonly operationsConsoleReadable: boolean;
     readonly usageReadable: boolean;
     readonly snapshotPreviewSucceeded: boolean;
@@ -75,6 +76,8 @@ export interface FullMemoryProofReport {
     readonly memoryBrowserStats: JsonObject;
     readonly memoryInspectionIssueCount: number;
     readonly memoryInspectionSections: readonly string[];
+    readonly maintenanceActionableCount: number;
+    readonly maintenanceIssueCount: number;
     readonly operationsDiagnostics: JsonObject;
     readonly usageResourceCount: number;
     readonly snapshotPreview: JsonObject;
@@ -340,6 +343,12 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     limit: 25,
     continueOnError: true,
   });
+  const maintenancePlan = await options.client.workflows.planMemoryMaintenance({
+    spaceSlug,
+    memoryScopeExternalRef: "topic:full-memory-proof:feedback",
+    limit: 25,
+    continueOnError: true,
+  });
   const usage = await options.client.usage.summary({ spaceSlug });
   const snapshotExport = await options.client.exports.exportMemoryScopeSnapshot({
     spaceSlug,
@@ -407,6 +416,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     memoryBrowserReadable: memoryBrowser.data.memory_scope?.external_ref === "topic:full-memory-proof:feedback",
     memoryInspectionReadable: memoryInspection.memoryBrowser.data.memory_scope?.external_ref ===
       "topic:full-memory-proof:feedback" && !memoryInspection.inspection.partial,
+    maintenancePlanReadable: maintenancePlan.diagnostics.issues.length === 0,
     operationsConsoleReadable: operationsConsole.data.scope !== null,
     usageReadable: usage.data.space_id === space.id,
     snapshotPreviewSucceeded: jsonObjectField(snapshotPreview, "data") !== undefined,
@@ -448,6 +458,8 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       memoryBrowserStats: memoryBrowser.data.stats,
       memoryInspectionIssueCount: memoryInspection.inspection.issues.length,
       memoryInspectionSections: memoryInspection.inspection.optionalSections,
+      maintenanceActionableCount: maintenancePlan.summary.totalActionable,
+      maintenanceIssueCount: maintenancePlan.diagnostics.issues.length,
       operationsDiagnostics: operationsConsole.data.diagnostics,
       usageResourceCount: usage.data.resources.length,
       snapshotPreview: jsonObjectField(snapshotPreview, "data") ?? {},

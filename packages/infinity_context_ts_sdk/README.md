@@ -192,6 +192,26 @@ console.log(inspection.snapshotPreview?.data);
 
 `inspectMemory` keeps browser, operations, usage, capabilities and runtime diagnostics enabled by default. Graph export and snapshot preview are opt-in because they are heavier and snapshot preview requires `spaceSlug` plus `memoryScopeExternalRef`.
 
+Use `planMemoryMaintenance` to turn pending review queues into one operator-ready plan without mutating memory state.
+
+```ts
+const maintenance = await memory.workflows.planMemoryMaintenance({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:preferences",
+  limit: 25,
+  continueOnError: true,
+  headers: { "x-trace-id": "maintenance:2026-06-22" },
+});
+
+for (const action of maintenance.summary.suggestedActions) {
+  console.log(action.priority, action.kind, action.count, action.reason);
+}
+
+console.log(maintenance.diagnostics.issues);
+```
+
+The maintenance workflow reads operations, pending context link suggestions, memory suggestions, anchor merge candidates, capture consolidation diagnostics and extraction jobs. It returns suggested actions only; applying merges, retries or approvals stays explicit.
+
 ## Runtime readiness
 
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.

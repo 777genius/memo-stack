@@ -55,6 +55,8 @@ export class InfinityContextClient {
     this.threadMemory = new ThreadMemoryClient(http);
     this.usage = new UsageClient(http);
     this.workflows = new MemoryWorkflows({
+      anchors: this.anchors,
+      assets: this.assets,
       captures: this.captures,
       context: this.context,
       contextLinks: this.contextLinks,
@@ -63,6 +65,7 @@ export class InfinityContextClient {
       exports: this.exports,
       facts: this.facts,
       readModels: this.readModels,
+      suggestions: this.suggestions,
       system: this.system,
       usage: this.usage,
     });

@@ -1145,6 +1145,130 @@ describe("InfinityContextClient", () => {
     ]);
   });
 
+  it("plans memory maintenance across review queues", async () => {
+    const controller = new AbortController();
+    const sourceAnchor = anchorRecord("anchor_source", "Project Atlas");
+    const targetAnchor = anchorRecord("anchor_target", "Atlas");
+    const transport = new RecordingTransport([
+      jsonResponse({ data: operationsConsoleData() }),
+      jsonResponse({ data: [contextLinkSuggestionRecord("ctx_suggestion_1")] }),
+      jsonResponse({ data: [memorySuggestionRecord("memory_suggestion_1")] }),
+      jsonResponse({
+        data: [
+          {
+            source_anchor: sourceAnchor,
+            target_anchor: targetAnchor,
+            confidence: "high",
+            score: 0.94,
+            reasons: ["alias overlap"],
+            metadata: {},
+          },
+        ],
+      }),
+      jsonResponse({ data: [captureRecord("capture_pending_1")] }),
+      jsonResponse({ data: [assetExtractionJobRecord("job_failed_1")] }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const plan = await client.workflows.planMemoryMaintenance({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      threadExternalRef: "thread_1",
+      limit: 5,
+      anchorKind: "project",
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_maintenance" },
+    });
+
+    expect(plan.summary).toMatchObject({
+      totalActionable: 5,
+      contextLinkSuggestions: 1,
+      memorySuggestions: 1,
+      anchorMergeCandidates: 1,
+      capturesPendingConsolidation: 1,
+      extractionJobs: 1,
+    });
+    expect(plan.summary.suggestedActions.map((action) => action.kind)).toEqual([
+      "review_context_links",
+      "resolve_memory_suggestions",
+      "merge_duplicate_anchors",
+      "consolidate_captures",
+      "retry_or_triage_extractions",
+    ]);
+    expect(plan.diagnostics).toMatchObject({
+      partial: false,
+      issues: [],
+      optionalSections: [
+        "operationsConsole",
+        "contextLinkSuggestions",
+        "memorySuggestions",
+        "anchorMergeCandidates",
+        "captureDiagnostics",
+        "extractionJobs",
+      ],
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/operations-console",
+      "GET /v1/context-link-suggestions",
+      "GET /v1/suggestions",
+      "GET /v1/anchors/merge-suggestions",
+      "GET /v1/diagnostics/captures",
+      "GET /v1/asset-extractions",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
+      Array.from({ length: 6 }, () => "trace_maintenance"),
+    );
+    expect(transport.requests[1]?.url.searchParams.get("status")).toBe("pending");
+    expect(transport.requests[3]?.url.searchParams.get("kind")).toBe("project");
+    expect(transport.requests[4]?.url.searchParams.get("consolidation_status")).toBe("pending");
+    expect(transport.requests[5]?.url.searchParams.get("status")).toBe("failed");
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel maintenance");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+  });
+
+  it("returns partial maintenance plan issues when optional queues fail", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: operationsConsoleData() }),
+      jsonResponse({ error: { code: "queue_unavailable", message: "queue unavailable" } }, 503),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const plan = await client.workflows.planMemoryMaintenance({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      continueOnError: true,
+      includeMemorySuggestions: false,
+      includeAnchorMergeCandidates: false,
+      includeCaptureDiagnostics: false,
+      includeExtractionJobs: false,
+    });
+
+    expect(plan.queues.operationsConsole?.data.diagnostics).toMatchObject({ queue_lag: 0 });
+    expect(plan.queues.contextLinkSuggestions).toBeUndefined();
+    expect(plan.summary.totalActionable).toBe(0);
+    expect(plan.diagnostics.partial).toBe(true);
+    expect(plan.diagnostics.issues).toMatchObject([
+      {
+        section: "contextLinkSuggestions",
+        error: {
+          name: "InfinityContextError",
+          code: "queue_unavailable",
+          statusCode: 503,
+        },
+      },
+    ]);
+  });
+
   it("keeps unsafe writes from retrying unless an idempotency key exists", async () => {
     const noRetryTransport = new RecordingTransport([
       jsonResponse({ error: { code: "temporary", message: "try again", retryable: true } }, 503),
@@ -1468,6 +1592,22 @@ describe("InfinityContextClient", () => {
       jsonResponse({ backend: "postgres" }),
       jsonResponse({
         data: {
+          generated_at: "2026-06-06T00:00:00.000Z",
+          scope: { space_id: "space_1", memory_scope_id: "scope_topic" },
+          extraction_status_counts: {},
+          link_suggestion_status_counts: { pending: 1 },
+          extraction_jobs: [],
+          context_link_suggestions: [],
+          diagnostics: { console_version: "memory-operations-console-v1" },
+        },
+      }),
+      jsonResponse({ data: [contextLinkSuggestionRecord("maintenance_link_suggestion_1")] }),
+      jsonResponse({ data: [memorySuggestionRecord("maintenance_memory_suggestion_1")] }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: [{ ...captureRecord("maintenance_capture_1"), consolidation_status: "pending" }] }),
+      jsonResponse({ data: [] }),
+      jsonResponse({
+        data: {
           space_id: "space_1",
           plan: {
             tier: "beta",
@@ -1518,6 +1658,7 @@ describe("InfinityContextClient", () => {
       anchorBackfillReadable: true,
       memoryBrowserReadable: true,
       memoryInspectionReadable: true,
+      maintenancePlanReadable: true,
       operationsConsoleReadable: true,
       usageReadable: true,
       snapshotPreviewSucceeded: true,
@@ -1539,6 +1680,8 @@ describe("InfinityContextClient", () => {
     expect(report.observed.anchorBackfillCreated).toBe(1);
     expect(report.observed.memoryInspectionIssueCount).toBe(0);
     expect(report.observed.memoryInspectionSections).toContain("runtimeDiagnostics");
+    expect(report.observed.maintenanceActionableCount).toBe(3);
+    expect(report.observed.maintenanceIssueCount).toBe(0);
     expect(report.observed.usageResourceCount).toBe(0);
     expect(report.retrieval.vector.queryCount).toBe(4);
     expect(report.retrieval.graph.queryCount).toBe(3);
@@ -1580,6 +1723,12 @@ describe("InfinityContextClient", () => {
       "GET /v1/diagnostics/adapters",
       "GET /v1/diagnostics/metrics",
       "GET /v1/diagnostics/storage",
+      "GET /v1/operations-console",
+      "GET /v1/context-link-suggestions",
+      "GET /v1/suggestions",
+      "GET /v1/anchors/merge-suggestions",
+      "GET /v1/diagnostics/captures",
+      "GET /v1/asset-extractions",
       "GET /v1/usage",
       "GET /v1/export/memory_scope-snapshot",
       "POST /v1/export/memory_scope-snapshot/preview",
