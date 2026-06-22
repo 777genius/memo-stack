@@ -39,6 +39,7 @@ import {
   assertMemoryBriefQuality,
   assertMemorySummaryLoopPolicy,
   createMemoryIngestionLoopPlan,
+  createMemoryPreferenceBriefPlan,
   createMemoryQualityPreset,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
@@ -160,7 +161,41 @@ const evidence = summarizeMemoryBriefEvidence(brief);
 console.log(evidence.bySourceType, evidence.sourceRefs);
 ```
 
-Use `seedMemoryAndBuildBrief` when a product needs to persist user or topic preferences, wait for projections, and immediately read the memory-shaped answer.
+Use `createMemoryPreferenceBriefPlan` when a product needs to persist user or topic preferences, wait for projections, and immediately read the personalized memory-shaped answer.
+
+```ts
+const preferencePlan = createMemoryPreferenceBriefPlan({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  spaceName: "Social Monitor workspace 1",
+  query: "Which summary style should today's AI agents digest use?",
+  topic: "AI agents digest preferences",
+  threadExternalRef: "digest:2026-06-22",
+  scope: {
+    users: [{ externalRef: "user_1", displayName: "User 1" }],
+    topics: [{ slug: "ai-agents:preferences", name: "AI agents preferences" }],
+  },
+  idempotencyKeyPrefix: "pref:tenant_1:workspace_1:ai-agents:user_1",
+  sourceType: "social-monitor",
+  sourceIdPrefix: "feedback:user_1",
+  preferences: [
+    { text: "User prefers concise summaries grouped by provider.", tags: ["summary", "style"] },
+    {
+      text: "User wants Reddit discussions separated from GitHub issues.",
+      memoryScopeExternalRef: "topic:ai-agents:preferences",
+      tags: ["summary", "provider_split"],
+    },
+  ],
+  brief: {
+    tokenBudget: 900,
+    maxFacts: 6,
+  },
+});
+
+const seeded = await memory.workflows.seedMemoryAndBuildBrief(preferencePlan.input);
+console.log(preferencePlan.summary.readScopeExternalRefs, seeded.brief.context.data.rendered_text);
+```
+
+Use `seedMemoryAndBuildBrief` directly when a product already has exact fact inputs and does not need preference planning.
 
 ```ts
 const seeded = await memory.workflows.seedMemoryAndBuildBrief({

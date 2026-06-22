@@ -12,6 +12,7 @@ import {
   assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
   createMemoryIngestionLoopPlan,
+  createMemoryPreferenceBriefPlan,
   createMemoryQualityPreset,
   createMemoryScopePlan,
   createMemorySourceEvidencePlan,
@@ -954,6 +955,141 @@ describe("InfinityContextClient", () => {
       query: "",
       findings: [],
     })).toThrow("createMemoryIngestionLoopPlan requires query");
+  });
+
+  it("plans preference seeded briefs for user personalized summaries", () => {
+    const plan = createMemoryPreferenceBriefPlan({
+      spaceSlug: "social-monitor:tenant:workspace",
+      spaceName: "Tenant workspace",
+      query: "Which style should today's AI agents digest use?",
+      topic: "AI agents digest preferences",
+      threadExternalRef: "digest:2026-06-22",
+      headers: { "x-trace-id": "preference-plan" },
+      scope: {
+        users: [{
+          externalRef: "user_1",
+          displayName: "User 1",
+          includeInReadScope: true,
+        }],
+        topics: [{
+          slug: "ai-agents:preferences",
+          name: "AI agents preferences",
+        }],
+      },
+      idempotencyKeyPrefix: "pref:ai-agents",
+      sourceType: "social-monitor",
+      sourceIdPrefix: "feedback:user_1",
+      brief: {
+        tokenBudget: 900,
+        maxFacts: 6,
+        memoryScopeExternalRefs: ["workspace:editorial-policy"],
+      },
+      preferences: [
+        {
+          text: "User prefers concise summaries grouped by provider.",
+          tags: ["summary", "style"],
+        },
+        {
+          text: "User wants Reddit discussions separated from GitHub issues.",
+          memoryScopeExternalRef: "topic:ai-agents:preferences",
+          idempotencyKey: "pref:ai-agents:provider-split",
+          sourceRefs: [{ source_type: "feedback", source_id: "feedback_1" }],
+          headers: { "x-preference-id": "provider-split" },
+          tags: ["summary", "provider_split"],
+        },
+      ],
+    });
+
+    expect(plan.scope.memoryScopes).toEqual([
+      { kind: "workspace", externalRef: "workspace-global", name: "Workspace global memory" },
+      { kind: "user", externalRef: "user:user_1", name: "User 1 memory" },
+      { kind: "topic", externalRef: "topic:ai-agents:preferences", name: "AI agents preferences" },
+    ]);
+    expect(plan.facts[0]).toMatchObject({
+      text: "User prefers concise summaries grouped by provider.",
+      memoryScopeExternalRef: "user:user_1",
+      idempotencyKey: "pref:ai-agents:preference:0",
+      sourceRefs: [{ source_type: "social-monitor", source_id: "feedback:user_1:preference:0" }],
+      kind: "user_preference",
+      classification: "internal",
+      category: "summary_preference",
+      tags: ["summary", "style"],
+      ttlPolicy: "durable",
+    });
+    expect(plan.facts[1]).toMatchObject({
+      headers: { "x-preference-id": "provider-split" },
+      memoryScopeExternalRef: "topic:ai-agents:preferences",
+      idempotencyKey: "pref:ai-agents:provider-split",
+      sourceRefs: [{ source_type: "feedback", source_id: "feedback_1" }],
+    });
+    expect(plan.readScope).toEqual({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRefs: [
+        "workspace-global",
+        "user:user_1",
+        "topic:ai-agents:preferences",
+        "workspace:editorial-policy",
+      ],
+      threadExternalRef: "digest:2026-06-22",
+    });
+    expect(plan.input).toMatchObject({
+      headers: { "x-trace-id": "preference-plan" },
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "user:user_1",
+      threadExternalRef: "digest:2026-06-22",
+      idempotencyKeyPrefix: "pref:ai-agents",
+      sourceType: "social-monitor",
+      sourceIdPrefix: "feedback:user_1",
+      topology: plan.scope.topology,
+      outboxDrain: { throwOnFailure: true },
+      brief: {
+        query: "Which style should today's AI agents digest use?",
+        topic: "AI agents digest preferences",
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRefs: [
+          "workspace-global",
+          "user:user_1",
+          "topic:ai-agents:preferences",
+          "workspace:editorial-policy",
+        ],
+        threadExternalRef: "digest:2026-06-22",
+        tokenBudget: 900,
+        maxFacts: 6,
+      },
+    });
+    expect(plan.summary).toEqual({
+      spaceSlug: "social-monitor:tenant:workspace",
+      preferenceCount: 2,
+      defaultMemoryScopeExternalRef: "user:user_1",
+      readScopeExternalRefs: [
+        "workspace-global",
+        "user:user_1",
+        "topic:ai-agents:preferences",
+        "workspace:editorial-policy",
+      ],
+      idempotencyKeys: ["pref:ai-agents:preference:0", "pref:ai-agents:provider-split"],
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(Object.isFrozen(plan.facts)).toBe(true);
+    expect(Object.isFrozen(plan.readScope.memoryScopeExternalRefs)).toBe(true);
+  });
+
+  it("validates preference seeded brief plans", () => {
+    expect(() => createMemoryPreferenceBriefPlan({
+      spaceSlug: "",
+      query: "Daily digest",
+      preferences: [],
+    })).toThrow("createMemoryPreferenceBriefPlan requires spaceSlug");
+    expect(() => createMemoryPreferenceBriefPlan({
+      spaceSlug: "workspace",
+      query: "",
+      preferences: [],
+    })).toThrow("createMemoryPreferenceBriefPlan requires query");
+    expect(() => createMemoryPreferenceBriefPlan({
+      spaceSlug: "workspace",
+      query: "Daily digest",
+      preferences: [{ text: "" }],
+    })).toThrow("memory preference requires text");
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {

@@ -224,6 +224,9 @@ export {
 export {
   createMemoryIngestionLoopPlan,
 } from "./memory-ingestion-loop-plan.js";
+export {
+  createMemoryPreferenceBriefPlan,
+} from "./memory-preference-brief-plan.js";
 export type {
   MemoryQualityPreset,
   MemoryQualityPresetName,
@@ -238,6 +241,15 @@ export type {
   MemoryIngestionLoopScopeOptions,
   MemoryIngestionLoopSourceEvidenceOptions,
 } from "./memory-ingestion-loop-plan.js";
+export type {
+  CreateMemoryPreferenceBriefPlanInput,
+  MemoryPreferenceBriefOptions,
+  MemoryPreferenceBriefPlan,
+  MemoryPreferenceBriefPlanSummary,
+  MemoryPreferenceBriefReadScope,
+  MemoryPreferenceBriefScopeOptions,
+  MemoryPreferenceSeed,
+} from "./memory-preference-brief-plan.js";
 export type {
   MemoryWorkflowErrorData,
   RecordSourceEvidenceBatchFailure,
