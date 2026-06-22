@@ -1,4 +1,4 @@
-export { MemoryWorkflows } from "./workflows/memory.js";
+export { MemoryWorkflows, summarizeSourceEvidenceBatch } from "./workflows/memory.js";
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
@@ -7,9 +7,11 @@ export type {
   MemoryWorkflowResources,
   RecordMemoryFeedbackInput,
   RecordMemoryFeedbackResult,
+  RecordSourceEvidenceBatchFailure,
   RecordSourceEvidenceBatchInput,
   RecordSourceEvidenceBatchItemResult,
   RecordSourceEvidenceBatchResult,
+  RecordSourceEvidenceBatchSummary,
   RecordSourceEvidenceCaptureOptions,
   RecordSourceEvidenceDocumentOptions,
   RecordSourceEvidenceEpisodeOptions,

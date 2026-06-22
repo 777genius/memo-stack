@@ -10,6 +10,7 @@ import {
   healthyRetrievalComponents,
   retrievalDiagnostics,
   runFullMemoryProof,
+  summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
   type HttpRequest,
   type HttpResponse,
@@ -783,6 +784,99 @@ describe("InfinityContextClient", () => {
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "POST /v1/episodes",
     ]);
+  });
+
+  it("summarizes source evidence batch outcomes for observability", () => {
+    const summary = summarizeSourceEvidenceBatch({
+      total: 4,
+      succeeded: 1,
+      failed: 2,
+      stopped: true,
+      results: [
+        {
+          index: 0,
+          sourceType: "reddit",
+          sourceId: "reddit:t3_ok",
+          idempotencyKey: "reddit:t3_ok",
+          ok: true,
+          result: { sourceRefs: [{ source_type: "reddit", source_id: "reddit:t3_ok" }] },
+        },
+        {
+          index: 1,
+          sourceType: "reddit",
+          sourceId: "reddit:t3_retry",
+          idempotencyKey: "reddit:t3_retry",
+          ok: false,
+          error: {
+            name: "InfinityContextError",
+            message: "rate limited",
+            code: "provider.rate_limited",
+            statusCode: 429,
+            retryable: true,
+            requestId: "req_retry",
+          },
+        },
+        {
+          index: 2,
+          sourceType: "github",
+          sourceId: "github:issue_1",
+          idempotencyKey: "github:issue_1",
+          ok: false,
+          error: {
+            name: "InfinityContextError",
+            message: "bad payload",
+            code: "provider.bad_payload",
+            statusCode: 400,
+            retryable: false,
+          },
+        },
+      ],
+    });
+
+    expect(summary).toEqual({
+      total: 4,
+      completed: 3,
+      skipped: 1,
+      succeeded: 1,
+      failed: 2,
+      stopped: true,
+      successRate: 0.25,
+      failureRate: 0.5,
+      retryableFailures: 1,
+      nonRetryableFailures: 1,
+      bySourceType: { reddit: 2, github: 1 },
+      byErrorCode: { "provider.rate_limited": 1, "provider.bad_payload": 1 },
+      byStatusCode: { "400": 1, "429": 1 },
+      failedItems: [
+        {
+          index: 1,
+          sourceType: "reddit",
+          sourceId: "reddit:t3_retry",
+          idempotencyKey: "reddit:t3_retry",
+          error: {
+            name: "InfinityContextError",
+            message: "rate limited",
+            code: "provider.rate_limited",
+            statusCode: 429,
+            retryable: true,
+            requestId: "req_retry",
+          },
+        },
+        {
+          index: 2,
+          sourceType: "github",
+          sourceId: "github:issue_1",
+          idempotencyKey: "github:issue_1",
+          error: {
+            name: "InfinityContextError",
+            message: "bad payload",
+            code: "provider.bad_payload",
+            statusCode: 400,
+            retryable: false,
+          },
+        },
+      ],
+    });
   });
 
   it("builds a memory brief workflow across context, search and digest", async () => {

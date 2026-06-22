@@ -180,6 +180,88 @@ export interface RecordSourceEvidenceBatchResult {
   readonly results: readonly RecordSourceEvidenceBatchItemResult[];
 }
 
+export interface RecordSourceEvidenceBatchFailure {
+  readonly index: number;
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly idempotencyKey: string;
+  readonly error: MemoryWorkflowErrorData;
+}
+
+export interface RecordSourceEvidenceBatchSummary {
+  readonly total: number;
+  readonly completed: number;
+  readonly skipped: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly stopped: boolean;
+  readonly successRate: number;
+  readonly failureRate: number;
+  readonly retryableFailures: number;
+  readonly nonRetryableFailures: number;
+  readonly bySourceType: Readonly<Record<string, number>>;
+  readonly byErrorCode: Readonly<Record<string, number>>;
+  readonly byStatusCode: Readonly<Record<string, number>>;
+  readonly failedItems: readonly RecordSourceEvidenceBatchFailure[];
+}
+
+export function summarizeSourceEvidenceBatch(
+  batch: RecordSourceEvidenceBatchResult,
+): RecordSourceEvidenceBatchSummary {
+  const bySourceType: Record<string, number> = {};
+  const byErrorCode: Record<string, number> = {};
+  const byStatusCode: Record<string, number> = {};
+  const failedItems: RecordSourceEvidenceBatchFailure[] = [];
+  let retryableFailures = 0;
+  let nonRetryableFailures = 0;
+
+  for (const item of batch.results) {
+    incrementCount(bySourceType, item.sourceType);
+
+    if (item.ok || item.error === undefined) {
+      continue;
+    }
+
+    const errorCode = item.error.code ?? "unknown";
+    const statusCode = item.error.statusCode === undefined ? "unknown" : String(item.error.statusCode);
+    incrementCount(byErrorCode, errorCode);
+    incrementCount(byStatusCode, statusCode);
+
+    if (item.error.retryable === true) {
+      retryableFailures += 1;
+    } else {
+      nonRetryableFailures += 1;
+    }
+
+    failedItems.push({
+      index: item.index,
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      idempotencyKey: item.idempotencyKey,
+      error: item.error,
+    });
+  }
+
+  const completed = batch.results.length;
+  const skipped = Math.max(0, batch.total - completed);
+  return {
+    total: batch.total,
+    completed,
+    skipped,
+    succeeded: batch.succeeded,
+    failed: batch.failed,
+    stopped: batch.stopped,
+    successRate: ratio(batch.succeeded, batch.total),
+    failureRate: ratio(batch.failed, batch.total),
+    retryableFailures,
+    nonRetryableFailures,
+    bySourceType,
+    byErrorCode,
+    byStatusCode,
+    failedItems,
+  };
+}
+
 export class MemoryWorkflows {
   constructor(private readonly resources: MemoryWorkflowResources) {}
 
@@ -569,6 +651,14 @@ function workflowErrorData(error: unknown): MemoryWorkflowErrorData {
 
 function isDefined<TValue>(value: TValue | undefined): value is TValue {
   return value !== undefined;
+}
+
+function ratio(value: number, total: number): number {
+  return total <= 0 ? 0 : value / total;
+}
+
+function incrementCount(counts: Record<string, number>, key: string): void {
+  counts[key] = (counts[key] ?? 0) + 1;
 }
 
 function optional<TKey extends string, TValue>(

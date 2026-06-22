@@ -27,6 +27,7 @@ import {
   assertFullMemoryReady,
   healthyRetrievalComponents,
   retrievalDiagnostics,
+  summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
 } from "@infinity-context/sdk";
 
@@ -160,7 +161,8 @@ const batch = await memory.workflows.recordSourceEvidenceBatch({
   })),
 });
 
-console.log(batch.succeeded, batch.failed, batch.results.filter((item) => !item.ok));
+const batchSummary = summarizeSourceEvidenceBatch(batch);
+console.log(batchSummary.succeeded, batchSummary.failed, batchSummary.retryableFailures);
 ```
 
 ## Runtime readiness
