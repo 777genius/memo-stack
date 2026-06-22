@@ -6,6 +6,7 @@ from infinity_context_core.application.anchor_extraction import (
 from infinity_context_core.application.context_query_intent import (
     build_query_anchor_intent,
     match_query_anchor_intent,
+    match_query_anchor_intent_to_text,
     query_anchor_lookup_keys,
 )
 from infinity_context_core.domain.entities import (
@@ -74,6 +75,30 @@ def test_query_anchor_intent_strips_question_modal_prefix_from_person() -> None:
         for hint in intent.hints
         if hint.kind == MemoryAnchorKind.PERSON
     )
+
+
+def test_query_anchor_intent_matches_text_entity_evidence() -> None:
+    intent = build_query_anchor_intent("Would Melanie be considered an ally?")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Melanie is supportive, encouraging, and helps Caroline feel accepted.",
+    )
+
+    assert match is not None
+    assert match.reasons == ("query_person_identity_match",)
+    assert match.matched_keys == ("melanie",)
+
+
+def test_query_anchor_intent_text_match_rejects_wrong_person_same_project() -> None:
+    intent = build_query_anchor_intent("What did Alex say about Project Atlas?")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Dana discussed Project Atlas launch notes yesterday.",
+    )
+
+    assert match is None
 
 
 def test_query_anchor_intent_matches_cross_language_event_identity() -> None:

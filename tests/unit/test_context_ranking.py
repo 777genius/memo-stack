@@ -1,8 +1,10 @@
 from infinity_context_core.application.context_query_expansion import (
     build_query_expansion_plan,
 )
+from infinity_context_core.application.context_query_intent import build_query_anchor_intent
 from infinity_context_core.application.context_ranking import (
     apply_bm25_lexical_boosts,
+    apply_query_anchor_intent_boosts,
     apply_query_plan_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
     reciprocal_rank_fusion_scores,
@@ -207,6 +209,59 @@ def test_query_plan_bm25_lexical_boost_uses_best_decomposed_query() -> None:
     assert boosted[0].diagnostics["provenance"]["bm25_lexical_query_reason"] == (
         "decomposition_artifact_evidence"
     )
+
+
+def test_query_anchor_intent_boost_prefers_matching_entity_evidence() -> None:
+    melanie = _item(
+        "melanie",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie is supportive, encouraging, and helps Caroline feel accepted.",
+    )
+    caroline = _item(
+        "caroline",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline is supportive, encouraging, and helps the community.",
+    )
+    intent = build_query_anchor_intent("Would Melanie be considered an ally?")
+
+    boosted = apply_query_anchor_intent_boosts((melanie, caroline), intent=intent)
+
+    assert boosted[0].score > boosted[1].score
+    assert boosted[0].diagnostics["score_signals"]["query_anchor_intent_boost"] > 0
+    assert boosted[0].diagnostics["provenance"]["query_anchor_intent_reasons"] == [
+        "query_person_identity_match"
+    ]
+
+
+def test_query_anchor_intent_boost_rejects_wrong_person_same_project() -> None:
+    wrong_person = _item(
+        "wrong_person",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Dana discussed Project Atlas launch notes yesterday.",
+    )
+    intent = build_query_anchor_intent("What did Alex say about Project Atlas?")
+
+    boosted = apply_query_anchor_intent_boosts((wrong_person,), intent=intent)
+
+    assert boosted == (wrong_person,)
+
+
+def test_query_anchor_intent_boost_does_not_apply_twice() -> None:
+    item = _item(
+        "melanie",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie is supportive, encouraging, and helps Caroline feel accepted.",
+    )
+    intent = build_query_anchor_intent("Would Melanie be considered an ally?")
+
+    first_pass = apply_query_anchor_intent_boosts((item,), intent=intent)
+    second_pass = apply_query_anchor_intent_boosts(first_pass, intent=intent)
+
+    assert second_pass[0].score == first_pass[0].score
 
 
 def _item(

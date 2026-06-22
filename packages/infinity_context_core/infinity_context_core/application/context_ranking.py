@@ -25,6 +25,10 @@ from infinity_context_core.application.context_lexical import (
     text_variant_sequence,
 )
 from infinity_context_core.application.context_query_expansion import QueryExpansionPlan
+from infinity_context_core.application.context_query_intent import (
+    QueryAnchorIntent,
+    match_query_anchor_intent_to_text,
+)
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     is_query_relevance_sufficient,
@@ -49,6 +53,7 @@ _DEFAULT_RRF_SOURCE_WEIGHTS = {
 _BM25_K1 = 1.2
 _BM25_B = 0.75
 _BM25_MAX_BOOST = 0.035
+_QUERY_ANCHOR_INTENT_MAX_BOOST = 0.035
 _KEYWORD_EXPANSION_SCORE_CAPS = {
     "career_intent_bridge": 0.91,
     "support_career_motivation_bridge": 0.96,
@@ -190,6 +195,24 @@ def apply_query_plan_bm25_lexical_boosts(
             query_coverage=match.query_coverage,
         )
         for item, match in zip(items, matches, strict=True)
+    )
+
+
+def apply_query_anchor_intent_boosts(
+    items: tuple[ContextItem, ...],
+    *,
+    intent: QueryAnchorIntent,
+    max_boost: float = _QUERY_ANCHOR_INTENT_MAX_BOOST,
+) -> tuple[ContextItem, ...]:
+    if not items or intent.empty or max_boost <= 0:
+        return items
+    return tuple(
+        _with_query_anchor_intent_boost(
+            item,
+            match=match_query_anchor_intent_to_text(intent, item.text),
+            max_boost=max_boost,
+        )
+        for item in items
     )
 
 
@@ -593,6 +616,52 @@ def _bm25_lexical_already_applied(item: ContextItem) -> bool:
     diagnostics = normalize_context_diagnostics(item.diagnostics)
     provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
     return provenance.get("bm25_lexical_applied") is True
+
+
+def _with_query_anchor_intent_boost(
+    item: ContextItem,
+    *,
+    match: object,
+    max_boost: float,
+) -> ContextItem:
+    if match is None or _query_anchor_intent_already_applied(item):
+        return item
+    try:
+        raw_boost = float(getattr(match, "score_boost", 0.0))
+    except (TypeError, ValueError):
+        return item
+    boost = min(max_boost, max(0.0, round(raw_boost, 4)))
+    if boost <= 0:
+        return item
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    reasons = tuple(getattr(match, "reasons", ()) or ())
+    matched_keys = tuple(getattr(match, "matched_keys", ()) or ())
+    diagnostics["query_anchor_intent_reason"] = (
+        "query anchor identity matched context item text"
+    )
+    diagnostics["score_signals"] = {
+        **safe_score_signals(diagnostics.get("score_signals")),
+        "query_anchor_intent_boost": boost,
+        "query_anchor_intent_reason_count": len(reasons),
+        "query_anchor_intent_matched_key_count": len(matched_keys),
+    }
+    diagnostics["provenance"] = {
+        **safe_diagnostic_mapping(diagnostics.get("provenance")),
+        "query_anchor_intent_applied": True,
+        "query_anchor_intent_reasons": list(reasons[:8]),
+        "query_anchor_intent_matched_keys": list(matched_keys[:8]),
+    }
+    return replace(
+        item,
+        score=min(0.99, round(item.score + boost, 4)),
+        diagnostics=normalize_context_diagnostics(diagnostics),
+    )
+
+
+def _query_anchor_intent_already_applied(item: ContextItem) -> bool:
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
+    return provenance.get("query_anchor_intent_applied") is True
 
 
 def _with_rank_fusion_boost(
