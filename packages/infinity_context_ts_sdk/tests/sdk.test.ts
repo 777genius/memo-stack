@@ -2768,6 +2768,106 @@ describe("InfinityContextClient", () => {
     ).toThrow(ValueError);
   });
 
+  it("supports typed suggestion batch review helpers", async () => {
+    const suggestion = memorySuggestionRecord("suggestion_1");
+    const approved = { ...suggestion, status: "approved" };
+    const rejected = { ...suggestion, id: "suggestion_2", status: "rejected" };
+    const expired = { ...suggestion, id: "suggestion_3", status: "expired" };
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          applied: 1,
+          failed: 0,
+          stopped: false,
+          results: [{ suggestion_id: "suggestion_1", action: "approve", status: "approved", suggestion: approved }],
+        },
+      }),
+      jsonResponse({
+        data: {
+          applied: 2,
+          failed: 0,
+          stopped: false,
+          results: [
+            { suggestion_id: "suggestion_1", action: "approve", status: "approved", suggestion: approved },
+            { suggestion_id: "suggestion_2", action: "approve", status: "approved", suggestion: approved },
+          ],
+        },
+      }),
+      jsonResponse({
+        data: {
+          applied: 1,
+          failed: 0,
+          stopped: false,
+          results: [{ suggestion_id: "suggestion_2", action: "reject", status: "rejected", suggestion: rejected }],
+        },
+      }),
+      jsonResponse({
+        data: {
+          applied: 1,
+          failed: 0,
+          stopped: false,
+          results: [{ suggestion_id: "suggestion_3", action: "expire", status: "expired", suggestion: expired }],
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const reviewed = await client.suggestions.reviewSuggestionsBatch(
+      [{ suggestionId: "suggestion_1", action: "approve", reason: "typed review", force: true }],
+      { continueOnError: true },
+    );
+    const approvedBatch = await client.suggestions.approveSuggestionsBatch(
+      ["suggestion_1", { suggestionId: "suggestion_2", reason: "specific approval" }],
+      { reason: "bulk approval", force: true, continueOnError: true },
+    );
+    const rejectedBatch = await client.suggestions.rejectSuggestionsBatch(
+      [{ suggestionId: "suggestion_2", force: false }],
+      { reason: "not durable" },
+    );
+    const expiredBatch = await client.suggestions.expireSuggestionsBatch(
+      ["suggestion_3"],
+      { reason: "stale preference" },
+    );
+
+    expect(reviewed.data.results[0]?.suggestion?.status).toBe("approved");
+    expect(approvedBatch.data.applied).toBe(2);
+    expect(rejectedBatch.data.results[0]?.status).toBe("rejected");
+    expect(expiredBatch.data.results[0]?.status).toBe("expired");
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/suggestions/review-batch",
+      "POST /v1/suggestions/review-batch",
+      "POST /v1/suggestions/review-batch",
+      "POST /v1/suggestions/review-batch",
+    ]);
+    expect(transport.bodies).toEqual([
+      {
+        items: [{ suggestion_id: "suggestion_1", action: "approve", reason: "typed review", force: true }],
+        continue_on_error: true,
+      },
+      {
+        items: [
+          { suggestion_id: "suggestion_1", action: "approve", reason: "bulk approval", force: true },
+          { suggestion_id: "suggestion_2", action: "approve", reason: "specific approval", force: true },
+        ],
+        continue_on_error: true,
+      },
+      {
+        items: [{ suggestion_id: "suggestion_2", action: "reject", reason: "not durable", force: false }],
+        continue_on_error: false,
+      },
+      {
+        items: [{ suggestion_id: "suggestion_3", action: "expire", reason: "stale preference" }],
+        continue_on_error: false,
+      },
+    ]);
+    expect(() => client.suggestions.approveSuggestionsBatch([])).toThrow(ValueError);
+    expect(() => client.suggestions.reviewSuggestionsBatch([{ action: "approve" }])).toThrow(ValueError);
+  });
+
   it("supports anchor merge, split and backfill lifecycle", async () => {
     const sourceAnchor = anchorRecord("anchor_source", "Project Atlas");
     const targetAnchor = anchorRecord("anchor_target", "Atlas");

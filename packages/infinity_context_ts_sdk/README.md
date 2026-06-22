@@ -488,6 +488,15 @@ await memory.suggestions.resolveSuggestionConflict(suggestionId, {
   action: "approve",
   reason: "latest explicit user feedback wins",
 });
+
+await memory.suggestions.approveSuggestionsBatch(
+  ["suggestion_1", { suggestionId: "suggestion_2", reason: "reviewed as durable preference" }],
+  { reason: "weekly memory review", continueOnError: true },
+);
+
+await memory.suggestions.rejectSuggestionsBatch(
+  [{ suggestionId: "suggestion_3", reason: "temporary task detail" }],
+);
 ```
 
 ## Read models

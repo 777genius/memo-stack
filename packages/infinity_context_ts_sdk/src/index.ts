@@ -111,7 +111,12 @@ export type {
   CreateSuggestionPayloadInput,
   CreateSuggestionsBatchData,
   CreateSuggestionsBatchItemInput,
+  ReviewSuggestionBatchItemInput,
+  ReviewSuggestionsBatchData,
+  ReviewSuggestionsBatchResultItem,
   ResolveSuggestionData,
+  SuggestionBatchReviewTargetInput,
+  SuggestionReviewAction,
 } from "./resources/suggestions.js";
 export type {
   MemoryBrowserData,

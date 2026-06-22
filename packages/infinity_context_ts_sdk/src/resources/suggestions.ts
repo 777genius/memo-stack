@@ -40,6 +40,39 @@ export interface ResolveSuggestionData extends JsonObject {
   readonly fact?: JsonObject;
 }
 
+export type SuggestionReviewAction = "approve" | "reject" | "expire" | (string & {});
+
+export interface ReviewSuggestionBatchItemInput {
+  readonly suggestionId?: string;
+  readonly suggestion_id?: string;
+  readonly action: SuggestionReviewAction;
+  readonly reason?: string;
+  readonly force?: boolean;
+}
+
+export interface SuggestionBatchReviewTargetInput {
+  readonly suggestionId: string;
+  readonly reason?: string;
+  readonly force?: boolean;
+}
+
+export interface ReviewSuggestionsBatchResultItem extends JsonObject {
+  readonly suggestion_id: string;
+  readonly action: string;
+  readonly status: string;
+  readonly error_code?: string | null;
+  readonly error_message?: string | null;
+  readonly suggestion?: SuggestionRecord;
+  readonly fact?: JsonObject;
+}
+
+export interface ReviewSuggestionsBatchData extends JsonObject {
+  readonly applied: number;
+  readonly failed: number;
+  readonly stopped: boolean;
+  readonly results: readonly ReviewSuggestionsBatchResultItem[];
+}
+
 export class SuggestionsClient {
   constructor(private readonly http: RequestExecutor) {}
 
@@ -168,15 +201,46 @@ export class SuggestionsClient {
   }
 
   reviewSuggestionsBatch(
-    items: readonly JsonObject[],
+    items: readonly ReviewSuggestionBatchItemInput[],
     input: { readonly continueOnError?: boolean } & RequestControls = {},
-  ): Promise<ApiEnvelope<JsonObject>> {
-    return this.http.request<ApiEnvelope<JsonObject>>({
+  ): Promise<ApiEnvelope<ReviewSuggestionsBatchData>> {
+    const normalizedItems = normalizeReviewBatchItems(items);
+    return this.http.request<ApiEnvelope<ReviewSuggestionsBatchData>>({
       method: "POST",
       path: "/v1/suggestions/review-batch",
       ...requestControls(input),
-      json: { items: [...items], continue_on_error: input.continueOnError ?? false },
+      json: { items: normalizedItems, continue_on_error: input.continueOnError ?? false },
     });
+  }
+
+  approveSuggestionsBatch(
+    suggestions: readonly (string | SuggestionBatchReviewTargetInput)[],
+    input: { readonly reason?: string; readonly force?: boolean; readonly continueOnError?: boolean } & RequestControls = {},
+  ): Promise<ApiEnvelope<ReviewSuggestionsBatchData>> {
+    return this.reviewSuggestionsBatch(
+      reviewTargetsToBatchItems(suggestions, "approve", input),
+      input,
+    );
+  }
+
+  rejectSuggestionsBatch(
+    suggestions: readonly (string | SuggestionBatchReviewTargetInput)[],
+    input: { readonly reason?: string; readonly force?: boolean; readonly continueOnError?: boolean } & RequestControls = {},
+  ): Promise<ApiEnvelope<ReviewSuggestionsBatchData>> {
+    return this.reviewSuggestionsBatch(
+      reviewTargetsToBatchItems(suggestions, "reject", input),
+      input,
+    );
+  }
+
+  expireSuggestionsBatch(
+    suggestions: readonly (string | SuggestionBatchReviewTargetInput)[],
+    input: { readonly reason?: string; readonly force?: boolean; readonly continueOnError?: boolean } & RequestControls = {},
+  ): Promise<ApiEnvelope<ReviewSuggestionsBatchData>> {
+    return this.reviewSuggestionsBatch(
+      reviewTargetsToBatchItems(suggestions, "expire", input),
+      input,
+    );
   }
 }
 
@@ -207,3 +271,51 @@ const validateTargetFactVersion = (input: CreateSuggestionPayloadInput, fieldNam
     throw new ValueError(`${fieldName} is required when targetFactId is set`);
   }
 };
+
+function normalizeReviewBatchItems(items: readonly ReviewSuggestionBatchItemInput[]): readonly JsonObject[] {
+  if (items.length === 0) {
+    throw new ValueError("Suggestion batch review requires at least one item");
+  }
+  return items.map((item, index) => {
+    const suggestionId = item.suggestionId ?? item.suggestion_id;
+    if (suggestionId === undefined || suggestionId.trim().length === 0) {
+      throw new ValueError(`Suggestion batch review item ${index} requires suggestionId`);
+    }
+    return withoutUndefined({
+      suggestion_id: suggestionId,
+      action: item.action,
+      reason: item.reason,
+      force: item.force,
+    }) as JsonObject;
+  });
+}
+
+function reviewTargetsToBatchItems(
+  suggestions: readonly (string | SuggestionBatchReviewTargetInput)[],
+  action: SuggestionReviewAction,
+  defaults: { readonly reason?: string; readonly force?: boolean },
+): readonly ReviewSuggestionBatchItemInput[] {
+  if (suggestions.length === 0) {
+    throw new ValueError("Suggestion batch review requires at least one item");
+  }
+  return suggestions.map((suggestion) => {
+    if (typeof suggestion === "string") {
+      return {
+        suggestionId: suggestion,
+        action,
+        ...(defaults.reason !== undefined ? { reason: defaults.reason } : {}),
+        ...(defaults.force !== undefined ? { force: defaults.force } : {}),
+      };
+    }
+    return {
+      suggestionId: suggestion.suggestionId,
+      action,
+      ...(suggestion.reason !== undefined || defaults.reason !== undefined
+        ? { reason: suggestion.reason ?? defaults.reason }
+        : {}),
+      ...(suggestion.force !== undefined || defaults.force !== undefined
+        ? { force: suggestion.force ?? defaults.force }
+        : {}),
+    };
+  });
+}
