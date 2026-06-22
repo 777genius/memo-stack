@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { MemoryScope, singleScopePayload, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { JsonObject } from "../types.js";
 
@@ -9,10 +9,11 @@ export class ExportsClient {
     readonly spaceSlug: string;
     readonly memoryScopeExternalRef: string;
     readonly redacted?: boolean;
-  }): Promise<JsonObject> {
+  } & RequestControls): Promise<JsonObject> {
     return this.http.request<JsonObject>({
       method: "GET",
       path: "/v1/export/memory_scope-snapshot",
+      ...requestControls(input),
       params: {
         space_slug: input.spaceSlug,
         memory_scope_external_ref: input.memoryScopeExternalRef,
@@ -21,7 +22,7 @@ export class ExportsClient {
     });
   }
 
-  exportGraph(input: SingleScopeInput & {
+  exportGraph(input: SingleScopeInput & RequestControls & {
     readonly scope?: MemoryScope;
     readonly includeDeleted?: boolean;
     readonly includeRestricted?: boolean;
@@ -33,6 +34,7 @@ export class ExportsClient {
     return this.http.request<JsonObject>({
       method: "GET",
       path: "/v1/export/graph.json",
+      ...requestControls(input),
       params: withoutUndefined({
         ...(input.scope?.toPayload() ?? singleScopePayload(input)),
         include_deleted: input.includeDeleted ?? false,
@@ -54,10 +56,11 @@ export class ExportsClient {
     readonly mergeStrategy?: string;
     readonly confirmed?: boolean;
     readonly sourceName?: string;
-  }): Promise<JsonObject> {
+  } & RequestControls): Promise<JsonObject> {
     return this.http.request<JsonObject>({
       method: "POST",
       path: "/v1/export/memory_scope-snapshot/import",
+      ...requestControls(input),
       json: withoutUndefined({
         space_slug: input.spaceSlug,
         memory_scope_external_ref: input.memoryScopeExternalRef,
@@ -77,10 +80,11 @@ export class ExportsClient {
     readonly snapshot: JsonObject;
     readonly manifest?: JsonObject;
     readonly mergeStrategy?: string;
-  }): Promise<JsonObject> {
+  } & RequestControls): Promise<JsonObject> {
     return this.http.request<JsonObject>({
       method: "POST",
       path: "/v1/export/memory_scope-snapshot/preview",
+      ...requestControls(input),
       json: withoutUndefined({
         space_slug: input.spaceSlug,
         memory_scope_external_ref: input.memoryScopeExternalRef,

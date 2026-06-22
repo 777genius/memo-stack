@@ -1,8 +1,8 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { AnchorRecord, ApiEnvelope, JsonObject, SourceRef } from "../types.js";
 
-type AnchorScopeInput = Omit<SingleScopeInput, "threadId" | "threadExternalRef">;
+type AnchorScopeInput = Omit<SingleScopeInput, "threadId" | "threadExternalRef"> & RequestControls;
 
 export interface AnchorBackfillSource extends JsonObject {
   readonly source_type: string;
@@ -31,7 +31,7 @@ export interface AnchorMergeCandidate extends JsonObject {
 export class AnchorsClient {
   constructor(private readonly http: RequestExecutor) {}
 
-  createAnchor(input: SingleScopeInput & {
+  createAnchor(input: SingleScopeInput & RequestControls & {
     readonly kind: string;
     readonly label: string;
     readonly aliases?: readonly string[];
@@ -46,6 +46,7 @@ export class AnchorsClient {
     return this.http.request<ApiEnvelope<AnchorRecord>>({
       method: "POST",
       path: "/v1/anchors",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         kind: input.kind,
@@ -62,7 +63,7 @@ export class AnchorsClient {
     });
   }
 
-  listAnchors(input: SingleScopeInput & {
+  listAnchors(input: SingleScopeInput & RequestControls & {
     readonly kind?: string;
     readonly status?: string | null;
     readonly limit?: number;
@@ -70,6 +71,7 @@ export class AnchorsClient {
     return this.http.request<ApiEnvelope<AnchorRecord[]>>({
       method: "GET",
       path: "/v1/anchors",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         kind: input.kind,
@@ -79,7 +81,7 @@ export class AnchorsClient {
     });
   }
 
-  listAnchorRelations(input: SingleScopeInput & {
+  listAnchorRelations(input: SingleScopeInput & RequestControls & {
     readonly status?: string | null;
     readonly limit?: number;
     readonly anchorLimit?: number;
@@ -87,6 +89,7 @@ export class AnchorsClient {
     return this.http.request<ApiEnvelope<JsonObject[]>>({
       method: "GET",
       path: "/v1/anchors/relations",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         status: input.status === undefined ? "active" : input.status,
@@ -106,10 +109,11 @@ export class AnchorsClient {
     readonly validFrom?: string;
     readonly validTo?: string;
     readonly metadata?: JsonObject;
-  }): Promise<ApiEnvelope<AnchorRecord>> {
+  } & RequestControls): Promise<ApiEnvelope<AnchorRecord>> {
     return this.http.request<ApiEnvelope<AnchorRecord>>({
       method: "PATCH",
       path: `/v1/anchors/${anchorId}`,
+      ...requestControls(input),
       json: withoutUndefined({
         label: input.label,
         aliases: input.aliases,
@@ -124,10 +128,14 @@ export class AnchorsClient {
     });
   }
 
-  deleteAnchor(anchorId: string, input: { readonly reason?: string } = {}): Promise<ApiEnvelope<AnchorRecord>> {
+  deleteAnchor(
+    anchorId: string,
+    input: { readonly reason?: string } & RequestControls = {},
+  ): Promise<ApiEnvelope<AnchorRecord>> {
     return this.http.request<ApiEnvelope<AnchorRecord>>({
       method: "DELETE",
       path: `/v1/anchors/${anchorId}`,
+      ...requestControls(input),
       json: { reason: input.reason ?? "manual delete" },
     });
   }
@@ -138,6 +146,7 @@ export class AnchorsClient {
     return this.http.request<ApiEnvelope<AnchorBackfillData>>({
       method: "POST",
       path: "/v1/anchors/backfill",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         limit_per_source: input.limitPerSource ?? 100,
@@ -152,6 +161,7 @@ export class AnchorsClient {
     return this.http.request<ApiEnvelope<AnchorMergeCandidate[]>>({
       method: "GET",
       path: "/v1/anchors/merge-suggestions",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         kind: input.kind,
@@ -162,11 +172,12 @@ export class AnchorsClient {
 
   mergeAnchor(
     sourceAnchorId: string,
-    input: { readonly targetAnchorId: string; readonly reason: string },
+    input: { readonly targetAnchorId: string; readonly reason: string } & RequestControls,
   ): Promise<ApiEnvelope<AnchorRecord>> {
     return this.http.request<ApiEnvelope<AnchorRecord>>({
       method: "POST",
       path: `/v1/anchors/${sourceAnchorId}/merge`,
+      ...requestControls(input),
       json: {
         target_anchor_id: input.targetAnchorId,
         reason: input.reason,
@@ -176,11 +187,12 @@ export class AnchorsClient {
 
   splitAnchor(
     anchorId: string,
-    input: { readonly alias: string; readonly newLabel?: string; readonly reason?: string },
+    input: { readonly alias: string; readonly newLabel?: string; readonly reason?: string } & RequestControls,
   ): Promise<ApiEnvelope<AnchorRecord>> {
     return this.http.request<ApiEnvelope<AnchorRecord>>({
       method: "POST",
       path: `/v1/anchors/${anchorId}/split`,
+      ...requestControls(input),
       json: withoutUndefined({
         alias: input.alias,
         new_label: input.newLabel,

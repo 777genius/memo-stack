@@ -1,8 +1,8 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, ValueError, type SingleScopeInput } from "../payload.js";
 import type { ApiEnvelope, JsonObject, SourceRef, SuggestionRecord } from "../types.js";
 
-export type CreateSuggestionInput = {
+export type CreateSuggestionPayloadInput = {
   readonly candidateText: string;
   readonly safeReason: string;
   readonly kind?: string;
@@ -23,7 +23,9 @@ export type CreateSuggestionInput = {
   readonly autoApprove?: boolean;
 };
 
-export type CreateSuggestionsBatchItemInput = CreateSuggestionInput;
+export type CreateSuggestionInput = CreateSuggestionPayloadInput & RequestControls;
+
+export type CreateSuggestionsBatchItemInput = CreateSuggestionPayloadInput;
 
 export interface CreateSuggestionsBatchData extends JsonObject {
   readonly created: number;
@@ -46,6 +48,7 @@ export class SuggestionsClient {
     return this.http.request<ApiEnvelope<SuggestionRecord>>({
       method: "POST",
       path: "/v1/suggestions",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         ...suggestionPayload(input),
@@ -54,7 +57,7 @@ export class SuggestionsClient {
   }
 
   createSuggestionsBatch(
-    input: SingleScopeInput & {
+    input: SingleScopeInput & RequestControls & {
       readonly items: readonly CreateSuggestionsBatchItemInput[];
       readonly continueOnError?: boolean;
     },
@@ -65,6 +68,7 @@ export class SuggestionsClient {
     return this.http.request<ApiEnvelope<CreateSuggestionsBatchData>>({
       method: "POST",
       path: "/v1/suggestions/batch",
+      ...requestControls(input),
       json: withoutUndefined({
         ...scopeQuery(input),
         items: input.items.map((item) => suggestionPayload(item)),
@@ -73,7 +77,7 @@ export class SuggestionsClient {
     });
   }
 
-  listSuggestions(input: SingleScopeInput & {
+  listSuggestions(input: SingleScopeInput & RequestControls & {
     readonly status?: string | null;
     readonly operation?: string;
     readonly category?: string;
@@ -83,6 +87,7 @@ export class SuggestionsClient {
     return this.http.request<ApiEnvelope<SuggestionRecord[]>>({
       method: "GET",
       path: "/v1/suggestions",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         operation: input.operation,
@@ -96,11 +101,12 @@ export class SuggestionsClient {
 
   approveSuggestion(
     suggestionId: string,
-    input: { readonly reason?: string; readonly force?: boolean } = {},
+    input: { readonly reason?: string; readonly force?: boolean } & RequestControls = {},
   ): Promise<ApiEnvelope<JsonObject>> {
     return this.http.request<ApiEnvelope<JsonObject>>({
       method: "POST",
       path: `/v1/suggestions/${suggestionId}/approve`,
+      ...requestControls(input),
       json: withoutUndefined({ reason: input.reason, force: input.force ?? false }),
     });
   }
@@ -111,11 +117,12 @@ export class SuggestionsClient {
       readonly action: "approve" | "reject" | "expire" | string;
       readonly reason?: string;
       readonly force?: boolean;
-    },
+    } & RequestControls,
   ): Promise<ApiEnvelope<ResolveSuggestionData>> {
     return this.http.request<ApiEnvelope<ResolveSuggestionData>>({
       method: "POST",
       path: `/v1/suggestions/${suggestionId}/resolve-conflict`,
+      ...requestControls(input),
       json: withoutUndefined({ action: input.action, reason: input.reason, force: input.force ?? false }),
     });
   }
@@ -126,44 +133,54 @@ export class SuggestionsClient {
       readonly action: "approve" | "reject" | "expire" | string;
       readonly reason?: string;
       readonly force?: boolean;
-    },
+    } & RequestControls,
   ): Promise<ApiEnvelope<ResolveSuggestionData>> {
     return this.http.request<ApiEnvelope<ResolveSuggestionData>>({
       method: "POST",
       path: `/v1/suggestions/${suggestionId}/resolve-duplicate`,
+      ...requestControls(input),
       json: withoutUndefined({ action: input.action, reason: input.reason, force: input.force ?? false }),
     });
   }
 
-  rejectSuggestion(suggestionId: string, input: { readonly reason?: string } = {}): Promise<ApiEnvelope<JsonObject>> {
+  rejectSuggestion(
+    suggestionId: string,
+    input: { readonly reason?: string } & RequestControls = {},
+  ): Promise<ApiEnvelope<JsonObject>> {
     return this.http.request<ApiEnvelope<JsonObject>>({
       method: "POST",
       path: `/v1/suggestions/${suggestionId}/reject`,
+      ...requestControls(input),
       json: withoutUndefined({ reason: input.reason }),
     });
   }
 
-  expireSuggestion(suggestionId: string, input: { readonly reason?: string } = {}): Promise<ApiEnvelope<JsonObject>> {
+  expireSuggestion(
+    suggestionId: string,
+    input: { readonly reason?: string } & RequestControls = {},
+  ): Promise<ApiEnvelope<JsonObject>> {
     return this.http.request<ApiEnvelope<JsonObject>>({
       method: "POST",
       path: `/v1/suggestions/${suggestionId}/expire`,
+      ...requestControls(input),
       json: withoutUndefined({ reason: input.reason }),
     });
   }
 
   reviewSuggestionsBatch(
     items: readonly JsonObject[],
-    input: { readonly continueOnError?: boolean } = {},
+    input: { readonly continueOnError?: boolean } & RequestControls = {},
   ): Promise<ApiEnvelope<JsonObject>> {
     return this.http.request<ApiEnvelope<JsonObject>>({
       method: "POST",
       path: "/v1/suggestions/review-batch",
+      ...requestControls(input),
       json: { items: [...items], continue_on_error: input.continueOnError ?? false },
     });
   }
 }
 
-const suggestionPayload = (input: CreateSuggestionInput): JsonObject =>
+const suggestionPayload = (input: CreateSuggestionPayloadInput): JsonObject =>
   withoutUndefined({
     candidate_text: input.candidateText,
     safe_reason: input.safeReason,
@@ -185,7 +202,7 @@ const suggestionPayload = (input: CreateSuggestionInput): JsonObject =>
     auto_approve: input.autoApprove,
   }) as JsonObject;
 
-const validateTargetFactVersion = (input: CreateSuggestionInput, fieldName: string): void => {
+const validateTargetFactVersion = (input: CreateSuggestionPayloadInput, fieldName: string): void => {
   if (input.targetFactId && input.targetFactVersion === undefined) {
     throw new ValueError(`${fieldName} is required when targetFactId is set`);
   }

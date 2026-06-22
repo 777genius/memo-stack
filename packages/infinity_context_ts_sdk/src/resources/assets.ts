@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type {
   ApiEnvelope,
@@ -8,7 +8,7 @@ import type {
   JsonObject,
 } from "../types.js";
 
-export type AssetExtractionListInput = {
+export type AssetExtractionListInput = RequestControls & {
   readonly status?: string | null;
   readonly limit?: number;
 };
@@ -16,7 +16,7 @@ export type AssetExtractionListInput = {
 export class AssetsClient {
   constructor(private readonly http: RequestExecutor) {}
 
-  uploadAsset(input: SingleScopeInput & {
+  uploadAsset(input: SingleScopeInput & RequestControls & {
     readonly filename: string;
     readonly content: BodyInit;
     readonly contentType?: string;
@@ -27,6 +27,7 @@ export class AssetsClient {
     return this.http.request<ApiEnvelope<AssetRecord>>({
       method: "POST",
       path: "/v1/assets",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         filename: input.filename,
@@ -40,13 +41,14 @@ export class AssetsClient {
     });
   }
 
-  listAssets(input: SingleScopeInput & {
+  listAssets(input: SingleScopeInput & RequestControls & {
     readonly status?: string | null;
     readonly limit?: number;
   }): Promise<ApiEnvelope<AssetRecord[]>> {
     return this.http.request<ApiEnvelope<AssetRecord[]>>({
       method: "GET",
       path: "/v1/assets",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         status: input.status === undefined ? "stored" : input.status,
@@ -55,35 +57,39 @@ export class AssetsClient {
     });
   }
 
-  getAsset(assetId: string): Promise<ApiEnvelope<AssetRecord>> {
+  getAsset(assetId: string, input: RequestControls = {}): Promise<ApiEnvelope<AssetRecord>> {
     return this.http.request<ApiEnvelope<AssetRecord>>({
       method: "GET",
       path: `/v1/assets/${assetId}`,
+      ...requestControls(input),
     });
   }
 
-  deleteAsset(assetId: string): Promise<ApiEnvelope<AssetRecord>> {
+  deleteAsset(assetId: string, input: RequestControls = {}): Promise<ApiEnvelope<AssetRecord>> {
     return this.http.request<ApiEnvelope<AssetRecord>>({
       method: "DELETE",
       path: `/v1/assets/${assetId}`,
+      ...requestControls(input),
     });
   }
 
-  downloadAsset(assetId: string): Promise<Uint8Array> {
+  downloadAsset(assetId: string, input: RequestControls = {}): Promise<Uint8Array> {
     return this.http.request<Uint8Array>({
       method: "GET",
       path: `/v1/assets/${assetId}/download`,
+      ...requestControls(input),
       responseType: "bytes",
     });
   }
 
   requestAssetExtraction(
     assetId: string,
-    input: { readonly parserProfile?: string } = {},
+    input: { readonly parserProfile?: string } & RequestControls = {},
   ): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
     return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
       method: "POST",
       path: `/v1/assets/${assetId}/extractions`,
+      ...requestControls(input),
       params: withoutUndefined({ parser_profile: input.parserProfile }),
     });
   }
@@ -95,6 +101,7 @@ export class AssetsClient {
     return this.http.request<ApiEnvelope<AssetExtractionJobRecord[]>>({
       method: "GET",
       path: `/v1/assets/${assetId}/extractions`,
+      ...requestControls(input),
       params: extractionListQuery(input),
     });
   }
@@ -105,6 +112,7 @@ export class AssetsClient {
     return this.http.request<ApiEnvelope<AssetExtractionJobRecord[]>>({
       method: "GET",
       path: "/v1/asset-extractions",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         status: input.status,
@@ -113,31 +121,35 @@ export class AssetsClient {
     });
   }
 
-  getAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionDetails>> {
+  getAssetExtraction(jobId: string, input: RequestControls = {}): Promise<ApiEnvelope<AssetExtractionDetails>> {
     return this.http.request<ApiEnvelope<AssetExtractionDetails>>({
       method: "GET",
       path: `/v1/asset-extractions/${jobId}`,
+      ...requestControls(input),
     });
   }
 
-  retryAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
+  retryAssetExtraction(jobId: string, input: RequestControls = {}): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
     return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
       method: "POST",
       path: `/v1/asset-extractions/${jobId}/retry`,
+      ...requestControls(input),
     });
   }
 
-  cancelAssetExtraction(jobId: string): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
+  cancelAssetExtraction(jobId: string, input: RequestControls = {}): Promise<ApiEnvelope<AssetExtractionJobRecord>> {
     return this.http.request<ApiEnvelope<AssetExtractionJobRecord>>({
       method: "POST",
       path: `/v1/asset-extractions/${jobId}/cancel`,
+      ...requestControls(input),
     });
   }
 
-  downloadExtractionArtifact(artifactId: string): Promise<Uint8Array> {
+  downloadExtractionArtifact(artifactId: string, input: RequestControls = {}): Promise<Uint8Array> {
     return this.http.request<Uint8Array>({
       method: "GET",
       path: `/v1/extraction-artifacts/${artifactId}/download`,
+      ...requestControls(input),
       responseType: "bytes",
     });
   }

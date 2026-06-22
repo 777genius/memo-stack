@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { withoutUndefined } from "../payload.js";
 import type { ApiEnvelope, JsonObject, SpaceMembership, UserRecord } from "../types.js";
 
@@ -10,10 +10,11 @@ export class UsersClient {
     readonly displayName: string;
     readonly email?: string;
     readonly metadata?: JsonObject;
-  }): Promise<ApiEnvelope<UserRecord>> {
+  } & RequestControls): Promise<ApiEnvelope<UserRecord>> {
     return this.http.request<ApiEnvelope<UserRecord>>({
       method: "POST",
       path: "/v1/users",
+      ...requestControls(input),
       json: withoutUndefined({
         external_ref: input.externalRef,
         display_name: input.displayName,
@@ -23,10 +24,13 @@ export class UsersClient {
     });
   }
 
-  listUsers(input: { readonly status?: string | null; readonly limit?: number } = {}): Promise<ApiEnvelope<UserRecord[]>> {
+  listUsers(
+    input: { readonly status?: string | null; readonly limit?: number } & RequestControls = {},
+  ): Promise<ApiEnvelope<UserRecord[]>> {
     return this.http.request<ApiEnvelope<UserRecord[]>>({
       method: "GET",
       path: "/v1/users",
+      ...requestControls(input),
       params: withoutUndefined({
         status: input.status === undefined ? "active" : input.status,
         limit: input.limit ?? 100,
@@ -37,10 +41,11 @@ export class UsersClient {
   createSpaceMembership(spaceId: string, input: {
     readonly userId: string;
     readonly role?: string;
-  }): Promise<ApiEnvelope<SpaceMembership>> {
+  } & RequestControls): Promise<ApiEnvelope<SpaceMembership>> {
     return this.http.request<ApiEnvelope<SpaceMembership>>({
       method: "POST",
       path: `/v1/spaces/${spaceId}/memberships`,
+      ...requestControls(input),
       json: {
         user_id: input.userId,
         role: input.role ?? "member",
@@ -50,11 +55,12 @@ export class UsersClient {
 
   listSpaceMemberships(
     spaceId: string,
-    input: { readonly status?: string | null; readonly limit?: number } = {},
+    input: { readonly status?: string | null; readonly limit?: number } & RequestControls = {},
   ): Promise<ApiEnvelope<SpaceMembership[]>> {
     return this.http.request<ApiEnvelope<SpaceMembership[]>>({
       method: "GET",
       path: `/v1/spaces/${spaceId}/memberships`,
+      ...requestControls(input),
       params: withoutUndefined({
         status: input.status === undefined ? "active" : input.status,
         limit: input.limit ?? 100,
@@ -65,11 +71,12 @@ export class UsersClient {
   checkSpaceAccess(
     spaceId: string,
     userId: string,
-    input: { readonly requiredRole?: string } = {},
+    input: { readonly requiredRole?: string } & RequestControls = {},
   ): Promise<ApiEnvelope<JsonObject>> {
     return this.http.request<ApiEnvelope<JsonObject>>({
       method: "GET",
       path: `/v1/spaces/${spaceId}/memberships/${userId}/access`,
+      ...requestControls(input),
       params: { required_role: input.requiredRole ?? "viewer" },
     });
   }

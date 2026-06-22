@@ -151,6 +151,46 @@ describe("InfinityContextClient", () => {
     expect(transport.bodies[0]).not.toHaveProperty("signal");
   });
 
+  it("passes per-request controls through operational resource clients", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport(Array.from({ length: 11 }, () => jsonResponse({ data: { ok: true } })));
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+    const controls = {
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_resource_controls" },
+    };
+    const scope = {
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+    };
+
+    await client.system.health(controls);
+    await client.system.capabilities(controls);
+    await client.spaces.listSpaces({ ...controls, limit: 1 });
+    await client.users.listUsers({ ...controls, limit: 1 });
+    await client.assets.getAsset("asset_1", controls);
+    await client.anchors.listAnchors({ ...controls, ...scope, limit: 1 });
+    await client.suggestions.reviewSuggestionsBatch([{ suggestion_id: "sugg_1", action: "reject" }], controls);
+    await client.diagnostics.outbox({ ...controls, limit: 1 });
+    await client.readModels.getMemoryBrowser({ ...controls, ...scope, limit: 1 });
+    await client.usage.summary({ ...controls, spaceSlug: scope.spaceSlug });
+    await client.threadMemory.status({ ...controls, ...scope, threadExternalRef: "thread_1" });
+
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
+      Array.from({ length: 11 }, () => "trace_resource_controls"),
+    );
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel resources");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+    expect(transport.bodies.every((body) => !Object.hasOwn(body as object, "headers"))).toBe(true);
+    expect(transport.bodies.every((body) => !Object.hasOwn(body as object, "signal"))).toBe(true);
+  });
+
   it("passes per-request controls through paginated fact scans", async () => {
     const controller = new AbortController();
     const transport = new RecordingTransport([

@@ -1,4 +1,4 @@
-import type { RequestExecutor } from "../client.js";
+import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type {
   AnchorRecord,
@@ -13,7 +13,7 @@ import type {
   MemoryScopeRecord,
 } from "../types.js";
 
-export type MemoryBrowserInput = Omit<SingleScopeInput, "threadId" | "threadExternalRef"> & {
+export type MemoryBrowserInput = Omit<SingleScopeInput, "threadId" | "threadExternalRef"> & RequestControls & {
   readonly limit?: number;
   readonly factStatus?: string | null;
   readonly episodeStatus?: string | null;
@@ -28,7 +28,7 @@ export type MemoryBrowserInput = Omit<SingleScopeInput, "threadId" | "threadExte
   readonly suggestionStatus?: string | null;
 };
 
-export type OperationsConsoleInput = SingleScopeInput & {
+export type OperationsConsoleInput = SingleScopeInput & RequestControls & {
   readonly limit?: number;
 };
 
@@ -69,6 +69,7 @@ export class ReadModelsClient {
     return this.http.request<ApiEnvelope<MemoryBrowserData>>({
       method: "GET",
       path: "/v1/memory-browser",
+      ...requestControls(input),
       params: memoryBrowserQuery(input),
     });
   }
@@ -77,6 +78,7 @@ export class ReadModelsClient {
     return this.http.request<ApiEnvelope<OperationsConsoleData>>({
       method: "GET",
       path: "/v1/operations-console",
+      ...requestControls(input),
       params: withoutUndefined({
         ...scopeQuery(input),
         limit: input.limit ?? 50,

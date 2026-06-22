@@ -93,6 +93,7 @@ export type {
 } from "./resources/facts.js";
 export type {
   CreateSuggestionInput,
+  CreateSuggestionPayloadInput,
   CreateSuggestionsBatchData,
   CreateSuggestionsBatchItemInput,
   ResolveSuggestionData,
