@@ -11,7 +11,7 @@ import type { AssetsClient } from "../resources/assets.js";
 import type { CapturesClient, CreateCaptureData, CreateCaptureInput } from "../resources/captures.js";
 import type { ContextLinksClient, SuggestContextLinksData } from "../resources/context-links.js";
 import type { BuildContextInput, BuildDigestInput, ContextClient } from "../resources/context.js";
-import type { DiagnosticsClient } from "../resources/diagnostics.js";
+import type { DiagnosticsClient, OutboxDrainResult, WaitForOutboxDrainInput } from "../resources/diagnostics.js";
 import type { DocumentsClient } from "../resources/documents.js";
 import type { ExportsClient } from "../resources/exports.js";
 import type { FactsClient, RememberFactInput } from "../resources/facts.js";
@@ -152,6 +152,7 @@ export interface RunMemorySummaryLoopInput extends RequestControls {
   readonly topology?: WorkflowStepOptions<EnsureMemoryTopologyInput>;
   readonly readiness?: WorkflowStepOptions<CheckFullMemoryReadinessInput>;
   readonly sourceEvidence?: RecordSourceEvidenceBatchInput;
+  readonly outboxDrain?: WorkflowStepOptions<WaitForOutboxDrainInput>;
   readonly brief: BuildMemoryBriefInput;
   readonly stopOnSourceEvidenceFailure?: boolean;
 }
@@ -160,6 +161,7 @@ export interface RunMemorySummaryLoopDiagnostics {
   readonly ok: boolean;
   readonly readinessOk: boolean | null;
   readonly sourceEvidenceOk: boolean | null;
+  readonly outboxDrainOk: boolean | null;
   readonly warnings: readonly string[];
 }
 
@@ -168,6 +170,7 @@ export interface RunMemorySummaryLoopResult {
   readonly readiness?: CheckFullMemoryReadinessResult;
   readonly sourceEvidence?: RecordSourceEvidenceBatchResult;
   readonly sourceEvidenceSummary?: RecordSourceEvidenceBatchSummary;
+  readonly outboxDrain?: OutboxDrainResult;
   readonly brief: BuildMemoryBriefResult;
   readonly diagnostics: RunMemorySummaryLoopDiagnostics;
 }
@@ -872,15 +875,25 @@ export class MemoryWorkflows {
       }
     }
 
+    const outboxDrain = isEnabled(input.outboxDrain, false)
+      ? await diagnosticsResource(this.resources, "runMemorySummaryLoop outboxDrain")
+        .waitForOutboxDrain(withWorkflowControls(input, stepOptions(input.outboxDrain)))
+      : undefined;
     const brief = await this.buildMemoryBrief(withWorkflowControls(input, input.brief));
     const readinessOk = readiness?.readiness.ok ?? null;
     const sourceEvidenceOk = sourceEvidenceSummary === undefined
       ? null
       : sourceEvidenceSummary.failed === 0 && !sourceEvidenceSummary.stopped;
+    const outboxDrainOk = outboxDrain === undefined
+      ? null
+      : outboxDrain.diagnostics.blocking_count <= outboxDrain.diagnostics.max_blocking_items;
     const warnings = uniqueStrings([
       ...(readiness?.diagnostics.warnings ?? []),
       ...(sourceEvidenceSummary !== undefined && !sourceEvidenceOk
         ? [`source evidence batch has ${sourceEvidenceSummary.failed} failed item(s)`]
+        : []),
+      ...(outboxDrain !== undefined && !outboxDrainOk
+        ? [`outbox still has ${outboxDrain.diagnostics.blocking_count} blocking item(s)`]
         : []),
       ...brief.diagnostics.warnings,
     ]);
@@ -890,11 +903,13 @@ export class MemoryWorkflows {
       ...(readiness ? { readiness } : {}),
       ...(sourceEvidence ? { sourceEvidence } : {}),
       ...(sourceEvidenceSummary ? { sourceEvidenceSummary } : {}),
+      ...(outboxDrain ? { outboxDrain } : {}),
       brief,
       diagnostics: {
-        ok: (readinessOk ?? true) && (sourceEvidenceOk ?? true),
+        ok: (readinessOk ?? true) && (sourceEvidenceOk ?? true) && (outboxDrainOk ?? true),
         readinessOk,
         sourceEvidenceOk,
+        outboxDrainOk,
         warnings,
       },
     };
@@ -1366,6 +1381,13 @@ function runtimeReadinessResources(resources: MemoryWorkflowResources): MemoryRu
   }
 
   return { context: resources.context, system };
+}
+
+function diagnosticsResource(resources: MemoryWorkflowResources, operationName: string): DiagnosticsClient {
+  if (resources.diagnostics === undefined) {
+    throw new ValueError(`${operationName} requires MemoryWorkflowResources: diagnostics`);
+  }
+  return resources.diagnostics;
 }
 
 function maintenanceResources(resources: MemoryWorkflowResources): MemoryMaintenanceResources {

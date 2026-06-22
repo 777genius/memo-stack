@@ -203,6 +203,12 @@ const loop = await memory.workflows.runMemorySummaryLoop({
     continueOnError: true,
     items: providerItems,
   },
+  outboxDrain: {
+    limit: 100,
+    pollIntervalMs: 1000,
+    maxAttempts: 60,
+    throwOnFailure: true,
+  },
   brief: {
     query: "What matters most in AI agents today?",
     topic: "AI agents digest",
@@ -314,6 +320,14 @@ const outboxItems = await memory.diagnostics.listAllOutboxItems({
   maxItems: 1000,
 });
 console.log(outboxItems.filter((item) => item.status !== "done").length);
+
+const drained = await memory.diagnostics.waitForOutboxDrain({
+  limit: 100,
+  pollIntervalMs: 1000,
+  maxAttempts: 60,
+  throwOnFailure: true,
+});
+console.log(drained.diagnostics.attempts, drained.diagnostics.blocking_count);
 ```
 
 ## Per-request controls

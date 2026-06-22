@@ -82,9 +82,13 @@ export type {
 } from "./resources/context.js";
 export type {
   ListOutboxDiagnosticsInput,
+  OutboxDrainDiagnostics,
+  OutboxDrainResult,
+  OutboxDrainStatus,
   OutboxDiagnosticItem,
   OutboxDiagnosticsData,
   OutboxDiagnosticsResponse,
+  WaitForOutboxDrainInput,
 } from "./resources/diagnostics.js";
 export type {
   IngestDocumentInput,

@@ -278,6 +278,90 @@ describe("InfinityContextClient", () => {
     expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
   });
 
+  it("waits for diagnostics outbox drain", async () => {
+    const controller = new AbortController();
+    const sleeps: number[] = [];
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          counts: { pending: 1, retry_pending: 1 },
+          oldest_active_lag_seconds: 45,
+          items: [outboxItem(1, "pending"), outboxItem(2, "retry_pending")],
+          next_cursor: null,
+        },
+      }),
+      jsonResponse({
+        data: {
+          counts: { done: 2, pending: 0, retry_pending: 0 },
+          oldest_active_lag_seconds: null,
+          items: [outboxItem(1, "done"), outboxItem(2, "done")],
+          next_cursor: null,
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const drained = await client.diagnostics.waitForOutboxDrain({
+      limit: 2,
+      maxAttempts: 3,
+      pollIntervalMs: 7,
+      signal: controller.signal,
+      headers: { "x-worker-id": "worker_outbox_drain" },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      throwOnFailure: true,
+    });
+
+    expect(drained.diagnostics).toMatchObject({
+      attempts: 2,
+      blocking_count: 0,
+      failure_count: 0,
+      max_blocking_items: 0,
+      listed_blocking_item_ids: [],
+    });
+    expect(sleeps).toEqual([7]);
+    expect(transport.requests.map((request) => request.url.toString())).toEqual([
+      "http://memory.test/v1/diagnostics/outbox?limit=2",
+      "http://memory.test/v1/diagnostics/outbox?limit=2",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-worker-id"))).toEqual([
+      "worker_outbox_drain",
+      "worker_outbox_drain",
+    ]);
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expect(requestSignals.every((signal) => signal !== undefined && !signal.aborted)).toBe(true);
+    controller.abort("cancel outbox drain");
+    expect(requestSignals.every((signal) => signal?.aborted === true)).toBe(true);
+
+    const failureTransport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          counts: { failed: 0 },
+          oldest_active_lag_seconds: 120,
+          items: [outboxItem(9, "failed")],
+          next_cursor: null,
+        },
+      }),
+    ]);
+    const failureClient = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport: failureTransport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await expect(
+      failureClient.diagnostics.waitForOutboxDrain({ throwOnFailure: true }),
+    ).rejects.toMatchObject({
+      code: "memory.outbox_drain_failed",
+      retryable: false,
+    });
+  });
+
   it("keeps instrumentation hook failures from changing request results", async () => {
     const transport = new RecordingTransport([jsonResponse({ data: { id: "fact_1" } })]);
     const client = new InfinityContextClient({
@@ -1174,6 +1258,22 @@ describe("InfinityContextClient", () => {
       })),
       jsonResponse({ data: factRecord("fact_reddit") }, 201),
       jsonResponse({ data: factRecord("fact_github") }, 201),
+      jsonResponse({
+        data: {
+          counts: { pending: 2 },
+          oldest_active_lag_seconds: 15,
+          items: [outboxItem(10, "pending"), outboxItem(11, "pending")],
+          next_cursor: null,
+        },
+      }),
+      jsonResponse({
+        data: {
+          counts: { done: 2, pending: 0 },
+          oldest_active_lag_seconds: null,
+          items: [outboxItem(10, "done"), outboxItem(11, "done")],
+          next_cursor: null,
+        },
+      }),
       jsonResponse(contextResponse("loop-brief", {
         retrieval_sources_used: ["vector", "graph"],
         vector_query_count: 4,
@@ -1238,6 +1338,12 @@ describe("InfinityContextClient", () => {
           },
         ],
       },
+      outboxDrain: {
+        limit: 5,
+        maxAttempts: 3,
+        pollIntervalMs: 0,
+        throwOnFailure: true,
+      },
       brief: {
         query: "What should the AI agents digest highlight?",
         topic: "AI agents digest",
@@ -1258,11 +1364,17 @@ describe("InfinityContextClient", () => {
       failed: 0,
       bySourceType: { reddit: 1, github: 1 },
     });
+    expect(loop.outboxDrain?.diagnostics).toMatchObject({
+      attempts: 2,
+      blocking_count: 0,
+      max_blocking_items: 0,
+    });
     expect(loop.brief.digest?.data.digest_id).toBe("digest_1");
     expect(loop.diagnostics).toEqual({
       ok: true,
       readinessOk: true,
       sourceEvidenceOk: true,
+      outboxDrainOk: true,
       warnings: [],
     });
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
@@ -1274,12 +1386,14 @@ describe("InfinityContextClient", () => {
       "POST /v1/context",
       "POST /v1/facts",
       "POST /v1/facts",
+      "GET /v1/diagnostics/outbox",
+      "GET /v1/diagnostics/outbox",
       "POST /v1/context",
       "POST /v1/search",
       "POST /v1/digest",
     ]);
     expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual(
-      Array.from({ length: 11 }, () => "trace_loop"),
+      Array.from({ length: 13 }, () => "trace_loop"),
     );
     expect(transport.bodies[3]).toMatchObject({
       source_refs: [{ source_type: "reddit", source_id: "reddit:t3_ai" }],

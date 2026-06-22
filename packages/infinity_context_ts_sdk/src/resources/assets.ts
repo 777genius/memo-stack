@@ -1,6 +1,13 @@
 import { requestControls, type RequestControls, type RequestExecutor } from "../client.js";
 import { InfinityContextError } from "../errors.js";
-import { scopeQuery, ValueError, withoutUndefined, type SingleScopeInput } from "../payload.js";
+import {
+  normalizedPollingInterval,
+  normalizedPollingMaxAttempts,
+  throwIfAborted,
+  waitForNextPoll,
+  type PollingControls,
+} from "../polling.js";
+import { scopeQuery, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type {
   ApiEnvelope,
   AssetExtractionDetails,
@@ -16,13 +23,10 @@ export type AssetExtractionListInput = RequestControls & {
 
 export type AssetExtractionTerminalStatus = "succeeded" | "failed" | "canceled" | "unsupported" | "stale" | (string & {});
 
-export interface WaitAssetExtractionInput extends RequestControls {
-  readonly pollIntervalMs?: number;
-  readonly maxAttempts?: number;
+export interface WaitAssetExtractionInput extends PollingControls {
   readonly terminalStatuses?: readonly AssetExtractionTerminalStatus[];
   readonly failureStatuses?: readonly AssetExtractionTerminalStatus[];
   readonly throwOnFailure?: boolean;
-  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export class AssetsClient {
@@ -145,8 +149,8 @@ export class AssetsClient {
     jobId: string,
     input: WaitAssetExtractionInput = {},
   ): Promise<ApiEnvelope<AssetExtractionDetails>> {
-    const maxAttempts = normalizedMaxAttempts(input.maxAttempts);
-    const pollIntervalMs = normalizedPollInterval(input.pollIntervalMs);
+    const maxAttempts = normalizedPollingMaxAttempts(input.maxAttempts, "waitForAssetExtraction");
+    const pollIntervalMs = normalizedPollingInterval(input.pollIntervalMs, "waitForAssetExtraction");
     const terminalStatuses = new Set(input.terminalStatuses ?? DEFAULT_EXTRACTION_TERMINAL_STATUSES);
     const failureStatuses = new Set(input.failureStatuses ?? DEFAULT_EXTRACTION_FAILURE_STATUSES);
     let last: ApiEnvelope<AssetExtractionDetails> | undefined;
@@ -202,69 +206,6 @@ const extractionListQuery = (input: AssetExtractionListInput): JsonObject =>
 
 const DEFAULT_EXTRACTION_TERMINAL_STATUSES = ["succeeded", "failed", "canceled", "unsupported", "stale"] as const;
 const DEFAULT_EXTRACTION_FAILURE_STATUSES = ["failed", "canceled", "unsupported", "stale"] as const;
-
-function normalizedMaxAttempts(value: number | undefined): number {
-  const attempts = value ?? 30;
-  if (!Number.isInteger(attempts) || attempts < 1) {
-    throw new ValueError("waitForAssetExtraction maxAttempts must be an integer greater than 0");
-  }
-  return attempts;
-}
-
-function normalizedPollInterval(value: number | undefined): number {
-  const pollIntervalMs = value ?? 1_000;
-  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs < 0) {
-    throw new ValueError("waitForAssetExtraction pollIntervalMs must be a non-negative number");
-  }
-  return pollIntervalMs;
-}
-
-async function waitForNextPoll(input: WaitAssetExtractionInput, pollIntervalMs: number): Promise<void> {
-  throwIfAborted(input.signal);
-  if (pollIntervalMs === 0) {
-    return;
-  }
-  if (input.sleep !== undefined) {
-    await input.sleep(pollIntervalMs);
-    throwIfAborted(input.signal);
-    return;
-  }
-  await sleepWithSignal(pollIntervalMs, input.signal);
-}
-
-function sleepWithSignal(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  if (signal?.aborted === true) {
-    return Promise.reject(abortError(signal.reason));
-  }
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    timeout.unref?.();
-
-    const onAbort = () => {
-      cleanup();
-      reject(abortError(signal?.reason));
-    };
-    const cleanup = () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted === true) {
-    throw abortError(signal.reason);
-  }
-}
-
-function abortError(reason: unknown): Error {
-  return reason instanceof Error ? reason : new DOMException("Operation aborted", "AbortError");
-}
 
 function assetExtractionTimeout(
   jobId: string,
