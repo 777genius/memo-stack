@@ -16,6 +16,7 @@ Stable entry points:
 - `@infinity-context/sdk/instrumentation`: request instrumentation types.
 - `@infinity-context/sdk/runtime`: runtime readiness guards.
 - `@infinity-context/sdk/canary`: non-mutating runtime canary reports.
+- `@infinity-context/sdk/proof`: full-memory proof loop and release evidence artifact gates.
 - `@infinity-context/sdk/pagination`: reusable cursor helpers.
 - `@infinity-context/sdk/workflows`: workflow facade types and classes.
 

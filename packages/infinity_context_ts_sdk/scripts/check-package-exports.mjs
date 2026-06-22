@@ -8,6 +8,7 @@ const expectedExports = [
   ["@infinity-context/sdk/pagination", "iterateCursorItems"],
   ["@infinity-context/sdk/runtime", "assertFullMemoryReady"],
   ["@infinity-context/sdk/canary", "runRuntimeCanary"],
+  ["@infinity-context/sdk/proof", "runFullMemoryProof"],
   ["@infinity-context/sdk/workflows", "MemoryWorkflows"],
 ];
 

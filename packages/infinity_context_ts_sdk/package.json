@@ -32,6 +32,11 @@
       "import": "./dist/canary.js",
       "require": "./dist/canary.cjs"
     },
+    "./proof": {
+      "types": "./dist/proof.d.ts",
+      "import": "./dist/proof.js",
+      "require": "./dist/proof.cjs"
+    },
     "./workflows": {
       "types": "./dist/workflows.d.ts",
       "import": "./dist/workflows.js",
@@ -50,7 +55,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/instrumentation.ts src/pagination.ts src/runtime.ts src/canary.ts src/workflows.ts --format esm,cjs --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/instrumentation.ts src/pagination.ts src/runtime.ts src/canary.ts src/proof.ts src/workflows.ts --format esm,cjs --dts --sourcemap --clean",
     "check:parity": "node scripts/check-api-parity.mjs",
     "check:exports": "node scripts/check-package-exports.mjs",
     "canary:runtime": "npm run build && node scripts/runtime-canary.mjs",
