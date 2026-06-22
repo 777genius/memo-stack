@@ -12,6 +12,8 @@ import { ReadModelsClient } from "./resources/read-models.js";
 import { SpacesClient } from "./resources/spaces.js";
 import { SuggestionsClient } from "./resources/suggestions.js";
 import { SystemClient } from "./resources/system.js";
+import { ThreadMemoryClient } from "./resources/thread-memory.js";
+import { UsageClient } from "./resources/usage.js";
 import { UsersClient } from "./resources/users.js";
 
 export class InfinityContextClient {
@@ -29,6 +31,8 @@ export class InfinityContextClient {
   readonly diagnostics: DiagnosticsClient;
   readonly exports: ExportsClient;
   readonly readModels: ReadModelsClient;
+  readonly threadMemory: ThreadMemoryClient;
+  readonly usage: UsageClient;
 
   constructor(options: InfinityContextClientOptions = {}) {
     const http = new HttpClient(options);
@@ -46,5 +50,7 @@ export class InfinityContextClient {
     this.diagnostics = new DiagnosticsClient(http);
     this.exports = new ExportsClient(http);
     this.readModels = new ReadModelsClient(http);
+    this.threadMemory = new ThreadMemoryClient(http);
+    this.usage = new UsageClient(http);
   }
 }

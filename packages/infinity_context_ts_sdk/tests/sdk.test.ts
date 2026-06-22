@@ -701,6 +701,78 @@ describe("InfinityContextClient", () => {
     expect(transport.requests[1]?.url.searchParams.get("thread_external_ref")).toBe("review-thread");
     expect(transport.requests[1]?.url.searchParams.get("limit")).toBe("10");
   });
+
+  it("manages thread memory and reads usage summaries", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { chunks: 3, facts: 2, jobs: 1, pending_jobs: 1 } }),
+      jsonResponse({ data: { deleted_chunks: 3, deleted_facts: 2, deleted_jobs: 1 } }),
+      jsonResponse({ data: { deleted_chunks: 0, deleted_facts: 0, deleted_jobs: 0 } }),
+      jsonResponse({
+        data: {
+          space_id: "space_1",
+          plan: {
+            tier: "beta",
+            display_name: "Beta",
+            media_analysis_seconds_per_month: 3600,
+          },
+          resources: [
+            {
+              resource: "media_analysis_seconds",
+              limit: 3600,
+              used: 120,
+              remaining: 3480,
+              window_start: "2026-06-01T00:00:00.000Z",
+              window_end: "2026-07-01T00:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+    const scope = {
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      threadExternalRef: "thread:daily-digest",
+    };
+
+    const status = await client.threadMemory.status(scope);
+    const deleted = await client.threadMemory.delete(scope);
+    const compatDeleted = await client.threadMemory.deleteCompat(scope);
+    const usage = await client.usage.summary({ spaceSlug: "workspace" });
+
+    expect(status.data.pending_jobs).toBe(1);
+    expect(deleted.data.deleted_facts).toBe(2);
+    expect(compatDeleted.data.deleted_jobs).toBe(0);
+    expect(usage.data.resources[0]?.remaining).toBe(3480);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/thread-memory/status",
+      "DELETE /v1/thread-memory",
+      "POST /v1/thread-memory/delete",
+      "GET /v1/usage",
+    ]);
+    expect(transport.bodies).toEqual([
+      {
+        space_slug: "workspace",
+        memory_scope_external_ref: "scope",
+        thread_external_ref: "thread:daily-digest",
+      },
+      {
+        space_slug: "workspace",
+        memory_scope_external_ref: "scope",
+        thread_external_ref: "thread:daily-digest",
+      },
+      {
+        space_slug: "workspace",
+        memory_scope_external_ref: "scope",
+        thread_external_ref: "thread:daily-digest",
+      },
+    ]);
+    expect(transport.requests[3]?.url.searchParams.get("space_slug")).toBe("workspace");
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): HttpResponse {

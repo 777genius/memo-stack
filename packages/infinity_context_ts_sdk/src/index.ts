@@ -42,6 +42,7 @@ export type {
   OperationsConsoleData,
   OperationsConsoleInput,
 } from "./resources/read-models.js";
+export type { UsageSummaryInput } from "./resources/usage.js";
 export { MemoryScope, ReadScope, ValueError } from "./payload.js";
 export { DEFAULT_RETRY_POLICY, shouldRetry, type RetryPolicy } from "./retry.js";
 export { FetchTransport, type HttpRequest, type HttpResponse, type HttpTransport } from "./transport.js";
@@ -53,6 +54,7 @@ export type {
   CaptureRecord,
   ContextLinkRecord,
   ContextLinkSuggestionRecord,
+  DeleteThreadMemoryData,
   DocumentRecord,
   ExtractionArtifactRecord,
   FactRecord,
@@ -66,5 +68,9 @@ export type {
   Space,
   SpaceMembership,
   SuggestionRecord,
+  ThreadMemoryStatusData,
+  UsagePlanData,
+  UsageResourceData,
+  UsageSummaryData,
   UserRecord,
 } from "./types.js";

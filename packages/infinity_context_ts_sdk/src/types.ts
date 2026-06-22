@@ -123,6 +123,40 @@ export interface AssetExtractionDetails extends AssetExtractionJobRecord {
   readonly artifacts: readonly ExtractionArtifactRecord[];
 }
 
+export interface ThreadMemoryStatusData extends JsonObject {
+  readonly chunks: number;
+  readonly facts: number;
+  readonly jobs: number;
+  readonly pending_jobs: number;
+}
+
+export interface DeleteThreadMemoryData extends JsonObject {
+  readonly deleted_chunks: number;
+  readonly deleted_facts: number;
+  readonly deleted_jobs: number;
+}
+
+export interface UsagePlanData extends JsonObject {
+  readonly tier: string;
+  readonly display_name: string;
+  readonly media_analysis_seconds_per_month: number;
+}
+
+export interface UsageResourceData extends JsonObject {
+  readonly resource: string;
+  readonly limit: number;
+  readonly used: number;
+  readonly remaining: number;
+  readonly window_start: string;
+  readonly window_end: string;
+}
+
+export interface UsageSummaryData extends JsonObject {
+  readonly space_id: string;
+  readonly plan: UsagePlanData;
+  readonly resources: readonly UsageResourceData[];
+}
+
 export interface SuggestionRecord extends JsonObject {
   readonly id: string;
   readonly status: string;

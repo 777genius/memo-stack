@@ -156,6 +156,28 @@ const operations = await memory.readModels.getOperationsConsole({
 console.log(browser.data.visual_summary, operations.data.link_suggestion_status_counts);
 ```
 
+## Thread memory and usage
+
+Thread memory helpers make ephemeral session cleanup explicit. Usage summaries expose the current quota window for a space.
+
+```ts
+const threadScope = {
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  threadExternalRef: "digest-run:2026-06-22",
+};
+
+const threadStatus = await memory.threadMemory.status(threadScope);
+if (threadStatus.data.pending_jobs === 0) {
+  await memory.threadMemory.delete(threadScope);
+}
+
+const usage = await memory.usage.summary({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+});
+console.log(usage.data.plan.tier, usage.data.resources);
+```
+
 ## Recommended Social Monitor mapping
 
 - `spaceSlug`: `social-monitor:{tenantId}:{workspaceId}`
