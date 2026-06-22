@@ -5,6 +5,9 @@ import {
   MemoryScope,
   ReadScope,
   ValueError,
+  healthyRetrievalComponents,
+  retrievalDiagnostics,
+  usedDerivedRetrieval,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -78,9 +81,21 @@ describe("InfinityContextClient", () => {
           diagnostics: {
             vector_status: "ok",
             graph_status: "ok",
+            rag_status: "ok",
             query_decomposition_status: "available",
             query_decomposition_count: 2,
             query_decomposition_reasons: ["decomposition_event_context"],
+            vector_query_count: 6,
+            vector_query_limit: 15,
+            vector_query_degraded_count: 0,
+            graph_query_count: 4,
+            graph_query_limit: 10,
+            graph_query_degraded_count: 0,
+            rag_query_count: 5,
+            rag_query_limit: 12,
+            rag_candidate_count: 7,
+            rag_hydrated_count: 3,
+            rag_query_degraded_count: 0,
           },
         },
       }),
@@ -103,6 +118,24 @@ describe("InfinityContextClient", () => {
     expect(response.data.diagnostics.query_decomposition_status).toBe("available");
     expect(response.data.diagnostics.vector_status).toBe("ok");
     expect(response.data.diagnostics.graph_status).toBe("ok");
+    expect(response.data.diagnostics.vector_query_count).toBe(6);
+    expect(response.data.diagnostics.graph_query_count).toBe(4);
+    expect(response.data.diagnostics.rag_query_count).toBe(5);
+    expect(usedDerivedRetrieval(response.data.diagnostics)).toBe(true);
+    expect(healthyRetrievalComponents(response.data.diagnostics, ["vector", "graph", "rag"])).toBe(true);
+    expect(retrievalDiagnostics(response.data.diagnostics, "rag")).toEqual({
+      component: "rag",
+      status: "ok",
+      queryCount: 5,
+      queryLimit: 12,
+      candidateCount: 7,
+      hydratedCount: 3,
+      staleDropCount: undefined,
+      degradedCount: 0,
+      degradedReason: undefined,
+      degradedStep: undefined,
+      deadlineSeconds: undefined,
+    });
     expect(transport.requests[0]?.url.toString()).toBe("http://memory.test/v1/context");
     expect(transport.bodies[0]).toMatchObject({
       space_slug: "social-monitor:tenant:workspace",

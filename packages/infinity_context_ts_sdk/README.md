@@ -13,7 +13,13 @@ npm install @infinity-context/sdk
 ## Usage
 
 ```ts
-import { InfinityContextClient, ReadScope } from "@infinity-context/sdk";
+import {
+  InfinityContextClient,
+  ReadScope,
+  healthyRetrievalComponents,
+  retrievalDiagnostics,
+  usedDerivedRetrieval,
+} from "@infinity-context/sdk";
 
 const memory = new InfinityContextClient({
   baseUrl: process.env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788",
@@ -46,6 +52,14 @@ const context = await memory.context.buildContext({
 });
 
 console.log(context.data);
+
+if (usedDerivedRetrieval(context.data.diagnostics)) {
+  console.log(retrievalDiagnostics(context.data.diagnostics, "vector"));
+}
+
+if (!healthyRetrievalComponents(context.data.diagnostics, ["vector", "graph"])) {
+  throw new Error("Expected healthy Qdrant and Graphiti retrieval for full memory mode");
+}
 ```
 
 ## Recommended Social Monitor mapping

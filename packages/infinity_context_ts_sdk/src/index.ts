@@ -14,6 +14,13 @@ export type {
   MemoryDigestData,
   SearchMemoryData,
 } from "./context-types.js";
+export {
+  healthyRetrievalComponents,
+  retrievalDiagnostics,
+  usedDerivedRetrieval,
+  type ContextRetrievalComponent,
+  type ContextRetrievalDiagnostics,
+} from "./diagnostics.js";
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
 export { MemoryScope, ReadScope, ValueError } from "./payload.js";

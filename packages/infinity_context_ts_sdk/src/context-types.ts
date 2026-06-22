@@ -17,6 +17,8 @@ export interface ContextItemDiagnostics extends JsonObject {
   readonly ranking_reason?: string;
   readonly review_only?: boolean;
   readonly stale_reason?: string | null;
+  readonly score_signals?: JsonObject;
+  readonly provenance?: JsonObject;
 }
 
 export interface ContextItem extends JsonObject {
@@ -49,6 +51,7 @@ export interface ContextAnswerSupport extends JsonObject {
 export interface ContextDiagnostics extends JsonObject {
   readonly context_assembly_version?: string;
   readonly consistency_mode?: string;
+  readonly diagnostics_truncated?: boolean;
   readonly vector_status?: string;
   readonly graph_status?: string;
   readonly rag_status?: string;
@@ -56,17 +59,50 @@ export interface ContextDiagnostics extends JsonObject {
   readonly retrieval_sources_used?: readonly string[];
   readonly retrieval_sources_total?: number;
   readonly retrieval_sources_returned?: number;
+  readonly retrieval_sources_truncated?: boolean;
+  readonly source_refs_total?: number;
+  readonly source_refs_returned?: number;
+  readonly source_refs_truncated?: boolean;
+  readonly source_refs_with_char_range_count?: number;
+  readonly source_refs_with_page_count?: number;
+  readonly source_refs_with_bbox_count?: number;
+  readonly source_refs_with_time_range_count?: number;
   readonly items_considered?: number;
   readonly items_used?: number;
   readonly facts_considered?: number;
+  readonly facts_used?: number;
   readonly anchors_considered?: number;
   readonly keyword_chunks_considered?: number;
+  readonly hybrid_items_used?: number;
   readonly vector_candidate_count?: number;
   readonly vector_hydrated_count?: number;
+  readonly vector_query_count?: number;
+  readonly vector_embedding_vector_count?: number;
+  readonly vector_search_count?: number;
+  readonly vector_query_limit?: number;
+  readonly vector_query_degraded_count?: number;
+  readonly vector_degraded_reason?: string;
+  readonly vector_degraded_step?: string;
+  readonly vector_deadline_seconds?: number;
   readonly graph_candidate_count?: number;
   readonly graph_hydrated_count?: number;
+  readonly graph_query_count?: number;
+  readonly graph_query_limit?: number;
+  readonly graph_query_degraded_count?: number;
+  readonly graph_degraded_reason?: string;
+  readonly graph_degraded_step?: string;
+  readonly graph_deadline_seconds?: number;
+  readonly rag_candidate_count?: number;
+  readonly rag_hydrated_count?: number;
+  readonly rag_query_count?: number;
+  readonly rag_query_limit?: number;
+  readonly rag_query_degraded_count?: number;
+  readonly rag_degraded_reason?: string;
+  readonly rag_degraded_step?: string;
+  readonly rag_deadline_seconds?: number;
   readonly stale_vector_drop_count?: number;
   readonly stale_graph_drop_count?: number;
+  readonly stale_rag_drop_count?: number;
   readonly query_expansion_status?: string;
   readonly query_expansion_count?: number;
   readonly query_expansion_reasons?: readonly string[];
@@ -81,6 +117,28 @@ export interface ContextDiagnostics extends JsonObject {
   readonly temporal_query_before_event?: boolean;
   readonly temporal_query_excludes_stale?: boolean;
   readonly temporal_query_include_superseded_review?: boolean;
+  readonly temporal_query_intent_reasons?: readonly string[];
+  readonly temporal_replacements_applied?: number;
+  readonly linked_temporal_replacements_applied?: number;
+  readonly temporal_relations_skipped_by_validity?: number;
+  readonly superseded_facts_considered?: number;
+  readonly superseded_facts_used?: number;
+  readonly stale_facts_considered?: number;
+  readonly stale_facts_used?: number;
+  readonly context_requirement_coverage?: JsonObject;
+  readonly approved_context_links_considered?: number;
+  readonly approved_context_linked_facts_used?: number;
+  readonly stale_context_linked_fact_drop_count?: number;
+  readonly pending_conflict_suggestions_considered?: number;
+  readonly pending_duplicate_merge_suggestions_considered?: number;
+  readonly diversity_families_considered?: number;
+  readonly diversity_families_used?: number;
+  readonly diversity_items_used?: number;
+  readonly item_type_counts?: JsonObject;
+  readonly sensitive_item_text_redacted?: number;
+  readonly artifact_evidence_visual_region_query_drop_count?: number;
+  readonly artifact_evidence_document_location_query_drop_count?: number;
+  readonly artifact_evidence_extracted_text_query_drop_count?: number;
 }
 
 export interface ContextBundleData extends JsonObject {
