@@ -272,6 +272,7 @@ describe("InfinityContextClient", () => {
       jsonResponse({ data: { id: "doc_1", title: "SDK proof doc", status: "active" } }),
       jsonResponse({ data: { id: "doc_1", title: "SDK proof doc", status: "processed" } }),
       jsonResponse({ data: { id: "episode_1" } }),
+      jsonResponse({ data: contextLinkRecord("link_1") }),
       jsonResponse(contextResponse("sdk-proof", { vector_query_count: 4, graph_query_count: 3 })),
       jsonResponse(searchResponse({ vector_query_count: 4, graph_query_count: 3 })),
       jsonResponse(digestResponse("sdk-proof")),
@@ -296,6 +297,7 @@ describe("InfinityContextClient", () => {
       contextReturnedEvidence: true,
       searchReturnedEvidence: true,
       digestReturnedEvidence: true,
+      contextLinkCreated: true,
       derivedRetrievalUsed: true,
       vectorHealthy: true,
       graphHealthy: true,
@@ -317,6 +319,7 @@ describe("InfinityContextClient", () => {
       "POST /v1/documents",
       "POST /v1/documents/doc_1/process",
       "POST /v1/episodes",
+      "POST /v1/context-links",
       "POST /v1/context",
       "POST /v1/search",
       "POST /v1/digest",
@@ -328,6 +331,139 @@ describe("InfinityContextClient", () => {
         "source:full-memory-proof-transcript",
       ],
     }));
+  });
+
+  it("supports context link creation, suggestion review and batch validation", async () => {
+    const link = contextLinkRecord("link_1");
+    const suggestion = contextLinkSuggestionRecord("suggestion_1");
+    const transport = new RecordingTransport([
+      jsonResponse({ data: { candidates: [{ ...suggestion, label: "Fact", preview: "Target", tier: "high", reasons: ["semantic"] }], diagnostics: { candidates: 1 } } }),
+      jsonResponse({ data: { ...link, duplicate: false } }),
+      jsonResponse({ data: [link] }),
+      jsonResponse({ data: [suggestion] }),
+      jsonResponse({ data: { suggestion: { ...suggestion, status: "approved" }, link, duplicate_link: false } }),
+      jsonResponse({
+        data: {
+          applied: 1,
+          failed: 0,
+          stopped: false,
+          diagnostics: { reviewed: 1 },
+          results: [{ suggestion_id: "suggestion_1", action: "approve", status: "approved" }],
+        },
+      }),
+      jsonResponse({ data: { ...link, confidence: "high" } }),
+      jsonResponse({ data: { ...link, status: "deleted" } }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await client.contextLinks.suggestContextLinks({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      threadExternalRef: "review",
+      text: "Project Atlas screenshot evidence",
+      sourceType: "capture",
+      sourceId: "capture_1",
+      limit: 5,
+      persist: true,
+    });
+    await client.contextLinks.createContextLink({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      sourceType: "capture",
+      sourceId: "capture_1",
+      targetType: "fact",
+      targetId: "fact_1",
+      relationType: "supports",
+      confidence: "high",
+      reason: "manual review",
+      metadata: { reviewer: "sdk" },
+    });
+    await client.contextLinks.listContextLinks({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      sourceType: "capture",
+      sourceId: "capture_1",
+      statuses: "active,deleted",
+      limit: 20,
+    });
+    await client.contextLinks.listContextLinkSuggestions({
+      spaceSlug: "workspace",
+      memoryScopeExternalRef: "scope",
+      status: "pending",
+      limit: 20,
+    });
+    await client.contextLinks.approveContextLinkSuggestion("suggestion_1", {
+      reason: "reviewed",
+      targetType: "fact",
+      targetId: "fact_1",
+      relationType: "supports",
+      confidence: "high",
+      linkReason: "review selected exact target",
+    });
+    await client.contextLinks.reviewContextLinkSuggestionsBatch(
+      [{ suggestionId: "suggestion_1", action: "approve", reason: "batch reviewed" }],
+      {
+        continueOnError: true,
+        visibleFilter: {
+          spaceSlug: "workspace",
+          memoryScopeExternalRef: "scope",
+          status: "pending",
+          limit: 20,
+        },
+      },
+    );
+    await client.contextLinks.updateContextLink("link_1", { confidence: "high", reason: "promoted" });
+    await client.contextLinks.deleteContextLink("link_1");
+
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/link-suggestions",
+      "POST /v1/context-links",
+      "GET /v1/context-links",
+      "GET /v1/context-link-suggestions",
+      "POST /v1/context-link-suggestions/suggestion_1/review",
+      "POST /v1/context-link-suggestions/review-batch",
+      "PATCH /v1/context-links/link_1",
+      "DELETE /v1/context-links/link_1",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "workspace",
+      memory_scope_external_ref: "scope",
+      thread_external_ref: "review",
+      text: "Project Atlas screenshot evidence",
+      source_type: "capture",
+      source_id: "capture_1",
+      limit: 5,
+      persist: true,
+    });
+    expect(transport.requests[2]?.url.searchParams.get("status")).toBeNull();
+    expect(transport.requests[2]?.url.searchParams.get("statuses")).toBe("active,deleted");
+    expect(transport.bodies).toContainEqual(expect.objectContaining({
+      continue_on_error: true,
+      visible_filter: {
+        space_slug: "workspace",
+        memory_scope_external_ref: "scope",
+        status: "pending",
+        limit: 20,
+      },
+      items: [
+        {
+          suggestion_id: "suggestion_1",
+          action: "approve",
+          reason: "batch reviewed",
+        },
+      ],
+    }));
+    expect(() => client.contextLinks.reviewContextLinkSuggestionsBatch([])).toThrow(ValueError);
+    expect(() =>
+      client.contextLinks.reviewContextLinkSuggestionsBatch([
+        { suggestionId: "suggestion_1", action: "approve" },
+        { suggestionId: "suggestion_1", action: "reject" },
+      ]),
+    ).toThrow(ValueError);
   });
 });
 
@@ -437,5 +573,50 @@ function digestResponse(runId: string) {
       token_estimate: 10,
       diagnostics: { evidence_only: true },
     },
+  };
+}
+
+function contextLinkRecord(id: string) {
+  return {
+    id,
+    space_id: "space_1",
+    memory_scope_id: "scope_1",
+    source_type: "capture",
+    source_id: "capture_1",
+    target_type: "fact",
+    target_id: "fact_1",
+    relation_type: "supports",
+    confidence: "medium",
+    reason: "reviewed",
+    status: "active",
+    metadata: {},
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function contextLinkSuggestionRecord(id: string) {
+  return {
+    id,
+    space_id: "space_1",
+    memory_scope_id: "scope_1",
+    source_type: "capture",
+    source_id: "capture_1",
+    target_type: "fact",
+    target_id: "fact_1",
+    relation_type: "supports",
+    confidence: "medium",
+    reason: "semantic match",
+    score: 0.91,
+    status: "pending",
+    review_actionable: true,
+    available_review_actions: ["approve", "reject"],
+    review_state_reason: "pending_user_review",
+    metadata: {},
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+    reviewed_at: null,
+    review_reason: null,
+    review_audit: { events: [], event_count: 0, truncated: false },
   };
 }

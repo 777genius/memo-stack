@@ -30,6 +30,7 @@ export interface FullMemoryProofReport {
     readonly contextReturnedEvidence: boolean;
     readonly searchReturnedEvidence: boolean;
     readonly digestReturnedEvidence: boolean;
+    readonly contextLinkCreated: boolean;
     readonly derivedRetrievalUsed: boolean;
     readonly vectorHealthy: boolean;
     readonly graphHealthy: boolean;
@@ -40,6 +41,7 @@ export interface FullMemoryProofReport {
     readonly factIds: readonly string[];
     readonly documentId: string;
     readonly episodeId: string;
+    readonly contextLinkId: string;
   };
   readonly capabilities: {
     readonly enabledAdapters: readonly string[];
@@ -143,6 +145,18 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     metadata: { run_id: runId },
     idempotencyKey: `${runId}:episode`,
   });
+  const contextLink = await options.client.contextLinks.createContextLink({
+    spaceSlug,
+    memoryScopeExternalRef: "source:full-memory-proof-transcript",
+    sourceType: "document",
+    sourceId: document.data.id,
+    targetType: "fact",
+    targetId: facts[0]?.data.id ?? "unknown",
+    relationType: "supports",
+    confidence: "high",
+    reason: `${runId}: SDK proof links document evidence to durable architecture fact.`,
+    metadata: { run_id: runId, proof: "full-memory" },
+  });
 
   const query = `${runId} Qdrant Graphiti OpenAI embeddings concise summary freshness degraded retrieval`;
   const context = await pollContext(options, () =>
@@ -183,6 +197,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
     contextReturnedEvidence: context.data.items.length > 0 || context.data.rendered_text.includes(runId),
     searchReturnedEvidence: search.data.items.length > 0,
     digestReturnedEvidence: digest.data.rendered_markdown.includes(runId) || digest.data.sections.length > 0,
+    contextLinkCreated: contextLink.data.id.length > 0,
     derivedRetrievalUsed: usedDerivedRetrieval(contextDiagnostics),
     vectorHealthy: healthyRetrievalComponents(contextDiagnostics, ["vector"]),
     graphHealthy: healthyRetrievalComponents(contextDiagnostics, ["graph"]),
@@ -201,6 +216,7 @@ export async function runFullMemoryProof(options: FullMemoryProofOptions): Promi
       factIds: facts.map((fact) => fact.data.id),
       documentId: document.data.id,
       episodeId: stringField(episode.data, "id") ?? stringField(episode.data, "episode_id") ?? "unknown",
+      contextLinkId: contextLink.data.id,
     },
     capabilities: {
       enabledAdapters: capabilities.enabled_adapters ?? [],

@@ -62,6 +62,30 @@ if (!healthyRetrievalComponents(context.data.diagnostics, ["vector", "graph"])) 
 }
 ```
 
+## Context links
+
+Use context links when source evidence, documents, assets or facts should be explicitly connected for graph-aware retrieval and review workflows.
+
+```ts
+const suggested = await memory.contextLinks.suggestContextLinks({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "topic:ai-agents:feedback",
+  text: "User feedback says Reddit source freshness matters for the AI agents digest.",
+  sourceType: "summary_feedback",
+  sourceId: "feedback:1",
+  persist: true,
+});
+
+const suggestionId = suggested.data.candidates[0]?.suggestion_id;
+if (suggestionId) {
+  await memory.contextLinks.approveContextLinkSuggestion(suggestionId, {
+    reason: "reviewed source relevance",
+    relationType: "supports",
+    confidence: "high",
+  });
+}
+```
+
 ## Recommended Social Monitor mapping
 
 - `spaceSlug`: `social-monitor:{tenantId}:{workspaceId}`

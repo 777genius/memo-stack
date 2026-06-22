@@ -24,12 +24,24 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export type {
+  ContextLinkCandidate,
+  ContextLinkVisibleFilterInput,
+  CreateContextLinkData,
+  ReviewContextLinkSuggestionBatchItemInput,
+  ReviewContextLinkSuggestionData,
+  ReviewContextLinkSuggestionInput,
+  ReviewContextLinkSuggestionsBatchData,
+  SuggestContextLinksData,
+} from "./resources/context-links.js";
 export { MemoryScope, ReadScope, ValueError } from "./payload.js";
 export { DEFAULT_RETRY_POLICY, shouldRetry, type RetryPolicy } from "./retry.js";
 export { FetchTransport, type HttpRequest, type HttpResponse, type HttpTransport } from "./transport.js";
 export type {
   ApiEnvelope,
   AssetRecord,
+  ContextLinkRecord,
+  ContextLinkSuggestionRecord,
   DocumentRecord,
   FactRecord,
   InfinityContextCapabilities,

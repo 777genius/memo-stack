@@ -2,6 +2,7 @@ import { HttpClient, type InfinityContextClientOptions } from "./client.js";
 import { AnchorsClient } from "./resources/anchors.js";
 import { AssetsClient } from "./resources/assets.js";
 import { ContextClient } from "./resources/context.js";
+import { ContextLinksClient } from "./resources/context-links.js";
 import { DiagnosticsClient } from "./resources/diagnostics.js";
 import { DocumentsClient } from "./resources/documents.js";
 import { ExportsClient } from "./resources/exports.js";
@@ -17,6 +18,7 @@ export class InfinityContextClient {
   readonly facts: FactsClient;
   readonly documents: DocumentsClient;
   readonly context: ContextClient;
+  readonly contextLinks: ContextLinksClient;
   readonly suggestions: SuggestionsClient;
   readonly assets: AssetsClient;
   readonly anchors: AnchorsClient;
@@ -31,6 +33,7 @@ export class InfinityContextClient {
     this.facts = new FactsClient(http);
     this.documents = new DocumentsClient(http);
     this.context = new ContextClient(http);
+    this.contextLinks = new ContextLinksClient(http);
     this.suggestions = new SuggestionsClient(http);
     this.assets = new AssetsClient(http);
     this.anchors = new AnchorsClient(http);

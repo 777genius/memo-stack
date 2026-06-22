@@ -85,6 +85,47 @@ export interface SuggestionRecord extends JsonObject {
   readonly candidate_text: string;
 }
 
+export interface ContextLinkRecord extends JsonObject {
+  readonly id: string;
+  readonly space_id: string;
+  readonly memory_scope_id: string;
+  readonly source_type: string;
+  readonly source_id: string;
+  readonly target_type: string;
+  readonly target_id: string;
+  readonly relation_type: string;
+  readonly confidence: string;
+  readonly reason: string;
+  readonly status: string;
+  readonly metadata: JsonObject;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export interface ContextLinkSuggestionRecord extends JsonObject {
+  readonly id: string;
+  readonly space_id: string;
+  readonly memory_scope_id: string;
+  readonly source_type: string;
+  readonly source_id: string;
+  readonly target_type: string;
+  readonly target_id: string;
+  readonly relation_type: string;
+  readonly confidence: string;
+  readonly reason: string;
+  readonly score: number;
+  readonly status: string;
+  readonly review_actionable: boolean;
+  readonly available_review_actions: readonly string[];
+  readonly review_state_reason: string;
+  readonly metadata: JsonObject;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly reviewed_at?: string | null;
+  readonly review_reason?: string | null;
+  readonly review_audit?: JsonObject;
+}
+
 export interface AnchorRecord extends JsonObject {
   readonly id: string;
   readonly kind: string;
