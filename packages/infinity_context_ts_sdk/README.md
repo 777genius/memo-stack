@@ -38,6 +38,7 @@ import {
   assertFullMemoryReady,
   assertMemoryBriefQuality,
   createMemoryQualityPreset,
+  createMemoryScopePlan,
   createMemorySummaryLoopPlan,
   healthyRetrievalComponents,
   MEMORY_QUALITY_PRESETS,
@@ -105,21 +106,19 @@ if (!healthyRetrievalComponents(context.data.diagnostics, ["vector", "graph"])) 
 Use `client.workflows` for product integrations that should not hand-build low-level capture enums, source refs and idempotency keys.
 
 ```ts
-await memory.workflows.ensureMemoryTopology({
+const scopePlan = createMemoryScopePlan({
   spaceSlug: "social-monitor:tenant_1:workspace_1",
   spaceName: "Social Monitor workspace 1",
-  memoryScopes: [
-    { externalRef: "workspace-global", name: "Workspace global memory" },
-    { externalRef: "user:user_1", name: "User 1 preferences" },
-    { externalRef: "topic:ai-agents:preferences", name: "AI agents preferences" },
-    { externalRef: "source:reddit:ai-agents", name: "Reddit AI agents source memory" },
-  ],
   users: [{
     externalRef: "user:user_1",
     displayName: "User 1",
     role: "owner",
   }],
+  topics: [{ slug: "ai-agents:preferences", name: "AI agents preferences" }],
+  sources: [{ sourceType: "reddit", sourceId: "ai-agents" }],
 });
+
+await memory.workflows.ensureMemoryTopology(scopePlan.topology);
 
 await memory.workflows.recordFeedback({
   spaceSlug: "social-monitor:tenant_1:workspace_1",
@@ -137,10 +136,7 @@ await memory.workflows.recordFeedback({
 const brief = await memory.workflows.buildMemoryBrief({
   query: "What should today's AI digest prioritize?",
   topic: "AI digest",
-  readScope: ReadScope.external({
-    spaceSlug: "social-monitor:tenant_1:workspace_1",
-    memoryScopeExternalRefs: ["workspace-global", "user:user_1", "topic:ai-agents:preferences"],
-  }),
+  readScope: ReadScope.external(scopePlan.readScope),
   tokenBudget: 1800,
   maxFacts: 20,
   maxChunks: 30,

@@ -12,6 +12,7 @@ import {
   assertMemorySnapshotTransferPolicy,
   assertMemorySummaryLoopPolicy,
   createMemoryQualityPreset,
+  createMemoryScopePlan,
   createMemorySummaryLoopPlan,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
@@ -594,6 +595,99 @@ describe("InfinityContextClient", () => {
       requireQuality: true,
       minContextItems: 1,
     });
+  });
+
+  it("plans durable workspace user topic and source memory scopes", () => {
+    const scopePlan = createMemoryScopePlan({
+      spaceSlug: "social-monitor:tenant_1:workspace_1",
+      spaceName: "Tenant 1 workspace 1",
+      users: [{
+        externalRef: "user_1",
+        displayName: "User 1",
+        email: "user1@example.com",
+        role: "owner",
+      }],
+      topics: [{
+        slug: "ai-agents",
+        name: "AI agents memory",
+      }],
+      sources: [{
+        sourceType: "reddit",
+        sourceId: "r/LocalLLaMA",
+        name: "Reddit LocalLLaMA source memory",
+        includeInReadScope: false,
+      }, {
+        externalRef: "source:github:openai-agents",
+      }],
+      threadExternalRef: "digest:daily",
+    });
+
+    expect(scopePlan.memoryScopes).toEqual([
+      { kind: "workspace", externalRef: "workspace-global", name: "Workspace global memory" },
+      { kind: "user", externalRef: "user:user_1", name: "User 1 memory" },
+      { kind: "topic", externalRef: "topic:ai-agents", name: "AI agents memory" },
+      { kind: "source", externalRef: "source:reddit:r/LocalLLaMA", name: "Reddit LocalLLaMA source memory" },
+      { kind: "source", externalRef: "source:github:openai-agents", name: "source:github:openai-agents memory" },
+    ]);
+    expect(scopePlan.users).toEqual([{
+      externalRef: "user:user_1",
+      displayName: "User 1",
+      email: "user1@example.com",
+      role: "owner",
+    }]);
+    expect(scopePlan.readScope).toEqual({
+      spaceSlug: "social-monitor:tenant_1:workspace_1",
+      memoryScopeExternalRefs: [
+        "workspace-global",
+        "user:user_1",
+        "topic:ai-agents",
+        "source:github:openai-agents",
+      ],
+      threadExternalRef: "digest:daily",
+    });
+    expect(scopePlan.topology).toMatchObject({
+      spaceSlug: "social-monitor:tenant_1:workspace_1",
+      spaceName: "Tenant 1 workspace 1",
+      createMemberships: true,
+      memoryScopes: scopePlan.memoryScopes,
+      users: scopePlan.users,
+    });
+    expect(Object.isFrozen(scopePlan.memoryScopes)).toBe(true);
+    expect(Object.isFrozen(scopePlan.readScope.memoryScopeExternalRefs)).toBe(true);
+
+    const loopPlan = createMemorySummaryLoopPlan({
+      topology: scopePlan.topology,
+      brief: {
+        query: "What matters in AI agents today?",
+        ...scopePlan.readScope,
+      },
+    }, {
+      preset: "durable",
+    });
+
+    expect(loopPlan.input.topology).toBe(scopePlan.topology);
+    expect(loopPlan.input.brief).toMatchObject({
+      query: "What matters in AI agents today?",
+      spaceSlug: "social-monitor:tenant_1:workspace_1",
+      memoryScopeExternalRefs: [
+        "workspace-global",
+        "user:user_1",
+        "topic:ai-agents",
+        "source:github:openai-agents",
+      ],
+      includeSearch: true,
+      includeDigest: true,
+    });
+  });
+
+  it("validates memory scope plan identifiers", () => {
+    expect(() => createMemoryScopePlan({
+      spaceSlug: "",
+    })).toThrow(ValueError);
+    expect(() => createMemoryScopePlan({
+      spaceSlug: "workspace",
+      sources: [{ sourceType: "github" }],
+    })).toThrow("source scope requires sourceId or externalRef");
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {
