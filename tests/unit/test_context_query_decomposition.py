@@ -52,6 +52,35 @@ def test_query_decomposition_expands_relative_time_queries() -> None:
     ]
 
 
+def test_query_decomposition_adds_after_event_sequence_query() -> None:
+    plan = build_query_decomposition_plan("What did Alex decide after the Atlas call?")
+
+    sequence = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_event_sequence"
+    )
+
+    assert "alex" in sequence.query.casefold()
+    assert "atlas" in sequence.query.casefold()
+    assert "after following later next timeline" in sequence.query
+    assert "meeting call conversation event" in sequence.query
+
+
+def test_query_decomposition_adds_before_event_sequence_query() -> None:
+    plan = build_query_decomposition_plan("What was Alex thinking before the review?")
+
+    sequence = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_event_sequence"
+    )
+
+    assert sequence.query.casefold().startswith("alex ")
+    assert "before earlier prior previous timeline" in sequence.query
+    assert "meeting call conversation event" in sequence.query
+
+
 def test_query_decomposition_is_bounded_and_deduplicated() -> None:
     plan = build_query_decomposition_plan(
         "What changed after the call with Alex about Atlas and what changed after "
@@ -99,6 +128,21 @@ def test_best_query_relevance_uses_decomposed_artifact_query() -> None:
 
     assert reason == "decomposition_artifact_evidence"
     assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_event_sequence_decomposition() -> None:
+    plan = build_query_expansion_plan("What did Alex decide after the Atlas call?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "After the Atlas call, Alex shared the next decision and follow up "
+            "outcome in the meeting notes."
+        ),
+    )
+
+    assert reason == "decomposition_event_sequence"
+    assert relevance.distinctive_term_hits >= 5
 
 
 def test_query_decomposition_adds_inference_support_query() -> None:

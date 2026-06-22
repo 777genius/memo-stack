@@ -318,6 +318,15 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_temporal_change",
         )
+    if temporal_intent.after_event or temporal_intent.before_event:
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                _event_sequence_tail(temporal_intent),
+            ),
+            reason="decomposition_event_sequence",
+        )
     if temporal_intent.relative_time_hints:
         _append_candidate(
             candidates,
@@ -553,6 +562,23 @@ def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
             "concerned helpful"
         )
     return _normalize_query(" ".join(tails))
+
+
+def _event_sequence_tail(intent: TemporalQueryIntent) -> str:
+    if intent.after_event and not intent.before_event:
+        return (
+            "after following later next timeline outcome follow up decision "
+            "result happened then response meeting call conversation event"
+        )
+    if intent.before_event and not intent.after_event:
+        return (
+            "before earlier prior previous timeline context lead up reason "
+            "setup happened meeting call conversation event"
+        )
+    return (
+        "before after timeline sequence earlier later prior next meeting call "
+        "conversation event outcome context"
+    )
 
 
 def _requests_evidence_reason(query: str) -> bool:

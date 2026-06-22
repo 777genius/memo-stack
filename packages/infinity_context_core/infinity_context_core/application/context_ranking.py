@@ -93,6 +93,7 @@ _KEYWORD_EXPANSION_REASON_BOOSTS = {
     "education_career_field_bridge": 0.022,
     "decomposition_attribute_aggregation": 0.018,
     "decomposition_current_preference_or_goal": 0.018,
+    "decomposition_event_sequence": 0.018,
     "decomposition_identity_attribute": 0.02,
     "decomposition_relationship_status": 0.02,
     "event_participation_bridge": 0.018,
