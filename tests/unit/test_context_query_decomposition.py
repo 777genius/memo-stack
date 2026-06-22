@@ -202,6 +202,64 @@ def test_query_decomposition_adds_russian_evidence_reason_query() -> None:
     assert "reason evidence because observed" in reason.query
 
 
+def test_query_decomposition_adds_identity_attribute_query() -> None:
+    plan = build_query_decomposition_plan("What is Caroline's identity?")
+
+    identity = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_identity_attribute"
+    )
+
+    assert identity.query.casefold().startswith("caroline ")
+    assert "identity gender pronouns transgender" in identity.query
+    assert "true self accepted belongs" in identity.query
+
+
+def test_query_decomposition_adds_relationship_status_query() -> None:
+    plan = build_query_decomposition_plan("What is Caroline's relationship status?")
+
+    relationship = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_relationship_status"
+    )
+
+    assert relationship.query.casefold().startswith("caroline ")
+    assert "relationship status single parent" in relationship.query
+    assert "dating breakup friends family mentors" in relationship.query
+
+
+def test_best_query_relevance_uses_identity_attribute_decomposition() -> None:
+    plan = build_query_expansion_plan("What is Caroline's gender identity?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline shared her pronouns and said her true self felt accepted "
+            "in the community support group."
+        ),
+    )
+
+    assert reason == "decomposition_identity_attribute"
+    assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_relationship_status_decomposition() -> None:
+    plan = build_query_expansion_plan("What is Caroline's dating status?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline mentioned dating after a breakup and leaning on friends, "
+            "family, and mentors as her support system."
+        ),
+    )
+
+    assert reason == "decomposition_relationship_status"
+    assert relevance.distinctive_term_hits >= 5
+
+
 def test_query_decomposition_adds_comparison_preference_query() -> None:
     plan = build_query_decomposition_plan(
         "Would Melanie be more interested in a national park or a theme park?"

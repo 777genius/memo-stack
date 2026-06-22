@@ -62,7 +62,8 @@ _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
         (
             "relationship status single parent breakup partner married husband wife "
             "spouse friends family mentors rocks support system known friends home "
-            "country tough breakup relationship love"
+            "country tough breakup relationship love kids children challenge make "
+            "family thrilled"
         ),
         "relationship_status_bridge",
     ),

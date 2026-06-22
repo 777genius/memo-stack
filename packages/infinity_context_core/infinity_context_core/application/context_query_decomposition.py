@@ -185,6 +185,28 @@ _ATTRIBUTE_AGGREGATION_TERMS = frozenset(
         "traits",
     }
 )
+_IDENTITY_ATTRIBUTE_TERMS = frozenset(
+    {
+        "gender",
+        "identity",
+        "pronouns",
+        "trans",
+        "transgender",
+    }
+)
+_RELATIONSHIP_STATUS_TERMS = frozenset(
+    {
+        "breakup",
+        "dating",
+        "divorced",
+        "married",
+        "partner",
+        "relationship",
+        "single",
+        "spouse",
+        "status",
+    }
+)
 _CURRENT_GOAL_TERMS = frozenset(
     {
         "adopt",
@@ -267,6 +289,7 @@ def build_query_decomposition_plan(
     anchor_intent = anchor_intent or build_query_anchor_intent(query)
     temporal_intent = temporal_intent or build_temporal_query_intent(query)
     variants = _query_variant_set(query)
+    raw_tokens = frozenset(_raw_query_tokens(query))
     identities = _identity_terms(query, anchor_intent)
     salient_terms = _salient_terms(query, identities=identities)
     candidates: list[QueryDecomposition] = []
@@ -339,6 +362,31 @@ def build_query_decomposition_plan(
                 ),
             ),
             reason="decomposition_evidence_reason",
+        )
+    if raw_tokens.intersection(_IDENTITY_ATTRIBUTE_TERMS):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "identity gender pronouns transgender trans woman transition "
+                    "true self accepted belongs community support group pride"
+                ),
+            ),
+            reason="decomposition_identity_attribute",
+        )
+    if _requests_relationship_status(variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "relationship status single parent partner spouse married "
+                    "dating breakup friends family mentors support system kids "
+                    "children challenge make family"
+                ),
+            ),
+            reason="decomposition_relationship_status",
         )
     if variants.intersection(_INFERENCE_TERMS):
         _append_candidate(
@@ -509,6 +557,15 @@ def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
 
 def _requests_evidence_reason(query: str) -> bool:
     return bool(_EVIDENCE_REASON_RE.search(query))
+
+
+def _requests_relationship_status(variants: frozenset[str]) -> bool:
+    if {"relationship", "status"}.issubset(variants):
+        return True
+    return bool(
+        variants.intersection({"single", "married", "dating", "partner", "spouse"})
+        and variants.intersection(_RELATIONSHIP_STATUS_TERMS)
+    )
 
 
 def _with_missing_identities(clause: str, identities: tuple[str, ...]) -> str:
