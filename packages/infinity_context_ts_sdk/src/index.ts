@@ -26,7 +26,17 @@ export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofRe
 export { InfinityContextClient } from "./infinity-context-client.js";
 export type { AnchorBackfillData, AnchorBackfillSource, AnchorMergeCandidate } from "./resources/anchors.js";
 export type { AssetExtractionListInput } from "./resources/assets.js";
-export type { ConsolidateCaptureData, CreateCaptureData } from "./resources/captures.js";
+export type {
+  CaptureActorRole,
+  CaptureDataClassification,
+  CaptureSensitivity,
+  CaptureSourceAuthority,
+  CaptureSourceKind,
+  CaptureTrustLevel,
+  ConsolidateCaptureData,
+  CreateCaptureData,
+  CreateCaptureInput,
+} from "./resources/captures.js";
 export type {
   ContextLinkCandidate,
   ContextLinkVisibleFilterInput,

@@ -17,33 +17,64 @@ export interface ConsolidateCaptureData extends CaptureRecord {
   readonly auto_applied_fact_ids: readonly string[];
 }
 
+export type CaptureSourceKind =
+  | "hook"
+  | "mcp_tool"
+  | "transcript_tail"
+  | "manual"
+  | "tool_result"
+  | "document"
+  | "import"
+  | "compaction"
+  | "subagent";
+
+export type CaptureActorRole = "user" | "assistant" | "tool" | "system" | "subagent" | "unknown";
+
+export type CaptureTrustLevel = "low" | "medium" | "high";
+
+export type CaptureSourceAuthority =
+  | "explicit_user_command"
+  | "tool_verified"
+  | "repo_file"
+  | "user_statement"
+  | "document"
+  | "transcript_inference"
+  | "assistant_inference"
+  | "unknown";
+
+export type CaptureSensitivity = "low" | "medium" | "high" | "secret";
+
+export type CaptureDataClassification = "public" | "internal" | "restricted" | "unknown";
+
+export interface CreateCaptureInput extends SingleScopeInput {
+  readonly sourceAgent: string;
+  readonly eventType: string;
+  readonly text: string;
+  readonly sourceKind?: CaptureSourceKind;
+  readonly actorRole?: CaptureActorRole;
+  readonly sourceEventId?: string;
+  readonly sourceActorExternalRef?: string;
+  readonly clientInstanceId?: string;
+  readonly agentSessionExternalRef?: string;
+  readonly turnExternalRef?: string;
+  readonly parentCaptureId?: string;
+  readonly sequenceIndex?: number;
+  readonly evidenceRefs?: readonly SourceRef[];
+  readonly trustLevel?: CaptureTrustLevel;
+  readonly sourceAuthority?: CaptureSourceAuthority;
+  readonly sensitivity?: CaptureSensitivity;
+  readonly dataClassification?: CaptureDataClassification;
+  readonly occurredAt?: string;
+  readonly metadata?: JsonObject;
+  readonly traceId?: string;
+  readonly idempotencyKey?: string;
+  readonly consolidate?: boolean;
+}
+
 export class CapturesClient {
   constructor(private readonly http: RequestExecutor) {}
 
-  createCapture(input: SingleScopeInput & {
-    readonly sourceAgent: string;
-    readonly eventType: string;
-    readonly text: string;
-    readonly sourceKind?: string;
-    readonly actorRole?: string;
-    readonly sourceEventId?: string;
-    readonly sourceActorExternalRef?: string;
-    readonly clientInstanceId?: string;
-    readonly agentSessionExternalRef?: string;
-    readonly turnExternalRef?: string;
-    readonly parentCaptureId?: string;
-    readonly sequenceIndex?: number;
-    readonly evidenceRefs?: readonly SourceRef[];
-    readonly trustLevel?: string;
-    readonly sourceAuthority?: string;
-    readonly sensitivity?: string;
-    readonly dataClassification?: string;
-    readonly occurredAt?: string;
-    readonly metadata?: JsonObject;
-    readonly traceId?: string;
-    readonly idempotencyKey?: string;
-    readonly consolidate?: boolean;
-  }): Promise<ApiEnvelope<CreateCaptureData>> {
+  createCapture(input: CreateCaptureInput): Promise<ApiEnvelope<CreateCaptureData>> {
     return this.http.request<ApiEnvelope<CreateCaptureData>>({
       method: "POST",
       path: "/v1/captures",
