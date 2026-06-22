@@ -86,3 +86,21 @@ if (!capabilities.enabled_adapters?.includes("qdrant")) {
 ```
 
 For beta-grade proof, run a loop that writes feedback, builds context, ingests documents or episodes, verifies vector/graph diagnostics, then builds a digest from the same scopes.
+
+## Full memory proof script
+
+Run the SDK proof against a live Infinity Context service:
+
+```bash
+INFINITY_CONTEXT_URL=http://127.0.0.1:7788 \
+INFINITY_CONTEXT_TOKEN=... \
+npm run proof:full-memory
+```
+
+Useful optional env:
+
+- `INFINITY_CONTEXT_PROOF_RUN_ID`: stable run id for repeatable idempotency keys.
+- `INFINITY_CONTEXT_PROOF_OUTPUT`: write the JSON evidence report to a file.
+- `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
+
+The report fails when full mode is required and Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval.

@@ -22,6 +22,7 @@ export {
   type ContextRetrievalDiagnostics,
 } from "./diagnostics.js";
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
+export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
 export { MemoryScope, ReadScope, ValueError } from "./payload.js";
 export { DEFAULT_RETRY_POLICY, shouldRetry, type RetryPolicy } from "./retry.js";

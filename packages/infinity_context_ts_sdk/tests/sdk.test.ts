@@ -7,6 +7,7 @@ import {
   ValueError,
   healthyRetrievalComponents,
   retrievalDiagnostics,
+  runFullMemoryProof,
   usedDerivedRetrieval,
   type HttpRequest,
   type HttpResponse,
@@ -250,6 +251,84 @@ describe("InfinityContextClient", () => {
     } as unknown as Parameters<typeof MemoryScope.canonical>[0];
     expect(() => MemoryScope.canonical(mixedInput).toPayload()).toThrow(ValueError);
   });
+
+  it("runs the full memory proof loop through public SDK clients", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({
+        enabled_adapters: ["qdrant", "graphiti"],
+        supports_qdrant: true,
+        supports_graphiti: true,
+      }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: spaceRecord("space_1", "sdk-full-memory-proof:sdk-proof") }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: scopeRecord("scope_workspace", "workspace-global") }),
+      jsonResponse({ data: scopeRecord("scope_topic", "topic:full-memory-proof:feedback") }),
+      jsonResponse({ data: scopeRecord("scope_source", "source:full-memory-proof-transcript") }),
+      jsonResponse({ data: factRecord("fact_architecture") }),
+      jsonResponse({ data: factRecord("fact_feedback") }),
+      jsonResponse({ data: { id: "doc_1", title: "SDK proof doc", status: "active" } }),
+      jsonResponse({ data: { id: "doc_1", title: "SDK proof doc", status: "processed" } }),
+      jsonResponse({ data: { id: "episode_1" } }),
+      jsonResponse(contextResponse("sdk-proof", { vector_query_count: 4, graph_query_count: 3 })),
+      jsonResponse(searchResponse({ vector_query_count: 4, graph_query_count: 3 })),
+      jsonResponse(digestResponse("sdk-proof")),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const report = await runFullMemoryProof({
+      client,
+      runId: "sdk-proof",
+      sleep: async () => undefined,
+      pollAttempts: 1,
+      now: () => new Date("2026-06-06T00:00:00.000Z"),
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.checks).toEqual({
+      capabilitiesFullMemory: true,
+      contextReturnedEvidence: true,
+      searchReturnedEvidence: true,
+      digestReturnedEvidence: true,
+      derivedRetrievalUsed: true,
+      vectorHealthy: true,
+      graphHealthy: true,
+    });
+    expect(report.retrieval.vector.queryCount).toBe(4);
+    expect(report.retrieval.graph.queryCount).toBe(3);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /v1/capabilities",
+      "GET /v1/spaces",
+      "POST /v1/spaces",
+      "GET /v1/memory-scopes",
+      "GET /v1/memory-scopes",
+      "GET /v1/memory-scopes",
+      "POST /v1/memory-scopes",
+      "POST /v1/memory-scopes",
+      "POST /v1/memory-scopes",
+      "POST /v1/facts",
+      "POST /v1/facts",
+      "POST /v1/documents",
+      "POST /v1/documents/doc_1/process",
+      "POST /v1/episodes",
+      "POST /v1/context",
+      "POST /v1/search",
+      "POST /v1/digest",
+    ]);
+    expect(transport.bodies).toContainEqual(expect.objectContaining({
+      memory_scope_external_refs: [
+        "workspace-global",
+        "topic:full-memory-proof:feedback",
+        "source:full-memory-proof-transcript",
+      ],
+    }));
+  });
 });
 
 function jsonResponse(body: unknown, status = 200): HttpResponse {
@@ -257,5 +336,106 @@ function jsonResponse(body: unknown, status = 200): HttpResponse {
     status,
     headers: new Headers(),
     body: JSON.stringify(body),
+  };
+}
+
+function spaceRecord(id: string, slug: string) {
+  return {
+    id,
+    slug,
+    name: "SDK proof",
+    status: "active",
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function scopeRecord(id: string, externalRef: string) {
+  return {
+    id,
+    space_id: "space_1",
+    external_ref: externalRef,
+    name: externalRef,
+    status: "active",
+    created_at: "2026-06-06T00:00:00.000Z",
+    updated_at: "2026-06-06T00:00:00.000Z",
+  };
+}
+
+function factRecord(id: string) {
+  return {
+    id,
+    text: `${id} text`,
+    kind: "note",
+    status: "active",
+    version: 1,
+  };
+}
+
+function contextResponse(runId: string, diagnostics: Record<string, unknown>) {
+  return {
+    data: {
+      bundle_id: "bundle_1",
+      rendered_text: `${runId}: Qdrant and Graphiti memory evidence.`,
+      items: [
+        {
+          item_id: "item_1",
+          item_type: "fact",
+          text: `${runId}: Qdrant owns vector recall.`,
+          score: 0.9,
+          source_refs: [{ source_type: "sdk-full-memory-proof", source_id: "fact" }],
+        },
+      ],
+      top_evidence: [],
+      answer_support: {
+        status: "supported",
+        items_returned: 1,
+        coverage: {},
+        policy: {},
+        warnings: [],
+      },
+      diagnostics: {
+        vector_status: "ok",
+        graph_status: "ok",
+        rag_status: "ok",
+        ...diagnostics,
+      },
+    },
+  };
+}
+
+function searchResponse(diagnostics: Record<string, unknown>) {
+  return {
+    data: {
+      items: [
+        {
+          item_id: "item_1",
+          item_type: "fact",
+          text: "Qdrant owns vector recall.",
+          score: 0.9,
+          source_refs: [{ source_type: "sdk-full-memory-proof", source_id: "fact" }],
+        },
+      ],
+      top_evidence: [],
+      diagnostics: {
+        vector_status: "ok",
+        graph_status: "ok",
+        ...diagnostics,
+      },
+    },
+  };
+}
+
+function digestResponse(runId: string) {
+  return {
+    data: {
+      digest_id: "digest_1",
+      topic: "SDK proof",
+      rendered_markdown: `${runId}: concise digest`,
+      sections: [],
+      source_refs: [],
+      token_estimate: 10,
+      diagnostics: { evidence_only: true },
+    },
   };
 }
