@@ -110,6 +110,9 @@ export {
 export {
   createMemoryScopePlan,
 } from "./memory-scope-plan.js";
+export {
+  createMemorySourceEvidencePlan,
+} from "./memory-source-evidence-plan.js";
 export type {
   MemoryInspectionCounts,
   MemoryInspectionPolicy,
@@ -163,6 +166,12 @@ export type {
   MemoryScopePlanTopic,
   MemoryScopePlanUser,
 } from "./memory-scope-plan.js";
+export type {
+  CreateMemorySourceEvidencePlanInput,
+  MemorySourceEvidenceFinding,
+  MemorySourceEvidencePlan,
+  MemorySourceEvidencePlanSummary,
+} from "./memory-source-evidence-plan.js";
 export type {
   MemorySummaryLoopGateReport,
   MemorySummaryLoopGateStatus,

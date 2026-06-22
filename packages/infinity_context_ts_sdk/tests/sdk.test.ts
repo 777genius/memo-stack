@@ -13,6 +13,7 @@ import {
   assertMemorySummaryLoopPolicy,
   createMemoryQualityPreset,
   createMemoryScopePlan,
+  createMemorySourceEvidencePlan,
   createMemorySummaryLoopPlan,
   evaluateMemoryBriefQuality,
   evaluateMemoryInspectionPolicy,
@@ -688,6 +689,114 @@ describe("InfinityContextClient", () => {
       spaceSlug: "workspace",
       sources: [{ sourceType: "github" }],
     })).toThrow("source scope requires sourceId or externalRef");
+  });
+
+  it("plans provider source evidence batches with stable memory defaults", () => {
+    const plan = createMemorySourceEvidencePlan({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      threadExternalRef: "scan:2026-06-22",
+      sourceAgent: "social-monitor",
+      sourceType: "reddit",
+      idempotencyKeyPrefix: "scan",
+      headers: { "x-scan-id": "scan_1" },
+      metadata: { scan: "daily" },
+      sourceRefs: [{ source_type: "scan", source_id: "scan_1" }],
+      concurrency: 2,
+      continueOnError: true,
+      document: { classification: "public" },
+      linkSuggestions: { persist: true, limit: 5 },
+      findings: [
+        {
+          sourceId: "reddit:t3_abc",
+          title: "Reddit discussion on agent memory",
+          text: "Operators want Reddit freshness and citations in summaries.",
+          occurredAt: "2026-06-22T10:00:00.000Z",
+          url: "https://reddit.com/r/LocalLLaMA/comments/abc",
+          metadata: { subreddit: "LocalLLaMA" },
+          headers: { "x-item-id": "reddit:t3_abc" },
+          sourceRefs: [{ source_type: "reddit", source_id: "reddit:t3_abc" }],
+        },
+        {
+          sourceType: "github",
+          sourceId: "github:issue_1",
+          title: "GitHub issue about memory SDK",
+          memoryScopeExternalRef: "source:github:memory-sdk",
+          idempotencyKey: "github:issue_1:custom",
+          fact: {
+            memoryScopeExternalRef: "topic:ai-agents",
+            tags: ["github", "sdk"],
+          },
+        },
+      ],
+    });
+
+    expect(plan.summary).toEqual({
+      total: 2,
+      sourceTypes: ["reddit", "github"],
+      idempotencyKeys: ["scan:reddit:reddit:t3_abc", "github:issue_1:custom"],
+    });
+    expect(plan.sourceRefs).toEqual([
+      { source_type: "reddit", source_id: "reddit:t3_abc" },
+      { source_type: "scan", source_id: "scan_1" },
+      { source_type: "github", source_id: "github:issue_1" },
+    ]);
+    expect(plan.batch).toMatchObject({
+      headers: { "x-scan-id": "scan_1" },
+      concurrency: 2,
+      continueOnError: true,
+      items: plan.items,
+    });
+    expect(plan.items[0]).toMatchObject({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "topic:ai-agents",
+      threadExternalRef: "scan:2026-06-22",
+      sourceAgent: "social-monitor",
+      sourceType: "reddit",
+      sourceId: "reddit:t3_abc",
+      title: "Reddit discussion on agent memory",
+      text: "Operators want Reddit freshness and citations in summaries.",
+      occurredAt: "2026-06-22T10:00:00.000Z",
+      idempotencyKey: "scan:reddit:reddit:t3_abc",
+      headers: { "x-item-id": "reddit:t3_abc" },
+      metadata: {
+        scan: "daily",
+        subreddit: "LocalLLaMA",
+        url: "https://reddit.com/r/LocalLLaMA/comments/abc",
+      },
+      sourceRefs: [
+        { source_type: "reddit", source_id: "reddit:t3_abc" },
+        { source_type: "scan", source_id: "scan_1" },
+      ],
+      document: { classification: "public" },
+      linkSuggestions: { persist: true, limit: 5 },
+    });
+    expect(plan.items[1]).toMatchObject({
+      memoryScopeExternalRef: "source:github:memory-sdk",
+      sourceType: "github",
+      sourceId: "github:issue_1",
+      text: "GitHub issue about memory SDK",
+      idempotencyKey: "github:issue_1:custom",
+      fact: {
+        memoryScopeExternalRef: "topic:ai-agents",
+        tags: ["github", "sdk"],
+      },
+    });
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(Object.isFrozen(plan.items)).toBe(true);
+    expect(Object.isFrozen(plan.sourceRefs)).toBe(true);
+  });
+
+  it("validates provider source evidence plans before workflow execution", () => {
+    expect(() => createMemorySourceEvidencePlan({
+      sourceAgent: "social-monitor",
+      findings: [{ sourceId: "post_1", text: "Missing source type." }],
+    })).toThrow("source evidence finding requires sourceType or plan sourceType");
+    expect(() => createMemorySourceEvidencePlan({
+      sourceAgent: "social-monitor",
+      sourceType: "reddit",
+      findings: [{ sourceId: "post_1", text: "" }],
+    })).toThrow("source evidence finding requires text or title");
   });
 
   it("runs a non-mutating runtime canary against full memory retrieval", async () => {

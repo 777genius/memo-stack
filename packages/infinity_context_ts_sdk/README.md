@@ -39,6 +39,7 @@ import {
   assertMemoryBriefQuality,
   createMemoryQualityPreset,
   createMemoryScopePlan,
+  createMemorySourceEvidencePlan,
   createMemorySummaryLoopPlan,
   healthyRetrievalComponents,
   MEMORY_QUALITY_PRESETS,
@@ -210,34 +211,38 @@ await memory.workflows.recordSourceEvidence({
 });
 ```
 
-For provider scans, batch items with bounded concurrency and keep per-item errors inspectable.
+For provider scans, convert raw provider findings into a typed evidence plan before execution. This keeps idempotency keys, scopes, source refs and workflow defaults consistent across Reddit, GitHub, RSS and future adapters.
 
 ```ts
-const batch = await memory.workflows.recordSourceEvidenceBatch({
+const sourceEvidencePlan = createMemorySourceEvidencePlan({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "source:reddit:ai-agents",
+  threadExternalRef: "scan:2026-06-22",
+  sourceAgent: "social-monitor",
+  sourceType: "reddit",
+  idempotencyKeyPrefix: "scan:2026-06-22",
   concurrency: 4,
   continueOnError: true,
-  signal: scanAbortController.signal,
   headers: { "x-trace-id": "scan:2026-06-22" },
-  items: redditPosts.map((post) => ({
-    spaceSlug: "social-monitor:tenant_1:workspace_1",
-    memoryScopeExternalRef: "source:reddit:ai-agents",
-    threadExternalRef: "scan:2026-06-22",
-    sourceAgent: "social-monitor",
-    sourceType: "reddit",
+  document: { classification: "public" },
+  linkSuggestions: { persist: true, limit: 5 },
+  findings: redditPosts.map((post) => ({
     sourceId: post.id,
     title: post.title,
-    text: post.selftext,
+    text: post.selftext || post.title,
     occurredAt: post.createdAt,
-    idempotencyKey: `reddit:${post.id}`,
+    url: post.url,
     metadata: { subreddit: post.subreddit },
-    episode: true,
-    capture: true,
-    linkSuggestions: { persist: true, limit: 5 },
   })),
 });
 
+const batch = await memory.workflows.recordSourceEvidenceBatch({
+  ...sourceEvidencePlan.batch,
+  signal: scanAbortController.signal,
+});
+
 const batchSummary = summarizeSourceEvidenceBatch(batch);
-console.log(batchSummary.succeeded, batchSummary.failed, batchSummary.retryableFailures);
+console.log(sourceEvidencePlan.summary.sourceTypes, batchSummary.succeeded, batchSummary.failed);
 ```
 
 For product loops that should bootstrap memory, check runtime readiness, ingest provider evidence and return a readable summary in one call, use `runMemorySummaryLoop`.
@@ -256,9 +261,7 @@ const loop = await memory.workflows.runMemorySummaryLoop({
     memoryScopeExternalRefs: ["topic:ai-agents"],
   },
   sourceEvidence: {
-    concurrency: 4,
-    continueOnError: true,
-    items: providerItems,
+    ...sourceEvidencePlan.batch,
   },
   outboxDrain: {
     limit: 100,
@@ -321,9 +324,7 @@ const betaQuality = createMemoryQualityPreset("durable", {
 
 const plan = createMemorySummaryLoopPlan({
   sourceEvidence: {
-    items: providerItems,
-    concurrency: 4,
-    continueOnError: true,
+    ...sourceEvidencePlan.batch,
   },
   outboxDrain: true,
   brief: {
