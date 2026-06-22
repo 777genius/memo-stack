@@ -78,6 +78,17 @@ _SAFE_ANCHOR_LIST_DIAGNOSTIC_KEYS = (
     "event_identity_terms",
     "alias_identity_terms",
 )
+_CONTEXT_REQUIREMENT_SCORE_SIGNAL_KEYS = (
+    "context_requirement_boost",
+    "context_requirement_matched_anchor_kind_count",
+    "context_requirement_matched_modality_count",
+    "context_requirement_matched_feature_count",
+)
+_CONTEXT_REQUIREMENT_PROVENANCE_LIST_KEYS = (
+    "context_requirement_matched_anchor_kinds",
+    "context_requirement_matched_modalities",
+    "context_requirement_matched_evidence_features",
+)
 _BUNDLE_COUNTER_KEYS = (
     "facts_considered",
     "anchors_considered",
@@ -478,6 +489,7 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     normalized["ranking_reason"] = ranking_reason or ranking_reason_for(retrieval_sources)
     normalized["score_signals"] = safe_score_signals(raw.get("score_signals"))
     provenance = safe_diagnostic_mapping(raw.get("provenance"))
+    provenance.update(_safe_context_requirement_provenance(raw.get("provenance")))
     if retrieval_sources:
         provenance["retrieval_sources"] = list(retrieval_sources)
     normalized["provenance"] = provenance
@@ -625,11 +637,13 @@ def merge_context_diagnostics(
 
 def safe_score_signals(value: object) -> dict[str, object]:
     safe = safe_diagnostic_mapping(value)
-    return {
+    signals = {
         key: item
         for key, item in safe.items()
         if isinstance(item, (int, float, str, bool)) or item is None
     }
+    signals.update(_safe_context_requirement_score_signals(value))
+    return signals
 
 
 def safe_diagnostic_mapping(value: object) -> dict[str, object]:
@@ -637,6 +651,42 @@ def safe_diagnostic_mapping(value: object) -> dict[str, object]:
         safe_metadata(value, max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS),
         max_items=_MAX_DIAGNOSTIC_MAPPING_ITEMS,
     )
+
+
+def _safe_context_requirement_score_signals(value: object) -> dict[str, object]:
+    raw = _as_dict(value)
+    signals: dict[str, object] = {}
+    for key in _CONTEXT_REQUIREMENT_SCORE_SIGNAL_KEYS:
+        raw_value = raw.get(key)
+        if isinstance(raw_value, bool):
+            continue
+        if isinstance(raw_value, int):
+            signals[key] = max(0, raw_value)
+        elif isinstance(raw_value, float):
+            signals[key] = round(max(0.0, raw_value), 4)
+    return signals
+
+
+def _safe_context_requirement_provenance(value: object) -> dict[str, object]:
+    raw = _as_dict(value)
+    provenance: dict[str, object] = {}
+    if raw.get("context_requirement_boost_applied") is True:
+        provenance["context_requirement_boost_applied"] = True
+    for key in _CONTEXT_REQUIREMENT_PROVENANCE_LIST_KEYS:
+        safe_values = [
+            safe_value
+            for item in _safe_context_requirement_list(raw.get(key))
+            if (safe_value := _safe_optional_text(item, limit=_MAX_DIAGNOSTIC_KEY_CHARS))
+        ]
+        if safe_values or key in raw:
+            provenance[key] = safe_values[:_MAX_DIAGNOSTIC_LIST_ITEMS]
+    return provenance
+
+
+def _safe_context_requirement_list(value: object) -> tuple[object, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(value[:_MAX_DIAGNOSTIC_LIST_ITEMS])
+    return ()
 
 
 def _safe_query_snippet_diagnostics(raw: dict[str, Any]) -> dict[str, object]:

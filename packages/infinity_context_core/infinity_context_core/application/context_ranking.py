@@ -716,10 +716,11 @@ def _with_context_requirement_boost(
 ) -> ContextItem:
     if _context_requirement_boost_already_applied(item):
         return item
+    normalized_item = normalize_context_item_diagnostics(item)
     coverage = context_requirement_coverage(
         query=query,
         query_anchor_intent=query_anchor_intent,
-        items=(item,),
+        items=(normalized_item,),
     )
     matched_anchor_kinds = _sorted_coverage_matches(
         requested_anchor_kinds,
@@ -741,7 +742,7 @@ def _with_context_requirement_boost(
     boost = min(max_boost, round(raw_boost, 4))
     if boost <= 0:
         return item
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    diagnostics = normalize_context_diagnostics(normalized_item.diagnostics)
     diagnostics["context_requirement_reason"] = "explicit query requirement matched item evidence"
     diagnostics["score_signals"] = {
         **safe_score_signals(diagnostics.get("score_signals")),
@@ -758,8 +759,8 @@ def _with_context_requirement_boost(
         "context_requirement_matched_evidence_features": list(matched_features),
     }
     return replace(
-        item,
-        score=min(0.99, round(item.score + boost, 4)),
+        normalized_item,
+        score=min(0.99, round(normalized_item.score + boost, 4)),
         diagnostics=normalize_context_diagnostics(diagnostics),
     )
 

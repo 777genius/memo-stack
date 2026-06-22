@@ -981,6 +981,7 @@ def _quality_golden_cases(
                 ("source_refs_with_bbox_count", "gte", 1),
                 ("retrieval_sources_used", "contains", "artifact_evidence"),
                 ("context_requirement_coverage.status", "eq", "satisfied"),
+                ("context_requirement_coverage.covered_modalities", "contains", "image"),
                 (
                     "context_requirement_coverage.covered_evidence_features",
                     "contains",
@@ -993,6 +994,17 @@ def _quality_golden_cases(
                     ("diagnostics.retrieval_source", "eq", "artifact_evidence"),
                     ("diagnostics.evidence_kind", "eq", "ocr_region"),
                     ("diagnostics.evidence_modality", "eq", "image"),
+                    ("diagnostics.score_signals.context_requirement_boost", "gte", 0.03),
+                    (
+                        "diagnostics.score_signals.context_requirement_matched_feature_count",
+                        "gte",
+                        2,
+                    ),
+                    (
+                        "diagnostics.score_signals.context_requirement_matched_modality_count",
+                        "gte",
+                        1,
+                    ),
                 ),
             ),
             required_source_ref_matches=(

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 from infinity_context_core.application import BuildContextQuery, ConsistencyMode
 from infinity_context_core.application.context_diagnostics import (
     normalize_context_bundle_diagnostics,
+    normalize_context_diagnostics,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,7 +60,7 @@ class ContextRequest(BaseModel):
 
 
 def context_item_to_response(item) -> dict[str, Any]:
-    diagnostics = safe_public_metadata(item.diagnostics)
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
     source_refs = tuple(item.source_refs)
     public_source_refs = source_refs[:_MAX_PUBLIC_CONTEXT_SOURCE_REFS]
     citations = [

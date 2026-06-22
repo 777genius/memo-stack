@@ -316,6 +316,58 @@ def test_context_requirement_boost_prefers_requested_image_text_evidence() -> No
     ]
 
 
+def test_context_requirement_boost_infers_visual_evidence_from_source_ref() -> None:
+    generic = _item(
+        "generic",
+        score=0.68,
+        retrieval_source="keyword_chunks",
+        text="Project Atlas invoice owner Alex appears in a generic text note.",
+    )
+    visual_evidence = ContextItem(
+        item_id="artifact_visual_region",
+        item_type="extraction_artifact",
+        text="Project Atlas screenshot invoice owner Alex appears in the top-left region.",
+        score=0.7,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="image-1",
+                chunk_id="ocr-region-1",
+                bbox=(12.0, 32.0, 300.0, 88.0),
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "artifact_evidence",
+            "retrieval_sources": ["artifact_evidence"],
+            "score_signals": {"base_score": 0.7},
+            "provenance": {"retrieval_sources": ["artifact_evidence"]},
+        },
+    )
+    query = "where on screen is Project Atlas screenshot invoice owner Alex"
+
+    boosted = apply_context_requirement_boosts(
+        (generic, visual_evidence),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    score_signals = boosted[1].diagnostics["score_signals"]
+    assert boosted[1].score > boosted[0].score
+    assert score_signals["context_requirement_boost"] >= 0.03
+    assert score_signals["context_requirement_boost"] > boosted[0].diagnostics[
+        "score_signals"
+    ]["context_requirement_boost"]
+    assert score_signals["context_requirement_matched_modality_count"] == 1
+    assert score_signals["context_requirement_matched_feature_count"] >= 2
+    assert boosted[1].diagnostics["provenance"][
+        "context_requirement_matched_modalities"
+    ] == ["image"]
+    assert "visual_region" in boosted[1].diagnostics["provenance"][
+        "context_requirement_matched_evidence_features"
+    ]
+
+
 def test_context_requirement_boost_prefers_audio_timestamp_evidence() -> None:
     note = _item(
         "note",

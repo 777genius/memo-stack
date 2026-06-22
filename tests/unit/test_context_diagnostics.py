@@ -96,6 +96,54 @@ def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
     assert secret not in str(diagnostics)
 
 
+def test_context_item_diagnostics_preserve_requirement_score_signals_when_bounded() -> None:
+    item = ContextItem(
+        item_id="artifact_requirement_boost",
+        item_type="extraction_artifact",
+        text="Screenshot OCR says Atlas owner is Alex.",
+        score=0.9,
+        source_refs=(),
+        diagnostics={
+            "retrieval_source": "artifact_evidence",
+            "score_signals": {
+                **{f"provider_signal_{index}": index for index in range(40)},
+                "context_requirement_boost": 0.036,
+                "context_requirement_matched_anchor_kind_count": 1,
+                "context_requirement_matched_modality_count": 1,
+                "context_requirement_matched_feature_count": 2,
+            },
+            "provenance": {
+                **{f"provider_trace_{index}": index for index in range(40)},
+                "context_requirement_boost_applied": True,
+                "context_requirement_matched_anchor_kinds": ["project"],
+                "context_requirement_matched_modalities": ["image"],
+                "context_requirement_matched_evidence_features": [
+                    "citation",
+                    "visual_region",
+                ],
+            },
+        },
+    )
+
+    normalized = normalize_context_item_diagnostics(item)
+
+    score_signals = normalized.diagnostics["score_signals"]
+    assert score_signals["context_requirement_boost"] == 0.036
+    assert score_signals["context_requirement_matched_anchor_kind_count"] == 1
+    assert score_signals["context_requirement_matched_modality_count"] == 1
+    assert score_signals["context_requirement_matched_feature_count"] == 2
+    assert normalized.diagnostics["provenance"]["context_requirement_boost_applied"] is True
+    assert normalized.diagnostics["provenance"][
+        "context_requirement_matched_anchor_kinds"
+    ] == ["project"]
+    assert normalized.diagnostics["provenance"]["context_requirement_matched_modalities"] == [
+        "image"
+    ]
+    assert normalized.diagnostics["provenance"][
+        "context_requirement_matched_evidence_features"
+    ] == ["citation", "visual_region"]
+
+
 def test_context_bundle_diagnostics_preserve_temporal_query_intent_when_bounded() -> None:
     diagnostics = normalize_context_bundle_diagnostics(
         {
