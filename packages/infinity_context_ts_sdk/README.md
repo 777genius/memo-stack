@@ -688,10 +688,16 @@ Useful optional env:
 - `INFINITY_CONTEXT_PROOF_ARTIFACT_OUTPUT`: additionally write an artifact with SDK package, CI git and runtime metadata.
 - `INFINITY_CONTEXT_PROOF_REQUIRE_FULL_MEMORY=false`: allow lite/local mode while still proving the SDK write/read loop.
 - `INFINITY_CONTEXT_PROOF_RUNTIME_PROFILE`: label the artifact with a runtime profile such as `docker`, `staging` or `beta`.
+- `INFINITY_CONTEXT_PROOF_MAX_FAILED_CHECKS`: fail artifact policy when more checks fail.
+- `INFINITY_CONTEXT_PROOF_MIN_SOURCE_EVIDENCE_SUCCESS_RATE`: require a source evidence batch success rate from `0` to `1`.
+- `INFINITY_CONTEXT_PROOF_REQUIRED_ADAPTERS`: comma-separated adapter names that must be enabled, for example `qdrant,graphiti`.
+- `INFINITY_CONTEXT_PROOF_REQUIRED_RETRIEVAL_SOURCES`: comma-separated retrieval sources that must be observed.
+- `INFINITY_CONTEXT_PROOF_REQUIRE_GIT_COMMIT=true`: require CI git commit metadata in the artifact.
+- `INFINITY_CONTEXT_PROOF_REQUIRE_PACKAGE_VERSION=true`: require SDK package version metadata in the artifact.
 - `INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_ATTEMPTS`: override attempts for waiting on projection/outbox drain.
 - `INFINITY_CONTEXT_PROOF_OUTBOX_DRAIN_DELAY_MS`: override delay between projection/outbox drain checks.
 
-The report fails when the durable SDK loop cannot prove write/read/workflow/operations/export coverage or when outbox projections do not drain before read-model checks. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval. Use the artifact mode for CI because it includes duration, enabled adapters, failed checks, retrieval counts, package version and git metadata.
+The report fails when the durable SDK loop cannot prove write/read/workflow/operations/export coverage or when outbox projections do not drain before read-model checks. In full mode it also fails when Qdrant/Graphiti are not enabled or context diagnostics do not show healthy vector/graph retrieval. Use the artifact mode for CI because it includes duration, enabled adapters, failed checks, retrieval counts, package version and git metadata. The artifact policy gate lets beta pipelines make those requirements explicit without parsing the raw report by hand.
 
 ## Maintainer parity check
 

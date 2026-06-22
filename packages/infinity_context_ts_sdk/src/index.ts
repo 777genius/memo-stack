@@ -55,14 +55,18 @@ export type {
   PaginatedEnvelope,
 } from "./pagination.js";
 export {
+  assertFullMemoryProofArtifact,
   buildFullMemoryProofArtifact,
+  evaluateFullMemoryProofArtifact,
   FULL_MEMORY_PROOF_ARTIFACT_SCHEMA,
   summarizeFullMemoryProofReport,
 } from "./proof-artifact.js";
 export type {
   FullMemoryProofArtifact,
+  FullMemoryProofArtifactEvaluation,
   FullMemoryProofArtifactInput,
   FullMemoryProofArtifactMetadata,
+  FullMemoryProofArtifactPolicy,
   FullMemoryProofArtifactSummary,
   FullMemoryProofGitMetadata,
   FullMemoryProofRuntimeMetadata,

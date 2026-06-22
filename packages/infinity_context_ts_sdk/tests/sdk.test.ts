@@ -7,8 +7,10 @@ import {
   ValueError,
   assertMemoryBriefQuality,
   assertFullMemoryReady,
+  assertFullMemoryProofArtifact,
   buildFullMemoryProofArtifact,
   evaluateMemoryBriefQuality,
+  evaluateFullMemoryProofArtifact,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
   retrievalDiagnostics,
@@ -3153,7 +3155,11 @@ describe("InfinityContextClient", () => {
         manifest: { snapshot_sha256: "snapshot_sha" },
       }),
       jsonResponse({ data: { dry_run: true, created: 0, updated: 0, conflicts: [] } }),
-      jsonResponse(contextResponse("sdk-proof", { vector_query_count: 4, graph_query_count: 3 })),
+      jsonResponse(contextResponse("sdk-proof", {
+        retrieval_sources_used: ["vector", "graph"],
+        vector_query_count: 4,
+        graph_query_count: 3,
+      })),
       jsonResponse(searchResponse({ vector_query_count: 4, graph_query_count: 3 })),
       jsonResponse(digestResponse("sdk-proof")),
     ]);
@@ -3266,6 +3272,42 @@ describe("InfinityContextClient", () => {
       },
     });
     expect(artifact.report).toBe(report);
+    const artifactEvaluation = assertFullMemoryProofArtifact(artifact, {
+      requireFullMemory: true,
+      maxFailedChecks: 0,
+      minChecksPassed: 21,
+      minSourceEvidenceSuccessRate: 1,
+      maxMemoryInspectionIssues: 0,
+      maxOutboxBlocking: 0,
+      requiredAdapters: ["qdrant", "graphiti"],
+      requiredRetrievalSources: ["vector"],
+      requireGitCommit: true,
+      requirePackageVersion: true,
+    });
+    expect(artifactEvaluation).toMatchObject({
+      ok: true,
+      errors: [],
+      policy: {
+        requireFullMemory: true,
+        maxFailedChecks: 0,
+        requiredAdapters: ["qdrant", "graphiti"],
+      },
+    });
+
+    const failedEvaluation = evaluateFullMemoryProofArtifact(artifact, {
+      requiredAdapters: ["pinecone"],
+      maxDurationMs: 1,
+    });
+    expect(failedEvaluation).toMatchObject({
+      ok: false,
+      errors: [
+        "proof took 2500ms, expected at most 1ms",
+        "required adapter is missing: pinecone",
+      ],
+    });
+    expect(() => assertFullMemoryProofArtifact(artifact, {
+      requiredAdapters: ["pinecone"],
+    })).toThrowError(InfinityContextError);
     expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /v1/capabilities",
       "GET /v1/spaces",

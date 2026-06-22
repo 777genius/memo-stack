@@ -2,7 +2,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { buildFullMemoryProofArtifact, InfinityContextClient, runFullMemoryProof } from "../dist/index.js";
+import {
+  buildFullMemoryProofArtifact,
+  evaluateFullMemoryProofArtifact,
+  InfinityContextClient,
+  runFullMemoryProof,
+} from "../dist/index.js";
 
 const env = process.env;
 const baseUrl = env.INFINITY_CONTEXT_URL ?? "http://127.0.0.1:7788";
@@ -46,6 +51,7 @@ const artifact = buildFullMemoryProofArtifact({
     },
   },
 });
+const artifactEvaluation = evaluateFullMemoryProofArtifact(artifact, artifactPolicy(env, requireFullMemory));
 
 if (artifactOutputPath !== undefined && artifactOutputPath.trim().length > 0) {
   await writeJsonFile(artifactOutputPath, artifact);
@@ -60,7 +66,11 @@ if (outputPath === undefined || outputPath.trim().length === 0) {
   process.stdout.write(`${resolvedOutputPath}\n`);
 }
 
-if (!report.ok) {
+if (!artifactEvaluation.ok) {
+  process.stderr.write(`Full memory proof artifact policy failed: ${artifactEvaluation.errors.join("; ")}\n`);
+}
+
+if (!report.ok || !artifactEvaluation.ok) {
   process.exitCode = 1;
 }
 
@@ -71,6 +81,31 @@ function parsePositiveInteger(value) {
   const parsed = Number(value);
 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseNonNegativeInteger(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseNonNegativeNumber(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseBoolean(value, fallback) {
+  if (value === undefined) {
+    return fallback;
+  }
+  return !["0", "false", "no"].includes(value.toLowerCase());
 }
 
 async function writeJsonFile(path, payload) {
@@ -125,4 +160,55 @@ function firstString(env, outputKey, keys) {
     .find((item) => typeof item === "string" && item.trim().length > 0);
 
   return value === undefined ? {} : { [outputKey]: value };
+}
+
+function artifactPolicy(env, requireFullMemory) {
+  return {
+    requireOk: true,
+    requireFullMemory,
+    ...numberPolicy("maxFailedChecks", env.INFINITY_CONTEXT_PROOF_MAX_FAILED_CHECKS, parseNonNegativeInteger),
+    ...numberPolicy("minChecksPassed", env.INFINITY_CONTEXT_PROOF_MIN_CHECKS_PASSED, parseNonNegativeInteger),
+    ...numberPolicy(
+      "minSourceEvidenceSuccessRate",
+      env.INFINITY_CONTEXT_PROOF_MIN_SOURCE_EVIDENCE_SUCCESS_RATE,
+      parseUnitInterval,
+    ),
+    ...numberPolicy(
+      "maxMemoryInspectionIssues",
+      env.INFINITY_CONTEXT_PROOF_MAX_MEMORY_INSPECTION_ISSUES,
+      parseNonNegativeInteger,
+    ),
+    ...numberPolicy(
+      "maxMaintenanceActionable",
+      env.INFINITY_CONTEXT_PROOF_MAX_MAINTENANCE_ACTIONABLE,
+      parseNonNegativeInteger,
+    ),
+    ...numberPolicy("maxOutboxBlocking", env.INFINITY_CONTEXT_PROOF_MAX_OUTBOX_BLOCKING, parseNonNegativeInteger),
+    ...numberPolicy("maxDurationMs", env.INFINITY_CONTEXT_PROOF_MAX_DURATION_MS, parseNonNegativeInteger),
+    ...csvPolicy("requiredAdapters", env.INFINITY_CONTEXT_PROOF_REQUIRED_ADAPTERS),
+    ...csvPolicy("requiredRetrievalSources", env.INFINITY_CONTEXT_PROOF_REQUIRED_RETRIEVAL_SOURCES),
+    requireGitCommit: parseBoolean(env.INFINITY_CONTEXT_PROOF_REQUIRE_GIT_COMMIT, false),
+    requirePackageVersion: parseBoolean(env.INFINITY_CONTEXT_PROOF_REQUIRE_PACKAGE_VERSION, false),
+  };
+}
+
+function numberPolicy(outputKey, value, parse) {
+  const parsed = parse(value);
+
+  return parsed === undefined ? {} : { [outputKey]: parsed };
+}
+
+function csvPolicy(outputKey, value) {
+  if (value === undefined) {
+    return {};
+  }
+  const items = value.split(",").map((item) => item.trim()).filter(Boolean);
+
+  return items.length === 0 ? {} : { [outputKey]: items };
+}
+
+function parseUnitInterval(value) {
+  const parsed = parseNonNegativeNumber(value);
+
+  return parsed !== undefined && parsed <= 1 ? parsed : undefined;
 }

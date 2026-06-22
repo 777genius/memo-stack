@@ -1,4 +1,5 @@
 import type { FullMemoryProofReport } from "./full-memory-proof.js";
+import { InfinityContextError } from "./errors.js";
 import type { JsonObject } from "./types.js";
 
 export const FULL_MEMORY_PROOF_ARTIFACT_SCHEMA = "infinity_context.full_memory_proof_artifact.v1";
@@ -72,6 +73,30 @@ export interface FullMemoryProofArtifact {
   readonly report: FullMemoryProofReport;
 }
 
+export interface FullMemoryProofArtifactPolicy {
+  readonly requireOk?: boolean;
+  readonly requireFullMemory?: boolean;
+  readonly maxFailedChecks?: number;
+  readonly minChecksPassed?: number;
+  readonly minSourceEvidenceSuccessRate?: number;
+  readonly maxMemoryInspectionIssues?: number;
+  readonly maxMaintenanceActionable?: number;
+  readonly maxOutboxBlocking?: number;
+  readonly maxDurationMs?: number;
+  readonly requiredAdapters?: readonly string[];
+  readonly requiredRetrievalSources?: readonly string[];
+  readonly requireGitCommit?: boolean;
+  readonly requirePackageVersion?: boolean;
+}
+
+export interface FullMemoryProofArtifactEvaluation {
+  readonly ok: boolean;
+  readonly errors: readonly string[];
+  readonly warnings: readonly string[];
+  readonly policy: FullMemoryProofArtifactPolicy;
+  readonly summary: FullMemoryProofArtifactSummary;
+}
+
 const fullMemoryCheckNames = new Set([
   "capabilitiesFullMemory",
   "derivedRetrievalUsed",
@@ -137,6 +162,113 @@ export function summarizeFullMemoryProofReport(
   };
 }
 
+export function evaluateFullMemoryProofArtifact(
+  artifact: FullMemoryProofArtifact,
+  policy: FullMemoryProofArtifactPolicy = {},
+): FullMemoryProofArtifactEvaluation {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const summary = artifact.summary;
+
+  if ((policy.requireOk ?? true) && !artifact.ok) {
+    errors.push("proof artifact is not ok");
+  }
+  if ((policy.requireFullMemory ?? false) && !summary.fullMemoryOk) {
+    errors.push("full memory checks are not satisfied");
+  }
+  if (policy.maxFailedChecks !== undefined && summary.checksFailed > policy.maxFailedChecks) {
+    errors.push(`proof has ${summary.checksFailed} failed check(s), expected at most ${policy.maxFailedChecks}`);
+  }
+  if (policy.minChecksPassed !== undefined && summary.checksPassed < policy.minChecksPassed) {
+    errors.push(`proof passed ${summary.checksPassed} check(s), expected at least ${policy.minChecksPassed}`);
+  }
+  if (
+    policy.minSourceEvidenceSuccessRate !== undefined &&
+    summary.sourceEvidenceSuccessRate < policy.minSourceEvidenceSuccessRate
+  ) {
+    errors.push(
+      `source evidence success rate is ${summary.sourceEvidenceSuccessRate}, expected at least ${policy.minSourceEvidenceSuccessRate}`,
+    );
+  }
+  if (
+    policy.maxMemoryInspectionIssues !== undefined &&
+    summary.memoryInspectionIssueCount > policy.maxMemoryInspectionIssues
+  ) {
+    errors.push(
+      `memory inspection has ${summary.memoryInspectionIssueCount} issue(s), expected at most ${policy.maxMemoryInspectionIssues}`,
+    );
+  }
+  if (
+    policy.maxMaintenanceActionable !== undefined &&
+    summary.maintenanceActionableCount > policy.maxMaintenanceActionable
+  ) {
+    errors.push(
+      `maintenance plan has ${summary.maintenanceActionableCount} actionable item(s), expected at most ${policy.maxMaintenanceActionable}`,
+    );
+  }
+  if (policy.maxOutboxBlocking !== undefined && summary.outboxBlockingCount > policy.maxOutboxBlocking) {
+    errors.push(
+      `outbox has ${summary.outboxBlockingCount} blocking item(s), expected at most ${policy.maxOutboxBlocking}`,
+    );
+  }
+  if (policy.maxDurationMs !== undefined && artifact.durationMs !== null && artifact.durationMs > policy.maxDurationMs) {
+    errors.push(`proof took ${artifact.durationMs}ms, expected at most ${policy.maxDurationMs}ms`);
+  } else if (policy.maxDurationMs !== undefined && artifact.durationMs === null) {
+    warnings.push("proof duration is unavailable");
+  }
+  for (const adapter of policy.requiredAdapters ?? []) {
+    if (!summary.enabledAdapters.includes(adapter)) {
+      errors.push(`required adapter is missing: ${adapter}`);
+    }
+  }
+  for (const source of policy.requiredRetrievalSources ?? []) {
+    if (!summary.retrievalSourcesUsed.includes(source)) {
+      errors.push(`required retrieval source was not used: ${source}`);
+    }
+  }
+  if ((policy.requireGitCommit ?? false) && !hasText(artifact.metadata.git?.commitSha)) {
+    errors.push("git commit metadata is required");
+  }
+  if ((policy.requirePackageVersion ?? false) && !hasText(artifact.metadata.sdk?.packageVersion)) {
+    errors.push("SDK package version metadata is required");
+  }
+
+  if (summary.failedChecks.length > 0) {
+    warnings.push(`failed checks: ${summary.failedChecks.join(", ")}`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    policy,
+    summary,
+  };
+}
+
+export function assertFullMemoryProofArtifact(
+  artifact: FullMemoryProofArtifact,
+  policy: FullMemoryProofArtifactPolicy = {},
+): FullMemoryProofArtifactEvaluation {
+  const evaluation = evaluateFullMemoryProofArtifact(artifact, policy);
+  if (evaluation.ok) {
+    return evaluation;
+  }
+
+  throw new InfinityContextError({
+    statusCode: 0,
+    code: "memory.full_memory_proof_artifact_failed",
+    message: `Full memory proof artifact failed: ${evaluation.errors.join("; ")}`,
+    retryable: false,
+    details: {
+      errors: evaluation.errors,
+      warnings: evaluation.warnings,
+      policy: artifactPolicyDetails(policy),
+      summary: artifactSummaryDetails(evaluation.summary),
+    } satisfies JsonObject,
+  });
+}
+
 function normalizeDate(value: Date | string | undefined): string | null {
   if (value === undefined) {
     return null;
@@ -174,4 +306,56 @@ function stringArrayField(value: JsonObject, key: string): readonly string[] {
 
 function queryCount(value: number | undefined): number {
   return value === undefined ? 0 : value;
+}
+
+function hasText(value: string | undefined): boolean {
+  return value !== undefined && value.trim().length > 0;
+}
+
+function artifactPolicyDetails(policy: FullMemoryProofArtifactPolicy): JsonObject {
+  return {
+    ...(policy.requireOk !== undefined ? { require_ok: policy.requireOk } : {}),
+    ...(policy.requireFullMemory !== undefined ? { require_full_memory: policy.requireFullMemory } : {}),
+    ...(policy.maxFailedChecks !== undefined ? { max_failed_checks: policy.maxFailedChecks } : {}),
+    ...(policy.minChecksPassed !== undefined ? { min_checks_passed: policy.minChecksPassed } : {}),
+    ...(policy.minSourceEvidenceSuccessRate !== undefined
+      ? { min_source_evidence_success_rate: policy.minSourceEvidenceSuccessRate }
+      : {}),
+    ...(policy.maxMemoryInspectionIssues !== undefined
+      ? { max_memory_inspection_issues: policy.maxMemoryInspectionIssues }
+      : {}),
+    ...(policy.maxMaintenanceActionable !== undefined
+      ? { max_maintenance_actionable: policy.maxMaintenanceActionable }
+      : {}),
+    ...(policy.maxOutboxBlocking !== undefined ? { max_outbox_blocking: policy.maxOutboxBlocking } : {}),
+    ...(policy.maxDurationMs !== undefined ? { max_duration_ms: policy.maxDurationMs } : {}),
+    ...(policy.requiredAdapters !== undefined ? { required_adapters: [...policy.requiredAdapters] } : {}),
+    ...(policy.requiredRetrievalSources !== undefined
+      ? { required_retrieval_sources: [...policy.requiredRetrievalSources] }
+      : {}),
+    ...(policy.requireGitCommit !== undefined ? { require_git_commit: policy.requireGitCommit } : {}),
+    ...(policy.requirePackageVersion !== undefined ? { require_package_version: policy.requirePackageVersion } : {}),
+  };
+}
+
+function artifactSummaryDetails(summary: FullMemoryProofArtifactSummary): JsonObject {
+  return {
+    ok: summary.ok,
+    mode: summary.mode,
+    durable_ok: summary.durableOk,
+    full_memory_ok: summary.fullMemoryOk,
+    checks_total: summary.checksTotal,
+    checks_passed: summary.checksPassed,
+    checks_failed: summary.checksFailed,
+    failed_checks: [...summary.failedChecks],
+    enabled_adapters: [...summary.enabledAdapters],
+    retrieval_sources_used: [...summary.retrievalSourcesUsed],
+    vector_query_count: summary.vectorQueryCount,
+    graph_query_count: summary.graphQueryCount,
+    rag_query_count: summary.ragQueryCount,
+    source_evidence_success_rate: summary.sourceEvidenceSuccessRate,
+    memory_inspection_issue_count: summary.memoryInspectionIssueCount,
+    maintenance_actionable_count: summary.maintenanceActionableCount,
+    outbox_blocking_count: summary.outboxBlockingCount,
+  };
 }
