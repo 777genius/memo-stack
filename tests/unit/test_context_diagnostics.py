@@ -113,6 +113,10 @@ def test_context_bundle_diagnostics_preserve_temporal_query_intent_when_bounded(
                 "requests_change",
                 "after_event",
             ],
+            "temporal_query_relative_time_hints": [
+                "last_week",
+                "hours_ago",
+            ],
         },
         items=(),
     )
@@ -130,6 +134,10 @@ def test_context_bundle_diagnostics_preserve_temporal_query_intent_when_bounded(
         "prefers_current",
         "requests_change",
         "after_event",
+    ]
+    assert diagnostics["temporal_query_relative_time_hints"] == [
+        "last_week",
+        "hours_ago",
     ]
 
 

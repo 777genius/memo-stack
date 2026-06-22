@@ -32,6 +32,22 @@ def test_temporal_query_intent_detects_change_and_previous_state() -> None:
     assert previous.include_superseded_review is True
 
 
+def test_temporal_query_intent_detects_relative_time_hints() -> None:
+    last_week = build_temporal_query_intent("What did Alex say last week?")
+    hours_ago = build_temporal_query_intent("What did Alex say 2 hours ago?")
+    russian = build_temporal_query_intent("Что Алекс сказал на прошлой неделе?")
+
+    assert last_week.relative_time_hints == ("last_week",)
+    assert hours_ago.relative_time_hints == ("hours_ago",)
+    assert russian.relative_time_hints == ("last_week",)
+    assert "relative_time_hint" in last_week.diagnostics()[
+        "temporal_query_intent_reasons"
+    ]
+    assert last_week.diagnostics()["temporal_query_relative_time_hints"] == [
+        "last_week"
+    ]
+
+
 def test_temporal_query_boosts_active_replacement_for_change_query() -> None:
     intent = build_temporal_query_intent("What changed after the meeting?")
     active_replacement = _item(
@@ -59,6 +75,32 @@ def test_temporal_query_boosts_active_replacement_for_change_query() -> None:
     assert boosted[1].diagnostics["temporal_query_intent_reason"] == (
         "query asks what changed and item is previous state evidence"
     )
+
+
+def test_temporal_query_boosts_matching_event_temporal_hint() -> None:
+    intent = build_temporal_query_intent("What did Alex say last week?")
+    matched = _item(
+        "matched",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        event_temporal_hint_code="last_week",
+    )
+    other = _item(
+        "other",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        event_temporal_hint_code="yesterday",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((matched, other), intent=intent)
+
+    assert boosted[0].score == 0.732
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query relative time matches item event window"
+    )
+    assert boosted[1].score == 0.7
 
 
 def test_temporal_query_demotes_stale_when_query_excludes_stale() -> None:
@@ -93,7 +135,11 @@ def _item(
     retrieval_source: str,
     fact_status: str,
     review_only: bool = False,
+    event_temporal_hint_code: str | None = None,
 ) -> ContextItem:
+    provenance = {"fact_status": fact_status}
+    if event_temporal_hint_code:
+        provenance["event_temporal_hint_code"] = event_temporal_hint_code
     return ContextItem(
         item_id=item_id,
         item_type="fact",
@@ -105,6 +151,6 @@ def _item(
             "retrieval_sources": [retrieval_source],
             "review_only": review_only,
             "score_signals": {"base_score": score},
-            "provenance": {"fact_status": fact_status},
+            "provenance": provenance,
         },
     )

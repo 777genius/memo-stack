@@ -377,6 +377,7 @@ _BUNDLE_TEMPORAL_QUERY_BOOL_KEYS = (
 )
 _BUNDLE_TEMPORAL_QUERY_LIST_KEYS = (
     "temporal_query_intent_reasons",
+    "temporal_query_relative_time_hints",
 )
 _RETRIEVAL_SOURCE_PRIORITY = {
     "vector_chunks": 0,

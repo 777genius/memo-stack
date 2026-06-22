@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from infinity_context_core.application.context_diagnostics import (
@@ -73,6 +74,37 @@ _CHANGE_TERMS = frozenset(
 )
 _AFTER_TERMS = frozenset({"after", "following", "later", "после", "позже", "затем"})
 _BEFORE_TERMS = frozenset({"before", "earlier", "prior", "до", "перед", "раньше"})
+_RELATIVE_TIME_HINT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(?:last|previous)\s+week\b", re.IGNORECASE), "last_week"),
+    (
+        re.compile(
+            r"\b(?:\d+|one|two|three|four|five|six)\s+hours?\s+ago\b",
+            re.IGNORECASE,
+        ),
+        "hours_ago",
+    ),
+    (re.compile(r"\bhours?\s+ago\b", re.IGNORECASE), "hours_ago"),
+    (re.compile(r"\byesterday\b", re.IGNORECASE), "yesterday"),
+    (re.compile(r"\bearlier\s+today\b", re.IGNORECASE), "earlier_today"),
+    (re.compile(r"\bthis\s+morning\b", re.IGNORECASE), "today_morning"),
+    (re.compile(r"\bthis\s+afternoon\b", re.IGNORECASE), "today_afternoon"),
+    (re.compile(r"\bthis\s+evening\b", re.IGNORECASE), "today_evening"),
+    (re.compile(r"\btoday\b", re.IGNORECASE), "today"),
+    (
+        re.compile(
+            r"(?:прошл\w*\s+недел\w*|недел\w*\s+назад)",
+            re.IGNORECASE,
+        ),
+        "last_week",
+    ),
+    (re.compile(r"(?:\d+\s+час\w*|час)\s+назад", re.IGNORECASE), "hours_ago"),
+    (re.compile(r"\bвчера\b", re.IGNORECASE), "yesterday"),
+    (re.compile(r"ранее\s+сегодня", re.IGNORECASE), "earlier_today"),
+    (re.compile(r"сегодня\s+утром", re.IGNORECASE), "today_morning"),
+    (re.compile(r"сегодня\s+д[нн]ем", re.IGNORECASE), "today_afternoon"),
+    (re.compile(r"сегодня\s+вечером", re.IGNORECASE), "today_evening"),
+    (re.compile(r"\bсегодня\b", re.IGNORECASE), "today"),
+)
 
 
 @dataclass(frozen=True)
@@ -83,6 +115,7 @@ class TemporalQueryIntent:
     after_event: bool
     before_event: bool
     excludes_stale: bool
+    relative_time_hints: tuple[str, ...] = ()
 
     @property
     def include_superseded_review(self) -> bool:
@@ -98,6 +131,7 @@ class TemporalQueryIntent:
                 self.after_event,
                 self.before_event,
                 self.excludes_stale,
+                self.relative_time_hints,
             )
         )
 
@@ -115,6 +149,8 @@ class TemporalQueryIntent:
             reasons.append("before_event")
         if self.excludes_stale:
             reasons.append("excludes_stale")
+        if self.relative_time_hints:
+            reasons.append("relative_time_hint")
         return {
             "temporal_query_intent_status": "empty" if self.empty else "available",
             "temporal_query_prefers_current": self.prefers_current,
@@ -126,12 +162,14 @@ class TemporalQueryIntent:
             "temporal_query_include_superseded_review": (
                 self.include_superseded_review
             ),
+            "temporal_query_relative_time_hints": list(self.relative_time_hints),
             "temporal_query_intent_reasons": reasons,
         }
 
 
 def build_temporal_query_intent(query: str) -> TemporalQueryIntent:
     variants = _query_variant_set(query)
+    relative_time_hints = _relative_time_hints(query)
     excludes_stale = bool(_EXCLUDE_STALE_RE.search(query))
     requests_change = bool(variants.intersection(_CHANGE_TERMS))
     requests_previous = (
@@ -149,6 +187,7 @@ def build_temporal_query_intent(query: str) -> TemporalQueryIntent:
         after_event=bool(variants.intersection(_AFTER_TERMS)),
         before_event=bool(variants.intersection(_BEFORE_TERMS)),
         excludes_stale=excludes_stale,
+        relative_time_hints=relative_time_hints,
     )
 
 
@@ -174,11 +213,15 @@ def _apply_temporal_query_intent(
     is_review_only = diagnostics.get("review_only") is True
     is_superseded = retrieval_source == "superseded_review" or fact_status == "superseded"
     has_temporal_relation = bool(diagnostics.get("temporal_relations"))
+    temporal_hint_code = _temporal_hint_code(diagnostics, provenance)
     boost = 0.0
     reason = ""
     if intent.excludes_stale and (is_review_only or is_superseded):
         boost = -0.12
         reason = "query excludes stale memory"
+    elif temporal_hint_code and temporal_hint_code in set(intent.relative_time_hints):
+        boost = 0.032
+        reason = "query relative time matches item event window"
     elif intent.requests_change and retrieval_source == "temporal_supersedes_relation":
         boost = 0.05
         reason = "query asks what changed and item is active replacement"
@@ -240,3 +283,27 @@ def _query_variant_set(query: str) -> frozenset[str]:
         if len(token) >= 2:
             variants.add(token)
     return frozenset(variants)
+
+
+def _relative_time_hints(query: str) -> tuple[str, ...]:
+    hints: list[str] = []
+    seen: set[str] = set()
+    for pattern, hint in _RELATIVE_TIME_HINT_PATTERNS:
+        if hint in seen or not pattern.search(query):
+            continue
+        hints.append(hint)
+        seen.add(hint)
+        if len(hints) >= 4:
+            break
+    return tuple(hints)
+
+
+def _temporal_hint_code(
+    diagnostics: Mapping[str, object],
+    provenance: Mapping[str, object],
+) -> str:
+    for source in (diagnostics, provenance):
+        value = source.get("event_temporal_hint_code")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
