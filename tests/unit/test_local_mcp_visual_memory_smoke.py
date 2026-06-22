@@ -33,6 +33,14 @@ def test_local_visual_smoke_report_redacts_tokens(tmp_path: Path, capsys) -> Non
             "ui_assets": {"ok": True},
             "generated_mcp": {"ok": True, "token": token},
             "mcp_session": {"ok": True},
+            "mcp_digest": {
+                "ok": True,
+                "checks": {
+                    "evidence_only": True,
+                    "pending_suggestion_visible": True,
+                    "raw_token_absent": True,
+                },
+            },
             "capture_created": {"ok": True},
             "visual_memory": {"ok": True},
         },
@@ -65,10 +73,25 @@ def test_local_visual_smoke_required_checks_are_hard_gate() -> None:
             "ui_assets": {"ok": True},
             "generated_mcp": {"ok": True},
             "mcp_session": {"ok": False},
+            "mcp_digest": {"ok": True},
             "capture_created": {"ok": True},
             "visual_memory": {"ok": True},
         }
     ) == ["mcp_session"]
+
+    assert module._failed_required_checks(
+        {
+            "health": {"ok": True},
+            "capabilities": {"ok": True},
+            "ui": {"ok": True},
+            "ui_assets": {"ok": True},
+            "generated_mcp": {"ok": True},
+            "mcp_session": {"ok": True},
+            "mcp_digest": {"ok": False},
+            "capture_created": {"ok": True},
+            "visual_memory": {"ok": True},
+        }
+    ) == ["mcp_digest"]
 
 
 def test_local_visual_smoke_requires_first_memory_guidance() -> None:
@@ -119,6 +142,72 @@ def test_local_visual_smoke_requires_first_memory_guidance() -> None:
     assert checks["ui"]["ok"] is False
     assert checks["ui"]["first_memory_guidance"] is False
     assert checks["ui_assets"]["ok"] is True
+
+
+def test_local_visual_smoke_summarizes_mcp_digest_as_evidence_only() -> None:
+    module = _load_module()
+    token = "unit-local-visual-secret-token"
+    topic = "LOCAL_VISUAL_MCP_SMOKE_unit"
+    payload = {
+        "ok": True,
+        "data": {
+            "digest_id": "dig_unit",
+            "topic": topic,
+            "rendered_markdown": (
+                "# Memory Digest\n"
+                "Evidence only: true\n"
+                f"- [suggestion:sug_unit, score=0.50, not_canonical] text=\"{topic}\""
+            ),
+            "sections": [
+                {
+                    "title": "Pending suggestions",
+                    "items": [{"id": "sug_unit", "text": f"{topic} pending review"}],
+                }
+            ],
+            "diagnostics": {
+                "evidence_only": True,
+                "pending_suggestions_considered": 1,
+            },
+        },
+    }
+
+    summary = module._summarize_mcp_digest_payload(
+        payload=payload,
+        topic=topic,
+        token=token,
+    )
+
+    assert summary["ok"] is True
+    assert summary["digest_id"] == "dig_unit"
+    assert summary["pending_suggestion_items"] == 1
+    assert summary["checks"]["raw_token_absent"] is True
+
+
+def test_local_visual_smoke_rejects_digest_without_pending_review_evidence() -> None:
+    module = _load_module()
+    topic = "LOCAL_VISUAL_MCP_SMOKE_unit"
+
+    summary = module._summarize_mcp_digest_payload(
+        payload={
+            "ok": True,
+            "data": {
+                "digest_id": "dig_unit",
+                "topic": topic,
+                "rendered_markdown": "Evidence only: true",
+                "sections": [],
+                "diagnostics": {
+                    "evidence_only": True,
+                    "pending_suggestions_considered": 0,
+                },
+            },
+        },
+        topic=topic,
+        token="unit-token",
+    )
+
+    assert summary["ok"] is False
+    assert summary["checks"]["pending_suggestion_visible"] is False
+    assert summary["checks"]["pending_suggestions_considered"] is False
 
 
 def test_local_visual_state_requires_consolidated_capture_and_pending_review() -> None:

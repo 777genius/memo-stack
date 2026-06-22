@@ -561,6 +561,16 @@ def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
             "generated_mcp": {"raw_token_absent": True, "token_included": False},
             "mcp_session": {"tool_count": 45},
             "ui": {"first_memory_guidance": True},
+            "mcp_digest": {
+                "ok": True,
+                "digest_id": "dig-demo",
+                "pending_suggestion_items": 1,
+                "checks": {
+                    "evidence_only": True,
+                    "pending_suggestion_visible": True,
+                    "raw_token_absent": True,
+                },
+            },
             "visual_memory": {
                 "browser_capture_visible": True,
                 "pending_suggestions": 1,
@@ -576,16 +586,25 @@ def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
     )
     weak_payload = json.loads(json.dumps(payload))
     weak_payload["checks"]["mcp_session"]["tool_count"] = 12
+    weak_digest_payload = json.loads(json.dumps(payload))
+    weak_digest_payload["checks"]["mcp_digest"]["checks"]["pending_suggestion_visible"] = False
 
     weak = proof._summarize_local_visual_smoke(
         {"ok": True, "returncode": 0, "payload": weak_payload}
+    )
+    weak_digest = proof._summarize_local_visual_smoke(
+        {"ok": True, "returncode": 0, "payload": weak_digest_payload}
     )
 
     assert good["ok"] is True
     assert good["mcp_tool_count"] == 45
     assert good["pending_suggestions"] == 1
+    assert good["digest_id"] == "dig-demo"
+    assert good["digest_pending_suggestion_items"] == 1
     assert weak["ok"] is False
     assert weak["checks"]["mcp_tool_count"] is False
+    assert weak_digest["ok"] is False
+    assert weak_digest["checks"]["mcp_digest_pending_review"] is False
 
 
 def test_local_experience_proof_failure_list_is_required_components_only() -> None:

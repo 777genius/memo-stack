@@ -68,11 +68,12 @@ def main() -> int:
                 checks["mcp_session"] = asyncio.run(
                     _run_mcp_status(api_url=api_url, token=token, space_slug=space_slug)
                 )
+            marker = f"LOCAL_VISUAL_MCP_SMOKE_{run_id[-8:]}"
             capture = _create_capture(
                 client,
                 space_slug=space_slug,
                 scope_ref=scope_ref,
-                marker=f"LOCAL_VISUAL_MCP_SMOKE_{run_id[-8:]}",
+                marker=marker,
             )
             checks["capture_created"] = {
                 "ok": bool(capture.get("id")),
@@ -86,6 +87,18 @@ def main() -> int:
                 capture_id=str(capture.get("id") or ""),
                 timeout_seconds=args.timeout_seconds,
             )
+            if args.skip_mcp_session:
+                checks["mcp_digest"] = {"ok": True, "status": "skipped"}
+            else:
+                checks["mcp_digest"] = asyncio.run(
+                    _run_mcp_digest(
+                        api_url=api_url,
+                        token=token,
+                        space_slug=space_slug,
+                        scope_ref=scope_ref,
+                        topic=marker,
+                    )
+                )
     except Exception as exc:
         failures.append(f"{exc.__class__.__name__}: {exc}")
 
@@ -246,6 +259,136 @@ async def _run_mcp_status(*, api_url: str, token: str, space_slug: str) -> dict[
     }
 
 
+async def _run_mcp_digest(
+    *,
+    api_url: str,
+    token: str,
+    space_slug: str,
+    scope_ref: str,
+    topic: str,
+) -> dict[str, Any]:
+    try:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+    except ModuleNotFoundError as exc:
+        return {"ok": False, "status": "blocked", "reason": f"missing dependency: {exc.name}"}
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "MEMORY_MCP_API_URL": api_url,
+            "MEMORY_MCP_AUTH_TOKEN": token,
+            "MEMORY_MCP_DEFAULT_SPACE_SLUG": space_slug,
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": scope_ref,
+            "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
+            "MEMORY_MCP_AGENT_NAME": "local-visual-smoke",
+            "MEMORY_MCP_TRANSPORT": "stdio",
+        }
+    )
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "infinity_context_mcp"],
+        env=env,
+    )
+    try:
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            tools = (await session.list_tools()).tools
+            tool_names = {tool.name for tool in tools}
+            result = await session.call_tool(
+                "memory_digest",
+                {
+                    "topic": topic,
+                    "space_slug": space_slug,
+                    "memory_scope_external_ref": scope_ref,
+                    "max_facts": 5,
+                    "max_chunks": 0,
+                    "max_suggestions": 5,
+                    "include_pending_suggestions": True,
+                    "include_related": False,
+                },
+            )
+            payload = _tool_payload(result)
+    except Exception as exc:
+        return {"ok": False, "status": "failed", "reason": f"{exc.__class__.__name__}: {exc}"}
+
+    digest = _summarize_mcp_digest_payload(payload=payload, topic=topic, token=token)
+    return {
+        **digest,
+        "status": "ok" if digest["ok"] else "failed",
+        "tool_present": "memory_digest" in tool_names,
+    }
+
+
+def _tool_payload(result: Any) -> dict[str, Any]:
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict):
+        return structured
+    content = getattr(result, "content", None)
+    if not content:
+        return {}
+    text = getattr(content[0], "text", None)
+    if not isinstance(text, str):
+        return {}
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _summarize_mcp_digest_payload(
+    *,
+    payload: dict[str, Any],
+    topic: str,
+    token: str,
+) -> dict[str, Any]:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    diagnostics = (
+        data.get("diagnostics") if isinstance(data.get("diagnostics"), dict) else {}
+    )
+    sections = data.get("sections") if isinstance(data.get("sections"), list) else []
+    markdown = str(data.get("rendered_markdown") or "")
+    pending_section = next(
+        (
+            section
+            for section in sections
+            if isinstance(section, dict) and section.get("title") == "Pending suggestions"
+        ),
+        {},
+    )
+    pending_items = (
+        pending_section.get("items")
+        if isinstance(pending_section, dict) and isinstance(pending_section.get("items"), list)
+        else []
+    )
+    pending_item_matches = any(
+        isinstance(item, dict) and topic in str(item.get("text") or "")
+        for item in pending_items
+    )
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    checks = {
+        "payload_ok": payload.get("ok") is True,
+        "evidence_only": diagnostics.get("evidence_only") is True,
+        "topic_visible": topic in markdown or data.get("topic") == topic,
+        "pending_suggestion_visible": pending_item_matches,
+        "pending_suggestions_considered": int(
+            diagnostics.get("pending_suggestions_considered") or 0
+        )
+        >= 1,
+        "not_canonical_marked": "not_canonical" in markdown,
+        "raw_token_absent": token not in serialized,
+    }
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "digest_id": data.get("digest_id"),
+        "section_count": len(sections),
+        "pending_suggestion_items": len(pending_items),
+        "rendered_markdown_chars": len(markdown),
+    }
+
+
 def _create_capture(
     client: httpx.Client,
     *,
@@ -388,6 +531,7 @@ def _failed_required_checks(checks: dict[str, Any]) -> list[str]:
         "ui_assets",
         "generated_mcp",
         "mcp_session",
+        "mcp_digest",
         "capture_created",
         "visual_memory",
     )

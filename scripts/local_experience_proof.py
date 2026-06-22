@@ -334,6 +334,14 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
         if isinstance(checks_payload.get("visual_memory"), dict)
         else {}
     )
+    mcp_digest = (
+        checks_payload.get("mcp_digest")
+        if isinstance(checks_payload.get("mcp_digest"), dict)
+        else {}
+    )
+    mcp_digest_checks = (
+        mcp_digest.get("checks") if isinstance(mcp_digest.get("checks"), dict) else {}
+    )
     checks = {
         "command_ok": result.get("ok") is True,
         "payload_ok": payload.get("ok") is True,
@@ -343,6 +351,12 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
         "first_memory_guidance": ui.get("first_memory_guidance") is True,
         "visual_memory_visible": visual_memory.get("browser_capture_visible") is True,
         "pending_review_created": int(visual_memory.get("pending_suggestions") or 0) >= 1,
+        "mcp_digest_ready": mcp_digest.get("ok") is True,
+        "mcp_digest_evidence_only": mcp_digest_checks.get("evidence_only") is True,
+        "mcp_digest_pending_review": (
+            mcp_digest_checks.get("pending_suggestion_visible") is True
+        ),
+        "mcp_digest_token_safe": mcp_digest_checks.get("raw_token_absent") is True,
     }
     return {
         "status": "succeeded" if all(checks.values()) else "failed",
@@ -353,6 +367,8 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
         "review_url": payload.get("review_url"),
         "capture_id": visual_memory.get("capture_id"),
         "pending_suggestions": visual_memory.get("pending_suggestions"),
+        "digest_id": mcp_digest.get("digest_id"),
+        "digest_pending_suggestion_items": mcp_digest.get("pending_suggestion_items"),
         "command": result.get("command"),
         "returncode": result.get("returncode"),
         "parse_error": result.get("parse_error"),
