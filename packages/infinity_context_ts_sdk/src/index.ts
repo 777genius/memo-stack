@@ -219,6 +219,9 @@ export {
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
+  ApplyMemoryReviewPlanDiagnostics,
+  ApplyMemoryReviewPlanResult,
+  ApplyMemoryReviewPlanSummary,
   CheckFullMemoryReadinessDiagnostics,
   CheckFullMemoryReadinessInput,
   CheckFullMemoryReadinessResult,

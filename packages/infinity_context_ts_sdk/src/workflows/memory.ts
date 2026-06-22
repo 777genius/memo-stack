@@ -85,6 +85,13 @@ import {
   type RecordSourceEvidenceResult,
   type MemoryWorkflowErrorData,
 } from "./memory-source-evidence.js";
+import {
+  applyMemoryReviewPlan as applyMemoryReviewPlanWorkflow,
+  type ApplyMemoryReviewPlanDiagnostics,
+  type ApplyMemoryReviewPlanResult,
+  type ApplyMemoryReviewPlanSummary,
+} from "./memory-review.js";
+import type { MemoryReviewPlan } from "./memory-review-plan.js";
 
 export {
   assertMemoryBriefQuality,
@@ -253,6 +260,12 @@ export type {
   MemoryPreferenceBriefScopeOptions,
   MemoryPreferenceSeed,
 } from "./memory-preference-brief-plan.js";
+export type {
+  ApplyMemoryReviewPlanDiagnostics,
+  ApplyMemoryReviewPlanResult,
+  ApplyMemoryReviewPlanSummary,
+  MemoryReviewResources,
+} from "./memory-review.js";
 export type {
   CreateMemoryReviewPlanInput,
   MemoryContextLinkReviewDecision,
@@ -604,6 +617,10 @@ export class MemoryWorkflows {
         warnings,
       },
     };
+  }
+
+  async applyMemoryReviewPlan(plan: MemoryReviewPlan): Promise<ApplyMemoryReviewPlanResult> {
+    return applyMemoryReviewPlanWorkflow(this.resources, plan);
   }
 
   async runMemorySummaryLoop(input: RunMemorySummaryLoopInput): Promise<RunMemorySummaryLoopResult> {

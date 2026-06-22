@@ -758,19 +758,8 @@ const reviewPlan = createMemoryReviewPlan({
   },
 });
 
-if (reviewPlan.contextLinks) {
-  await memory.contextLinks.reviewContextLinkSuggestionsBatch(
-    reviewPlan.contextLinks.items,
-    reviewPlan.contextLinks.options,
-  );
-}
-
-if (reviewPlan.suggestions) {
-  await memory.suggestions.reviewSuggestionsBatch(
-    reviewPlan.suggestions.items,
-    reviewPlan.suggestions.options,
-  );
-}
+const reviewResult = await memory.workflows.applyMemoryReviewPlan(reviewPlan);
+console.log(reviewResult.summary, reviewResult.diagnostics);
 
 await memory.suggestions.resolveSuggestionConflict(suggestionId, {
   action: "approve",

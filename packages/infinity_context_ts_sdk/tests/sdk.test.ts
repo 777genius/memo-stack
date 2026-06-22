@@ -3607,6 +3607,131 @@ describe("InfinityContextClient", () => {
     expect(Object.isFrozen(plan.suggestions?.items)).toBe(true);
   });
 
+  it("applies memory review plans through the workflow facade", async () => {
+    const controller = new AbortController();
+    const transport = new RecordingTransport([
+      jsonResponse({
+        data: {
+          applied: 2,
+          failed: 0,
+          stopped: false,
+          diagnostics: { reviewed: 2 },
+          results: [
+            { suggestion_id: "ctx_suggestion_1", action: "approve", status: "approved" },
+            { suggestion_id: "ctx_suggestion_2", action: "reject", status: "rejected" },
+          ],
+        },
+      }),
+      jsonResponse({
+        data: {
+          applied: 1,
+          failed: 0,
+          stopped: false,
+          results: [
+            { suggestion_id: "memory_suggestion_1", action: "approve", status: "approved" },
+          ],
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const plan = createMemoryReviewPlan({
+      reason: "weekly review",
+      continueOnError: true,
+      signal: controller.signal,
+      headers: { "x-trace-id": "trace_review" },
+      contextLinks: {
+        visibleFilter: {
+          spaceSlug: "workspace",
+          memoryScopeExternalRef: "scope",
+          status: "pending",
+        },
+        items: [
+          {
+            suggestionId: "ctx_suggestion_1",
+            targetType: "fact",
+            targetId: "fact_1",
+            relationType: "supports",
+          },
+          {
+            suggestionId: "ctx_suggestion_2",
+            action: "reject",
+            reason: "weak match",
+          },
+        ],
+      },
+      suggestions: {
+        action: "approve",
+        items: [{ suggestionId: "memory_suggestion_1" }],
+      },
+    });
+
+    const result = await client.workflows.applyMemoryReviewPlan(plan);
+
+    expect(result.summary).toEqual({
+      total: 3,
+      contextLinkReviews: 2,
+      suggestionReviews: 1,
+      byAction: { approve: 2, reject: 1 },
+      applied: 3,
+      failed: 0,
+      stopped: false,
+    });
+    expect(result.diagnostics).toEqual({
+      ok: true,
+      contextLinksOk: true,
+      suggestionsOk: true,
+      warnings: [],
+    });
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/context-link-suggestions/review-batch",
+      "POST /v1/suggestions/review-batch",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("x-trace-id"))).toEqual([
+      "trace_review",
+      "trace_review",
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      continue_on_error: true,
+      visible_filter: {
+        space_slug: "workspace",
+        memory_scope_external_ref: "scope",
+        status: "pending",
+      },
+      items: [
+        {
+          suggestion_id: "ctx_suggestion_1",
+          action: "approve",
+          reason: "weekly review",
+          target_type: "fact",
+          target_id: "fact_1",
+          relation_type: "supports",
+        },
+        {
+          suggestion_id: "ctx_suggestion_2",
+          action: "reject",
+          reason: "weak match",
+        },
+      ],
+    });
+    expect(transport.bodies[1]).toMatchObject({
+      continue_on_error: true,
+      items: [
+        {
+          suggestion_id: "memory_suggestion_1",
+          action: "approve",
+          reason: "weekly review",
+        },
+      ],
+    });
+    const requestSignals = transport.requests.map((request) => request.signal);
+    expectCompletedSignalsDetached(requestSignals, controller, "cancel review plan");
+  });
+
   it("validates memory review plans", () => {
     expect(() => createMemoryReviewPlan({})).toThrow("createMemoryReviewPlan requires at least one review item");
     expect(() => createMemoryReviewPlan({
@@ -3619,6 +3744,23 @@ describe("InfinityContextClient", () => {
         items: [{ suggestionId: "", action: "reject" }],
       },
     })).toThrow("suggestion review item 0 requires suggestionId");
+  });
+
+  it("validates applied memory review plans", async () => {
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport: new RecordingTransport([]),
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    await expect(client.workflows.applyMemoryReviewPlan({
+      summary: {
+        total: 0,
+        contextLinkReviews: 0,
+        suggestionReviews: 0,
+        byAction: {},
+      },
+    })).rejects.toThrow("applyMemoryReviewPlan requires at least one review item");
   });
 
   it("supports context link creation, suggestion review and batch validation", async () => {
