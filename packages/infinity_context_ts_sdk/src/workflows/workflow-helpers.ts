@@ -1,3 +1,4 @@
+import type { RequestControls } from "../client.js";
 import type { ContextRetrievalComponent } from "../diagnostics.js";
 import { InfinityContextError } from "../errors.js";
 import { ValueError } from "../payload.js";
@@ -125,6 +126,36 @@ export function workflowErrorData(error: unknown): WorkflowErrorData {
 
 export function workflowConflict(error: unknown): boolean {
   return error instanceof InfinityContextError && error.statusCode === 409;
+}
+
+export function workflowControls(input: RequestControls): RequestControls {
+  return {
+    ...optional("headers", input.headers),
+    ...optional("signal", input.signal),
+    ...optional("timeoutMs", input.timeoutMs),
+  };
+}
+
+export function withWorkflowControls<TInput extends RequestControls>(
+  batchControls: RequestControls,
+  input: TInput,
+): TInput {
+  return {
+    ...input,
+    ...mergeWorkflowControls(batchControls, input),
+  };
+}
+
+export function mergeWorkflowControls(parent: RequestControls, child: RequestControls): RequestControls {
+  const headers = parent.headers === undefined && child.headers === undefined
+    ? undefined
+    : { ...parent.headers, ...child.headers };
+
+  return {
+    ...optional("headers", headers),
+    ...optional("signal", child.signal ?? parent.signal),
+    ...optional("timeoutMs", child.timeoutMs ?? parent.timeoutMs),
+  };
 }
 
 export function isDefined<TValue>(value: TValue | undefined): value is TValue {

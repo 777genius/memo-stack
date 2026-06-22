@@ -36,13 +36,9 @@ import type {
   FactRecord,
   InfinityContextCapabilities,
   JsonObject,
-  MemoryScopeRecord,
   SourceRef,
-  Space,
-  SpaceMembership,
   SuggestionRecord,
   UsageSummaryData,
-  UserRecord,
 } from "../types.js";
 import {
   incrementCount,
@@ -57,8 +53,9 @@ import {
   stepOptions,
   stringField,
   uniqueStrings,
-  workflowConflict,
+  workflowControls,
   workflowErrorData,
+  withWorkflowControls,
 } from "./workflow-helpers.js";
 import {
   assertMemoryBriefQuality,
@@ -67,12 +64,26 @@ import {
   type MemoryBriefQualityPolicy,
   type MemoryBriefQualityReport,
 } from "./memory-brief-quality.js";
+import {
+  ensureMemoryTopology as ensureMemoryTopologyWorkflow,
+  type EnsureMemoryTopologyInput,
+  type EnsureMemoryTopologyResult,
+  type MemoryTopologyResources,
+} from "./memory-topology.js";
 
 export {
   assertMemoryBriefQuality,
   evaluateMemoryBriefQuality,
   summarizeMemoryBriefEvidence,
 } from "./memory-brief-quality.js";
+export type {
+  EnsureMemoryScopeInput,
+  EnsureMemoryTopologyCreated,
+  EnsureMemoryTopologyDiagnostics,
+  EnsureMemoryTopologyInput,
+  EnsureMemoryTopologyResult,
+  EnsureMemoryUserInput,
+} from "./memory-topology.js";
 export type {
   MemoryBriefEvidenceSourceRef,
   MemoryBriefEvidenceSummary,
@@ -115,11 +126,6 @@ interface MemoryMaintenanceResources {
   readonly contextLinks: ContextLinksClient;
   readonly readModels: ReadModelsClient;
   readonly suggestions: SuggestionsClient;
-}
-
-interface MemoryTopologyResources {
-  readonly spaces: SpacesClient;
-  readonly users: UsersClient;
 }
 
 interface MemoryRuntimeReadinessResources {
@@ -436,49 +442,6 @@ export interface TransferMemorySnapshotResult {
   readonly preview?: JsonObject;
   readonly importResult?: JsonObject;
   readonly diagnostics: MemorySnapshotTransferDiagnostics;
-}
-
-export interface EnsureMemoryScopeInput {
-  readonly externalRef: string;
-  readonly name: string;
-}
-
-export interface EnsureMemoryUserInput {
-  readonly externalRef: string;
-  readonly displayName: string;
-  readonly email?: string;
-  readonly metadata?: JsonObject;
-  readonly role?: string;
-}
-
-export interface EnsureMemoryTopologyInput extends RequestControls {
-  readonly spaceSlug: string;
-  readonly spaceName: string;
-  readonly memoryScopes?: readonly EnsureMemoryScopeInput[];
-  readonly users?: readonly EnsureMemoryUserInput[];
-  readonly createMemberships?: boolean;
-  readonly listLimit?: number;
-}
-
-export interface EnsureMemoryTopologyCreated {
-  readonly space: boolean;
-  readonly memoryScopes: readonly string[];
-  readonly users: readonly string[];
-  readonly memberships: readonly string[];
-}
-
-export interface EnsureMemoryTopologyDiagnostics {
-  readonly listLimit: number;
-  readonly warnings: readonly string[];
-}
-
-export interface EnsureMemoryTopologyResult {
-  readonly space: Space;
-  readonly memoryScopes: readonly MemoryScopeRecord[];
-  readonly users: readonly UserRecord[];
-  readonly memberships: readonly SpaceMembership[];
-  readonly created: EnsureMemoryTopologyCreated;
-  readonly diagnostics: EnsureMemoryTopologyDiagnostics;
 }
 
 export type WorkflowStepOptions<TOptions extends object> = boolean | TOptions;
@@ -1136,106 +1099,7 @@ export class MemoryWorkflows {
   }
 
   async ensureMemoryTopology(input: EnsureMemoryTopologyInput): Promise<EnsureMemoryTopologyResult> {
-    const resources = topologyResources(this.resources);
-    const controls = workflowControls(input);
-    const listLimit = input.listLimit ?? 500;
-    const warnings: string[] = [];
-    const createdScopes: string[] = [];
-    const createdUsers: string[] = [];
-    const createdMemberships: string[] = [];
-
-    const spaceResult = await ensureWorkflowSpace(resources, {
-      ...controls,
-      slug: requiredWorkflowText(input.spaceSlug, "ensureMemoryTopology requires spaceSlug"),
-      name: requiredWorkflowText(input.spaceName, "ensureMemoryTopology requires spaceName"),
-      listLimit,
-    });
-
-    const memoryScopes: MemoryScopeRecord[] = [];
-    for (const scope of input.memoryScopes ?? []) {
-      const result = await ensureWorkflowMemoryScope(resources, {
-        ...controls,
-        spaceId: spaceResult.record.id,
-        externalRef: requiredWorkflowText(scope.externalRef, "ensureMemoryTopology scope requires externalRef"),
-        name: requiredWorkflowText(scope.name, "ensureMemoryTopology scope requires name"),
-        listLimit,
-      });
-      memoryScopes.push(result.record);
-      if (result.created) {
-        createdScopes.push(result.record.external_ref);
-      }
-    }
-
-    const users: UserRecord[] = [];
-    const memberships: SpaceMembership[] = [];
-    if (input.users !== undefined && input.users.length > 0) {
-      const existingUsers = await resources.users.listUsers({
-        ...controls,
-        limit: listLimit,
-      });
-      const userRecordsByExternalRef = new Map<string, UserRecord>();
-
-      for (const user of input.users) {
-        const result = await ensureWorkflowUser(resources, {
-          ...controls,
-          externalRef: requiredWorkflowText(user.externalRef, "ensureMemoryTopology user requires externalRef"),
-          displayName: requiredWorkflowText(user.displayName, "ensureMemoryTopology user requires displayName"),
-          ...optional("email", user.email),
-          ...optional("metadata", user.metadata),
-          listLimit,
-          existingUsers: existingUsers.data,
-        });
-        users.push(result.record);
-        userRecordsByExternalRef.set(result.record.external_ref, result.record);
-        if (result.created) {
-          createdUsers.push(result.record.external_ref);
-        }
-      }
-
-      if (input.createMemberships ?? true) {
-        const existingMemberships = await resources.users.listSpaceMemberships(spaceResult.record.id, {
-          ...controls,
-          limit: listLimit,
-        });
-        for (const user of input.users) {
-          const userRecord = userRecordsByExternalRef.get(user.externalRef);
-          if (userRecord === undefined) {
-            continue;
-          }
-          const result = await ensureWorkflowMembership(resources, {
-            ...controls,
-            spaceId: spaceResult.record.id,
-            userId: userRecord.id,
-            role: user.role ?? "member",
-            listLimit,
-            existingMemberships: existingMemberships.data,
-          });
-          memberships.push(result.record);
-          if (result.created) {
-            createdMemberships.push(userRecord.external_ref);
-          } else if (result.record.role !== (user.role ?? "member")) {
-            warnings.push(`membership for ${userRecord.external_ref} exists with role ${result.record.role}`);
-          }
-        }
-      }
-    }
-
-    return {
-      space: spaceResult.record,
-      memoryScopes,
-      users,
-      memberships,
-      created: {
-        space: spaceResult.created,
-        memoryScopes: createdScopes,
-        users: createdUsers,
-        memberships: createdMemberships,
-      },
-      diagnostics: {
-        listLimit,
-        warnings,
-      },
-    };
+    return ensureMemoryTopologyWorkflow(topologyResources(this.resources), input);
   }
 
   async inspectMemory(input: InspectMemoryInput = {}): Promise<InspectMemoryResult> {
@@ -1473,11 +1337,6 @@ interface MemorySnapshotPreviewBundle {
   readonly snapshotPreview: JsonObject;
 }
 
-interface EnsureWorkflowResult<TRecord> {
-  readonly record: TRecord;
-  readonly created: boolean;
-}
-
 function inspectionResources(resources: MemoryWorkflowResources): MemoryInspectionResources {
   const diagnostics = resources.diagnostics;
   const exportsClient = resources.exports;
@@ -1589,156 +1448,6 @@ function snapshotResources(resources: MemoryWorkflowResources): ExportsClient {
     throw new ValueError("transferMemorySnapshot requires MemoryWorkflowResources: exports");
   }
   return exportsClient;
-}
-
-async function ensureWorkflowSpace(
-  resources: MemoryTopologyResources,
-  input: { readonly slug: string; readonly name: string; readonly listLimit: number } & RequestControls,
-): Promise<EnsureWorkflowResult<Space>> {
-  const existing = await resources.spaces.listSpaces({ ...workflowControls(input), limit: input.listLimit });
-  const found = existing.data.find((space) => space.slug === input.slug);
-  if (found !== undefined) {
-    return { record: found, created: false };
-  }
-
-  try {
-    const created = await resources.spaces.createSpace({
-      ...workflowControls(input),
-      slug: input.slug,
-      name: input.name,
-    });
-    return { record: created.data, created: true };
-  } catch (error) {
-    if (!workflowConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await resources.spaces.listSpaces({ ...workflowControls(input), limit: input.listLimit });
-    const created = afterConflict.data.find((space) => space.slug === input.slug);
-    if (created === undefined) {
-      throw error;
-    }
-    return { record: created, created: false };
-  }
-}
-
-async function ensureWorkflowMemoryScope(
-  resources: MemoryTopologyResources,
-  input: {
-    readonly spaceId: string;
-    readonly externalRef: string;
-    readonly name: string;
-    readonly listLimit: number;
-  } & RequestControls,
-): Promise<EnsureWorkflowResult<MemoryScopeRecord>> {
-  const existing = await resources.spaces.listMemoryScopes({
-    ...workflowControls(input),
-    spaceId: input.spaceId,
-    limit: input.listLimit,
-  });
-  const found = existing.data.find((scope) => scope.external_ref === input.externalRef);
-  if (found !== undefined) {
-    return { record: found, created: false };
-  }
-
-  try {
-    const created = await resources.spaces.createMemoryScope({
-      ...workflowControls(input),
-      spaceId: input.spaceId,
-      externalRef: input.externalRef,
-      name: input.name,
-    });
-    return { record: created.data, created: true };
-  } catch (error) {
-    if (!workflowConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await resources.spaces.listMemoryScopes({
-      ...workflowControls(input),
-      spaceId: input.spaceId,
-      limit: input.listLimit,
-    });
-    const created = afterConflict.data.find((scope) => scope.external_ref === input.externalRef);
-    if (created === undefined) {
-      throw error;
-    }
-    return { record: created, created: false };
-  }
-}
-
-async function ensureWorkflowUser(
-  resources: MemoryTopologyResources,
-  input: {
-    readonly externalRef: string;
-    readonly displayName: string;
-    readonly email?: string;
-    readonly metadata?: JsonObject;
-    readonly listLimit: number;
-    readonly existingUsers: readonly UserRecord[];
-  } & RequestControls,
-): Promise<EnsureWorkflowResult<UserRecord>> {
-  const found = input.existingUsers.find((user) => user.external_ref === input.externalRef);
-  if (found !== undefined) {
-    return { record: found, created: false };
-  }
-
-  try {
-    const created = await resources.users.createUser({
-      ...workflowControls(input),
-      externalRef: input.externalRef,
-      displayName: input.displayName,
-      ...optional("email", input.email),
-      ...optional("metadata", input.metadata),
-    });
-    return { record: created.data, created: true };
-  } catch (error) {
-    if (!workflowConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await resources.users.listUsers({ ...workflowControls(input), limit: input.listLimit });
-    const created = afterConflict.data.find((user) => user.external_ref === input.externalRef);
-    if (created === undefined) {
-      throw error;
-    }
-    return { record: created, created: false };
-  }
-}
-
-async function ensureWorkflowMembership(
-  resources: MemoryTopologyResources,
-  input: {
-    readonly spaceId: string;
-    readonly userId: string;
-    readonly role: string;
-    readonly listLimit: number;
-    readonly existingMemberships: readonly SpaceMembership[];
-  } & RequestControls,
-): Promise<EnsureWorkflowResult<SpaceMembership>> {
-  const found = input.existingMemberships.find((membership) => membership.user_id === input.userId);
-  if (found !== undefined) {
-    return { record: found, created: false };
-  }
-
-  try {
-    const created = await resources.users.createSpaceMembership(input.spaceId, {
-      ...workflowControls(input),
-      userId: input.userId,
-      role: input.role,
-    });
-    return { record: created.data, created: true };
-  } catch (error) {
-    if (!workflowConflict(error)) {
-      throw error;
-    }
-    const afterConflict = await resources.users.listSpaceMemberships(input.spaceId, {
-      ...workflowControls(input),
-      limit: input.listLimit,
-    });
-    const created = afterConflict.data.find((membership) => membership.user_id === input.userId);
-    if (created === undefined) {
-      throw error;
-    }
-    return { record: created, created: false };
-  }
 }
 
 function snapshotSource(input: TransferMemorySnapshotInput): MemorySnapshotTransferEndpoint {
@@ -2049,36 +1758,6 @@ function singleScopeInput(input: SingleScopeInput): SingleScopeInput {
     ...optional("spaceSlug", input.spaceSlug),
     ...optional("memoryScopeExternalRef", input.memoryScopeExternalRef),
     ...optional("threadExternalRef", input.threadExternalRef),
-  };
-}
-
-function workflowControls(input: RequestControls): RequestControls {
-  return {
-    ...optional("headers", input.headers),
-    ...optional("signal", input.signal),
-    ...optional("timeoutMs", input.timeoutMs),
-  };
-}
-
-function withWorkflowControls<TInput extends RequestControls>(
-  batchControls: RequestControls,
-  input: TInput,
-): TInput {
-  return {
-    ...input,
-    ...mergeWorkflowControls(batchControls, input),
-  };
-}
-
-function mergeWorkflowControls(parent: RequestControls, child: RequestControls): RequestControls {
-  const headers = parent.headers === undefined && child.headers === undefined
-    ? undefined
-    : { ...parent.headers, ...child.headers };
-
-  return {
-    ...optional("headers", headers),
-    ...optional("signal", child.signal ?? parent.signal),
-    ...optional("timeoutMs", child.timeoutMs ?? parent.timeoutMs),
   };
 }
 
