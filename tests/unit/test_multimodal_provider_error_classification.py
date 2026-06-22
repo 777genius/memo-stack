@@ -148,7 +148,7 @@ def test_openai_transcription_adapter_classifies_provider_quota_as_permanent() -
     assert raw_secret not in json.dumps(result.diagnostics)
 
 
-def test_openai_transcription_adapter_rejects_formats_not_listed_by_current_docs() -> None:
+def test_openai_transcription_adapter_accepts_current_docs_audio_formats() -> None:
     adapter = OpenAISpeechTranscriptionAdapter(
         api_key="test-key",
         model="gpt-4o-mini-transcribe",
@@ -165,14 +165,28 @@ def test_openai_transcription_adapter_rejects_formats_not_listed_by_current_docs
             )
         )
 
-        assert result.status == "unsupported"
-        assert (
-            result.safe_error_code
-            == "asset_extraction.transcription_unsupported_content_type"
-        )
+        assert result.status == "succeeded"
+        assert result.text == "hello audio"
 
-    assert ".flac" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
-    assert ".ogg" not in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".flac" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+    assert ".ogg" in OPENAI_TRANSCRIPTION_SUPPORTED_FILE_SUFFIXES
+
+
+def test_openai_transcription_adapter_rejects_unsupported_audio_format() -> None:
+    adapter = OpenAISpeechTranscriptionAdapter(
+        api_key="test-key",
+        model="gpt-4o-mini-transcribe",
+        client_factory=lambda: _TranscriptionClient({"text": "hello audio"}),
+    )
+
+    result = asyncio.run(
+        adapter.transcribe(
+            replace(_speech_request(), content_type="audio/aac", filename="voice.aac")
+        )
+    )
+
+    assert result.status == "unsupported"
+    assert result.safe_error_code == "asset_extraction.transcription_unsupported_content_type"
 
 
 def test_openai_vision_adapter_classifies_permanent_invalid_api_key() -> None:

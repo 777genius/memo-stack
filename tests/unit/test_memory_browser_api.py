@@ -201,6 +201,35 @@ def test_memory_browser_returns_scope_threads_evidence_anchors_and_links(
     assert data["stats"]["extraction_jobs"] == 1
     assert data["stats"]["threads"] == 1
     assert data["stats"]["active_context_links"] == 1
+    assert data["visual_summary"]["status"] == "review_needed"
+    assert data["visual_summary"]["evidence_count"] == 7
+    assert data["visual_summary"]["active_link_count"] == 1
+    assert data["visual_summary"]["pending_review_count"] >= 1
+    assert "pending_review" in data["visual_summary"]["health_hints"]
+    assert "captures" in data["visual_summary"]["visible_sources"]
+    assert data["quick_actions"][0]["id"] == "review_pending_links"
     assert data["diagnostics"]["browser_version"] == "memory-browser-v1"
+    assert data["diagnostics"]["visual_summary_version"] == "visual-memory-summary-v1"
     assert data["diagnostics"]["statuses"]["episode"] == "active"
     assert data["diagnostics"]["statuses"]["chunk"] == "active"
+
+
+def test_memory_browser_empty_scope_response_includes_visual_next_action(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        browser = client.get(
+            "/v1/memory-browser",
+            params={
+                "space_slug": "browser",
+                "memory_scope_external_ref": "missing-scope",
+            },
+            headers=auth_headers(),
+        )
+        assert browser.status_code == 200, browser.text
+
+    data = browser.json()["data"]
+    assert data["memory_scope"] is None
+    assert data["visual_summary"]["status"] == "empty"
+    assert data["visual_summary"]["health_hints"] == ["scope_not_found", "empty_scope"]
+    assert data["quick_actions"][0]["id"] == "create_memory_scope"

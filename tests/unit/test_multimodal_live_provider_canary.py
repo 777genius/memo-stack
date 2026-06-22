@@ -89,11 +89,13 @@ def test_multimodal_live_provider_canary_reports_missing_key_without_secret_leak
             "timestamp_granularities": [],
         },
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],
@@ -345,8 +347,12 @@ def test_multimodal_live_provider_canary_has_local_fixtures_and_redaction() -> N
     module = _load_canary_module()
 
     assert module._content_type_for_path(Path("fixture.wav")) == "audio/wav"
+    assert module._content_type_for_path(Path("fixture.flac")) == "audio/flac"
     assert module._content_type_for_path(Path("fixture.mp3")) == "audio/mpeg"
+    assert module._content_type_for_path(Path("fixture.ogg")) == "audio/ogg"
     assert module._content_type_for_path(Path("fixture.bin")) == ("application/octet-stream")
+    assert module._audio_magic_matches(content_type="audio/flac", head=b"fLaC\x00\x00")
+    assert module._audio_magic_matches(content_type="audio/ogg", head=b"OggS\x00\x02")
     assert module._sample_png_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     sample_wav = module._sample_wav_bytes()
     assert sample_wav.startswith(b"RIFF")
@@ -1403,11 +1409,13 @@ def test_multimodal_live_provider_canary_preflights_audio_fixture_contract(
         "reason": "audio_fixture_unsupported_type",
         "status": "degraded",
         "supported_file_types": [
+            ".flac",
             ".m4a",
             ".mp3",
             ".mp4",
             ".mpeg",
             ".mpga",
+            ".ogg",
             ".wav",
             ".webm",
         ],

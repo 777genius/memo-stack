@@ -408,6 +408,10 @@ def _multimodal_live_provider_canary_report() -> dict[str, Any]:
             "status": "succeeded",
         },
         "transcription_response_artifact": {"ok": True, "status": "succeeded"},
+        "transcription_time_ranges_live_provider": {
+            "ok": True,
+            "status": "succeeded",
+        },
         "transcription_request_contract": {"ok": True, "status": "contract_covered"},
         "invalid_key_live_probe": {"ok": True, "status": "succeeded"},
         "timeout_live_probe": {"ok": True, "status": "succeeded"},
@@ -427,8 +431,8 @@ def _multimodal_live_provider_canary_report() -> dict[str, Any]:
             "summary": {
                 "contract_requirements_passed": 9,
                 "contract_requirements_total": 9,
-                "live_requirements_passed": 7,
-                "live_requirements_total": 7,
+                "live_requirements_passed": 8,
+                "live_requirements_total": 8,
             },
             "requirements": requirements,
         },
@@ -447,6 +451,7 @@ def _degraded_multimodal_live_provider_canary_report() -> dict[str, Any]:
         "audio_transcription_real_provider",
         "audio_transcription_format_matrix",
         "transcription_response_artifact",
+        "transcription_time_ranges_live_provider",
         "timeout_live_probe",
     ):
         requirements[name] = {
@@ -458,7 +463,7 @@ def _degraded_multimodal_live_provider_canary_report() -> dict[str, Any]:
         "contract_requirements_passed": 9,
         "contract_requirements_total": 9,
         "live_requirements_passed": 1,
-        "live_requirements_total": 7,
+        "live_requirements_total": 8,
     }
     return report
 
@@ -1632,8 +1637,8 @@ def test_memory_quality_scorecard_requires_multimodal_report_safety_contract() -
     provider_report["proof_matrix"]["summary"] = {
         "contract_requirements_passed": 8,
         "contract_requirements_total": 9,
-        "live_requirements_passed": 7,
-        "live_requirements_total": 7,
+        "live_requirements_passed": 8,
+        "live_requirements_total": 8,
     }
     suite_results["infinity-context-multimodal-live-provider-canary"] = provider_report
     suite_results["memory_mcp_agent_behavior"] = _agent_behavior_benchmark_report()

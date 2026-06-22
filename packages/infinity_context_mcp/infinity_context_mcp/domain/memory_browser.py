@@ -26,6 +26,8 @@ class MemoryBrowserData(McpDataModel):
     context_links: list[JsonBrowserObject] = Field(default_factory=list)
     context_link_suggestions: list[JsonBrowserObject] = Field(default_factory=list)
     stats: dict[str, int] = Field(default_factory=dict)
+    visual_summary: JsonBrowserObject = Field(default_factory=dict)
+    quick_actions: list[JsonBrowserObject] = Field(default_factory=list)
     diagnostics: JsonBrowserObject = Field(default_factory=dict)
 
 

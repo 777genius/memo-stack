@@ -101,6 +101,8 @@ async def get_memory_browser(
                 for suggestion in result.context_link_suggestions
             ],
             "stats": result.stats,
+            "visual_summary": result.visual_summary,
+            "quick_actions": list(result.quick_actions),
             "diagnostics": result.diagnostics,
         }
     }
@@ -148,9 +150,30 @@ def _empty_browser_response(*, limit: int) -> dict[str, Any]:
             "pending_context_link_suggestions": 0,
             "active_context_links": 0,
         },
+        "visual_summary": {
+            "status": "empty",
+            "evidence_count": 0,
+            "relationship_count": 0,
+            "pending_review_count": 0,
+            "active_link_count": 0,
+            "processing_job_count": 0,
+            "failed_job_count": 0,
+            "visible_sources": [],
+            "limit_reached": False,
+            "health_hints": ["scope_not_found", "empty_scope"],
+        },
+        "quick_actions": [
+            {
+                "id": "create_memory_scope",
+                "label": "Create memory scope",
+                "description": "Create this MemoryScope before saving visual memory.",
+                "priority": 1,
+            }
+        ],
         "diagnostics": {
             "scope_not_found": True,
             "browser_version": "memory-browser-v1",
+            "visual_summary_version": "visual-memory-summary-v1",
             "limit": limit,
         },
     }

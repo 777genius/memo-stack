@@ -190,6 +190,9 @@ class ContextBundleDiagnostics:
     artifact_evidence_time_query_drop_count: int = 0
     artifact_evidence_invalid_time_range_count: int = 0
     artifact_evidence_invalid_bbox_count: int = 0
+    artifact_evidence_visual_region_query_drop_count: int = 0
+    artifact_evidence_document_location_query_drop_count: int = 0
+    artifact_evidence_extracted_text_query_drop_count: int = 0
     artifact_evidence_query_drop_count: int = 0
     artifact_evidence_sensitive_drop_count: int = 0
     artifact_evidence_prompt_injection_drop_count: int = 0
@@ -259,6 +262,8 @@ class ContextBundleDiagnostics:
     query_snippet_source_refs_enriched: int = 0
     media_time_query_items_used: int = 0
     media_time_query_matched_items_used: int = 0
+    requirement_guard_items_considered: int = 0
+    requirement_guard_items_dropped: int = 0
     source_refs_total: int = 0
     source_refs_returned: int = 0
     source_refs_truncated: bool = False
@@ -813,6 +818,15 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         artifact_evidence_invalid_bbox_count=_non_negative_int(
             raw.get("artifact_evidence_invalid_bbox_count")
         ),
+        artifact_evidence_visual_region_query_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_visual_region_query_drop_count")
+        ),
+        artifact_evidence_document_location_query_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_document_location_query_drop_count")
+        ),
+        artifact_evidence_extracted_text_query_drop_count=_non_negative_int(
+            raw.get("artifact_evidence_extracted_text_query_drop_count")
+        ),
         artifact_evidence_query_drop_count=_non_negative_int(
             raw.get("artifact_evidence_query_drop_count")
         ),
@@ -977,6 +991,12 @@ def _bundle_diagnostics_from_payload(value: object) -> ContextBundleDiagnostics:
         media_time_query_items_used=_non_negative_int(raw.get("media_time_query_items_used")),
         media_time_query_matched_items_used=_non_negative_int(
             raw.get("media_time_query_matched_items_used")
+        ),
+        requirement_guard_items_considered=_non_negative_int(
+            raw.get("requirement_guard_items_considered")
+        ),
+        requirement_guard_items_dropped=_non_negative_int(
+            raw.get("requirement_guard_items_dropped")
         ),
         source_refs_total=_non_negative_int(raw.get("source_refs_total")),
         source_refs_returned=_non_negative_int(raw.get("source_refs_returned")),

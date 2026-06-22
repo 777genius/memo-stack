@@ -221,6 +221,7 @@ _MULTIMODAL_LIVE_PROVIDER_REQUIRED_REQUIREMENTS = (
     "audio_transcription_real_provider",
     "audio_transcription_format_matrix",
     "transcription_response_artifact",
+    "transcription_time_ranges_live_provider",
     "transcription_request_contract",
     "invalid_key_live_probe",
     "timeout_live_probe",

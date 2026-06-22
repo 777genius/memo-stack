@@ -35,6 +35,23 @@ class MemoryBrowserGateway:
                 "context_links": [{"id": "ctx_1", "status": "active"}],
                 "context_link_suggestions": [{"id": "ctxsug_1", "status": "approved"}],
                 "stats": {"active_context_links": 1},
+                "visual_summary": {
+                    "status": "ready",
+                    "evidence_count": 7,
+                    "relationship_count": 3,
+                    "pending_review_count": 0,
+                    "active_link_count": 1,
+                    "visible_sources": ["assets", "captures", "documents", "facts"],
+                    "health_hints": [],
+                },
+                "quick_actions": [
+                    {
+                        "id": "search_memory",
+                        "label": "Search memory",
+                        "description": "Ask a question and use returned items as cited evidence.",
+                        "priority": 4,
+                    }
+                ],
                 "diagnostics": {"browser_version": "memory-browser-v1"},
             }
         }
@@ -61,6 +78,8 @@ def test_service_browses_memory_scope_with_bounded_filters() -> None:
         assert result["data"]["chunks"][0]["id"] == "chunk_1"
         assert result["data"]["extraction_jobs"][0]["id"] == "extract_1"
         assert result["data"]["stats"]["active_context_links"] == 1
+        assert result["data"]["visual_summary"]["status"] == "ready"
+        assert result["data"]["quick_actions"][0]["id"] == "search_memory"
         assert result["diagnostics"]["warnings"] == ["limit_clamped_to_max"]
         call_name, payload = gateway.calls[0]
         assert call_name == "get_memory_browser"

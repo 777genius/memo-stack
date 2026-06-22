@@ -86,6 +86,7 @@ def _minimal_multimodal_live_provider_report(
         "audio_transcription_real_provider",
         "audio_transcription_format_matrix",
         "transcription_response_artifact",
+        "transcription_time_ranges_live_provider",
         "transcription_request_contract",
         "invalid_key_live_probe",
         "timeout_live_probe",
@@ -107,8 +108,8 @@ def _minimal_multimodal_live_provider_report(
             "summary": {
                 "contract_requirements_passed": 9,
                 "contract_requirements_total": 9,
-                "live_requirements_passed": 7,
-                "live_requirements_total": 7,
+                "live_requirements_passed": 8,
+                "live_requirements_total": 8,
             },
             "requirements": {
                 name: {"ok": True, "status": "succeeded"}

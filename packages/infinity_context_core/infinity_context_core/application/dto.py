@@ -313,6 +313,8 @@ class MemoryBrowserResult:
     context_links: tuple[MemoryContextLink, ...]
     context_link_suggestions: tuple[MemoryContextLinkSuggestion, ...]
     stats: dict[str, int]
+    visual_summary: dict[str, object]
+    quick_actions: tuple[dict[str, object], ...]
     diagnostics: dict[str, object]
 
 

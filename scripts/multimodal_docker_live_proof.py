@@ -731,7 +731,17 @@ def _provider_contract_summary(contract: dict[str, Any]) -> dict[str, Any]:
     vision_max_payload_bytes = _positive_int(vision.get("max_provider_payload_bytes"))
     vision_max_images_per_request = _positive_int(vision.get("max_images_per_request"))
     vision_effective_max_upload_bytes = _positive_int(vision.get("effective_max_upload_bytes"))
-    required_audio_suffixes = {".m4a", ".mp3", ".mp4", ".mpeg", ".mpga", ".wav", ".webm"}
+    required_audio_suffixes = {
+        ".flac",
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpga",
+        ".ogg",
+        ".wav",
+        ".webm",
+    }
     audio_ok = (
         transcription.get("endpoint") == "/v1/audio/transcriptions"
         and transcription_max_upload_bytes == 25 * 1024 * 1024
