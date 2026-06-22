@@ -49,6 +49,7 @@
   },
   "files": [
     "dist",
+    "scripts/check-architecture.mjs",
     "scripts/check-package-exports.mjs",
     "scripts/full-memory-proof.mjs",
     "scripts/runtime-canary.mjs",
@@ -59,6 +60,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "check:architecture": "node scripts/check-architecture.mjs",
     "build": "tsup src/index.ts src/instrumentation.ts src/pagination.ts src/runtime.ts src/canary.ts src/proof.ts src/workflows.ts --format esm,cjs --dts --sourcemap --clean",
     "check:parity": "node scripts/check-api-parity.mjs",
     "check:exports": "node scripts/check-package-exports.mjs",
@@ -66,7 +68,7 @@
     "proof:full-memory": "npm run build && node scripts/full-memory-proof.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "verify": "npm run check:parity && npm run typecheck && npm run test && npm run build && npm run check:exports"
+    "verify": "npm run check:architecture && npm run check:parity && npm run typecheck && npm run test && npm run build && npm run check:exports"
   },
   "dependencies": {},
   "overrides": {

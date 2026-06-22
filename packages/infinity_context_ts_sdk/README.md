@@ -27,6 +27,8 @@ Installed binaries:
 
 Both binaries support `--help` and `--version` without contacting the service.
 
+`npm run verify` also runs an architecture size gate for production SDK sources and scripts. The gate warns above 1000 lines and fails above the project hard cap of 2500 lines per file.
+
 ## Usage
 
 ```ts
