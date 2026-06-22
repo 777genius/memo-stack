@@ -1,6 +1,17 @@
 import type { RequestExecutor } from "../client.js";
+import {
+  collectCursorItems,
+  iterateCursorItems,
+  type CursorPaginationOptions,
+  type PaginatedEnvelope,
+} from "../pagination.js";
 import { scopeQuery, singleScopePayload, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { ApiEnvelope, DocumentRecord, JsonObject, SourceRef } from "../types.js";
+
+export interface ListDocumentChunksInput {
+  readonly limit?: number;
+  readonly cursor?: string;
+}
 
 export class DocumentsClient {
   constructor(private readonly http: RequestExecutor) {}
@@ -70,13 +81,33 @@ export class DocumentsClient {
 
   listDocumentChunks(
     documentId: string,
-    input: { readonly limit?: number; readonly cursor?: string } = {},
-  ): Promise<ApiEnvelope<JsonObject[]>> {
-    return this.http.request<ApiEnvelope<JsonObject[]>>({
+    input: ListDocumentChunksInput = {},
+  ): Promise<PaginatedEnvelope<JsonObject[]>> {
+    return this.http.request<PaginatedEnvelope<JsonObject[]>>({
       method: "GET",
       path: `/v1/documents/${documentId}/chunks`,
       params: withoutUndefined({ limit: input.limit ?? 100, cursor: input.cursor }),
     });
+  }
+
+  iterateDocumentChunks(
+    documentId: string,
+    options: CursorPaginationOptions = {},
+  ): AsyncIterable<JsonObject> {
+    return iterateCursorItems<JsonObject>(
+      (page) => this.listDocumentChunks(documentId, page),
+      options,
+    );
+  }
+
+  listAllDocumentChunks(
+    documentId: string,
+    options: CursorPaginationOptions = {},
+  ): Promise<readonly JsonObject[]> {
+    return collectCursorItems<JsonObject>(
+      (page) => this.listDocumentChunks(documentId, page),
+      options,
+    );
   }
 
   processDocument(

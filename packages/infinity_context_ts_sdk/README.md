@@ -97,6 +97,27 @@ console.log(brief.digest?.data.rendered_markdown);
 console.log(brief.diagnostics);
 ```
 
+## Pagination helpers
+
+Cursor endpoints expose typed helpers so integrations can scan memory scopes without hand-rolling cursor loops.
+
+```ts
+for await (const fact of memory.facts.iterateFacts(
+  {
+    spaceSlug: "social-monitor:tenant_1:workspace_1",
+    memoryScopeExternalRef: "topic:ai-agents:preferences",
+    tag: "summary",
+  },
+  { pageLimit: 100, maxItems: 1000 },
+)) {
+  console.log(fact.id, fact.text);
+}
+
+const chunks = await memory.documents.listAllDocumentChunks("doc_123", {
+  pageLimit: 100,
+});
+```
+
 ## Context links
 
 Use context links when source evidence, documents, assets or facts should be explicitly connected for graph-aware retrieval and review workflows.

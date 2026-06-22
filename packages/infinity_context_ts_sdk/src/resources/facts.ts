@@ -1,4 +1,10 @@
 import type { RequestExecutor } from "../client.js";
+import {
+  collectCursorItems,
+  iterateCursorItems,
+  type CursorPaginationOptions,
+  type PaginatedEnvelope,
+} from "../pagination.js";
 import { MemoryScope, scopeQuery, singleScopePayload, withoutUndefined, type SingleScopeInput } from "../payload.js";
 import type { ApiEnvelope, FactRecord, JsonObject, SourceRef } from "../types.js";
 
@@ -12,6 +18,14 @@ export interface RememberFactInput extends SingleScopeInput {
   readonly category?: string;
   readonly tags?: readonly string[];
   readonly ttlPolicy?: string;
+}
+
+export interface ListFactsInput extends SingleScopeInput {
+  readonly status?: string | null;
+  readonly category?: string;
+  readonly tag?: string;
+  readonly limit?: number;
+  readonly cursor?: string;
 }
 
 export class FactsClient {
@@ -71,14 +85,8 @@ export class FactsClient {
     });
   }
 
-  listFacts(input: SingleScopeInput & {
-    readonly status?: string | null;
-    readonly category?: string;
-    readonly tag?: string;
-    readonly limit?: number;
-    readonly cursor?: string;
-  }): Promise<ApiEnvelope<FactRecord[]>> {
-    return this.http.request<ApiEnvelope<FactRecord[]>>({
+  listFacts(input: ListFactsInput): Promise<PaginatedEnvelope<FactRecord[]>> {
+    return this.http.request<PaginatedEnvelope<FactRecord[]>>({
       method: "GET",
       path: "/v1/facts",
       params: withoutUndefined({
@@ -90,6 +98,26 @@ export class FactsClient {
         cursor: input.cursor,
       }),
     });
+  }
+
+  iterateFacts(
+    input: Omit<ListFactsInput, "cursor" | "limit">,
+    options: CursorPaginationOptions = {},
+  ): AsyncIterable<FactRecord> {
+    return iterateCursorItems<FactRecord>(
+      (page) => this.listFacts({ ...input, ...page }),
+      options,
+    );
+  }
+
+  listAllFacts(
+    input: Omit<ListFactsInput, "cursor" | "limit">,
+    options: CursorPaginationOptions = {},
+  ): Promise<readonly FactRecord[]> {
+    return collectCursorItems<FactRecord>(
+      (page) => this.listFacts({ ...input, ...page }),
+      options,
+    );
   }
 
   getRelatedFacts(

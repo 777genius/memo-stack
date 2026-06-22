@@ -149,6 +149,56 @@ describe("InfinityContextClient", () => {
     expect(transport.bodies[0]).not.toHaveProperty("include_stale");
   });
 
+  it("collects paginated facts through typed cursor helpers", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: [factRecord("fact_1"), factRecord("fact_2")], next_cursor: "cursor_2" }),
+      jsonResponse({ data: [factRecord("fact_3")], next_cursor: null }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const facts = await client.facts.listAllFacts(
+      {
+        spaceSlug: "social-monitor:tenant:workspace",
+        memoryScopeExternalRef: "topic:ai-agents:preferences",
+        tag: "summary",
+      },
+      { pageLimit: 2, maxItems: 3 },
+    );
+
+    expect(facts.map((fact) => fact.id)).toEqual(["fact_1", "fact_2", "fact_3"]);
+    expect(transport.requests.map((request) => request.url.toString())).toEqual([
+      "http://memory.test/v1/facts?space_slug=social-monitor%3Atenant%3Aworkspace&memory_scope_external_ref=topic%3Aai-agents%3Apreferences&status=active&tag=summary&limit=2",
+      "http://memory.test/v1/facts?space_slug=social-monitor%3Atenant%3Aworkspace&memory_scope_external_ref=topic%3Aai-agents%3Apreferences&status=active&tag=summary&limit=2&cursor=cursor_2",
+    ]);
+  });
+
+  it("iterates document chunks with opaque cursors", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: [documentChunkRecord("chunk_1", 1)], next_cursor: "chunk_cursor_2" }),
+      jsonResponse({ data: [documentChunkRecord("chunk_2", 2)], next_cursor: null }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const chunks = [];
+    for await (const chunk of client.documents.iterateDocumentChunks("doc_1", { pageLimit: 1 })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.map((chunk) => chunk.id)).toEqual(["chunk_1", "chunk_2"]);
+    expect(transport.requests.map((request) => request.url.toString())).toEqual([
+      "http://memory.test/v1/documents/doc_1/chunks?limit=1",
+      "http://memory.test/v1/documents/doc_1/chunks?limit=1&cursor=chunk_cursor_2",
+    ]);
+  });
+
   it("records feedback through the workflow facade with safe capture defaults", async () => {
     const transport = new RecordingTransport([
       jsonResponse({
@@ -1255,6 +1305,17 @@ function factRecord(id: string) {
     kind: "note",
     status: "active",
     version: 1,
+  };
+}
+
+function documentChunkRecord(id: string, sequence: number) {
+  return {
+    id,
+    document_id: "doc_1",
+    sequence,
+    text: `${id} text`,
+    token_estimate: 3,
+    metadata: {},
   };
 }
 

@@ -24,6 +24,13 @@ export {
 export { InfinityContextError, redactSensitiveText } from "./errors.js";
 export { runFullMemoryProof, type FullMemoryProofOptions, type FullMemoryProofReport } from "./full-memory-proof.js";
 export { InfinityContextClient } from "./infinity-context-client.js";
+export { collectCursorItems, cursorPageRequest, iterateCursorItems } from "./pagination.js";
+export type {
+  CursorPageLoader,
+  CursorPageRequest,
+  CursorPaginationOptions,
+  PaginatedEnvelope,
+} from "./pagination.js";
 export type { AnchorBackfillData, AnchorBackfillSource, AnchorMergeCandidate } from "./resources/anchors.js";
 export type { AssetExtractionListInput } from "./resources/assets.js";
 export type {
@@ -47,6 +54,8 @@ export type {
   ReviewContextLinkSuggestionsBatchData,
   SuggestContextLinksData,
 } from "./resources/context-links.js";
+export type { ListDocumentChunksInput } from "./resources/documents.js";
+export type { ListFactsInput } from "./resources/facts.js";
 export type {
   CreateSuggestionInput,
   CreateSuggestionsBatchData,
