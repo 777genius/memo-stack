@@ -57,6 +57,8 @@ export class InfinityContextClient {
     this.workflows = new MemoryWorkflows({
       captures: this.captures,
       context: this.context,
+      contextLinks: this.contextLinks,
+      documents: this.documents,
       facts: this.facts,
     });
   }

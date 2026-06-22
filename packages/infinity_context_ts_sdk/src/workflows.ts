@@ -6,4 +6,12 @@ export type {
   MemoryWorkflowResources,
   RecordMemoryFeedbackInput,
   RecordMemoryFeedbackResult,
+  RecordSourceEvidenceCaptureOptions,
+  RecordSourceEvidenceDocumentOptions,
+  RecordSourceEvidenceEpisodeOptions,
+  RecordSourceEvidenceFactOptions,
+  RecordSourceEvidenceInput,
+  RecordSourceEvidenceLinkSuggestionOptions,
+  RecordSourceEvidenceResult,
+  WorkflowStepOptions,
 } from "./workflows/memory.js";

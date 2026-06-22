@@ -502,6 +502,146 @@ describe("InfinityContextClient", () => {
     });
   });
 
+  it("records source evidence through the workflow facade", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse({ data: documentRecord("doc_1") }, 201),
+      jsonResponse({ data: documentRecord("doc_1") }),
+      jsonResponse({ data: { id: "episode_1", status: "active" } }, 201),
+      jsonResponse({
+        data: {
+          ...captureRecord("capture_1"),
+          duplicate: false,
+          created_suggestions: 0,
+          suggestion_ids: [],
+          auto_applied_facts: 0,
+          auto_applied_fact_ids: [],
+        },
+      }, 201),
+      jsonResponse({ data: factRecord("fact_1") }, 201),
+      jsonResponse({
+        data: {
+          candidates: [
+            {
+              target_type: "fact",
+              target_id: "fact_1",
+              label: "Reddit freshness",
+              preview: "Primary-source freshness preference",
+              score: 0.92,
+              reasons: ["semantic_overlap"],
+              suggestion_id: "ctx_suggestion_1",
+              status: "pending",
+              metadata: {},
+            },
+          ],
+          diagnostics: { persisted: true },
+        },
+      }),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+
+    const result = await client.workflows.recordSourceEvidence({
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRef: "source:reddit:ai-agents",
+      threadExternalRef: "scan:2026-06-22",
+      sourceAgent: "social-monitor",
+      sourceType: "reddit",
+      sourceId: "reddit:t3_abc",
+      title: "Reddit discussion on agent memory",
+      text: "Operators want Reddit freshness, citations and source scoring in summaries.",
+      occurredAt: "2026-06-22T10:00:00.000Z",
+      idempotencyKey: "reddit:t3_abc",
+      metadata: { provider: "reddit", subreddit: "LocalLLaMA" },
+      document: { process: true, classification: "public" },
+      fact: {
+        memoryScopeExternalRef: "topic:ai-agents:preferences",
+        category: "source_signal",
+        tags: ["reddit", "freshness"],
+      },
+      linkSuggestions: { persist: true, limit: 5 },
+    });
+
+    expect(result.document?.data.id).toBe("doc_1");
+    expect(result.processedDocument?.data.id).toBe("doc_1");
+    expect(result.episode?.data.id).toBe("episode_1");
+    expect(result.capture?.data.id).toBe("capture_1");
+    expect(result.fact?.data.id).toBe("fact_1");
+    expect(result.linkSuggestions?.data.candidates).toHaveLength(1);
+    expect(result.sourceRefs).toEqual([
+      { source_type: "reddit", source_id: "reddit:t3_abc" },
+      { source_type: "document", source_id: "doc_1" },
+      { source_type: "episode", source_id: "episode_1" },
+      { source_type: "capture", source_id: "capture_1" },
+    ]);
+    expect(transport.requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "POST /v1/documents",
+      "POST /v1/documents/doc_1/process",
+      "POST /v1/episodes",
+      "POST /v1/captures",
+      "POST /v1/facts",
+      "POST /v1/link-suggestions",
+    ]);
+    expect(transport.requests.map((request) => request.headers.get("idempotency-key"))).toEqual([
+      "reddit:t3_abc:document",
+      "reddit:t3_abc:document:process",
+      "reddit:t3_abc:episode",
+      "reddit:t3_abc:capture",
+      "reddit:t3_abc:fact",
+      null,
+    ]);
+    expect(transport.bodies[0]).toMatchObject({
+      space_slug: "social-monitor:tenant:workspace",
+      memory_scope_external_ref: "source:reddit:ai-agents",
+      thread_external_ref: "scan:2026-06-22",
+      title: "Reddit discussion on agent memory",
+      source_type: "reddit",
+      source_external_id: "reddit:t3_abc",
+      classification: "public",
+      source_refs: [{ source_type: "reddit", source_id: "reddit:t3_abc" }],
+    });
+    expect(transport.bodies[1]).toMatchObject({
+      source_type: "reddit",
+      source_external_id: "reddit:t3_abc",
+      trust_level: "medium",
+      kind_hint: "source_evidence",
+      metadata: { provider: "reddit", subreddit: "LocalLLaMA" },
+    });
+    expect(transport.bodies[2]).toMatchObject({
+      source_agent: "social-monitor",
+      source_kind: "document",
+      event_type: "memory.source_evidence.recorded",
+      actor_role: "tool",
+      source_authority: "tool_verified",
+      evidence_refs: [
+        { source_type: "reddit", source_id: "reddit:t3_abc" },
+        { source_type: "document", source_id: "doc_1" },
+        { source_type: "episode", source_id: "episode_1" },
+      ],
+      consolidate: true,
+    });
+    expect(transport.bodies[3]).toMatchObject({
+      memory_scope_external_ref: "topic:ai-agents:preferences",
+      kind: "source_signal",
+      category: "source_signal",
+      tags: ["reddit", "freshness"],
+      source_refs: [
+        { source_type: "document", source_id: "doc_1" },
+        { source_type: "episode", source_id: "episode_1" },
+        { source_type: "capture", source_id: "capture_1" },
+        { source_type: "reddit", source_id: "reddit:t3_abc" },
+      ],
+    });
+    expect(transport.bodies[4]).toMatchObject({
+      source_type: "capture",
+      source_id: "capture_1",
+      limit: 5,
+      persist: true,
+    });
+  });
+
   it("builds a memory brief workflow across context, search and digest", async () => {
     const transport = new RecordingTransport([
       jsonResponse(contextResponse("brief", {
@@ -1537,6 +1677,14 @@ function factRecord(id: string) {
     kind: "note",
     status: "active",
     version: 1,
+  };
+}
+
+function documentRecord(id: string) {
+  return {
+    id,
+    title: `${id} title`,
+    status: "active",
   };
 }
 

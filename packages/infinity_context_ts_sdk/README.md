@@ -111,6 +111,31 @@ console.log(brief.digest?.data.rendered_markdown);
 console.log(brief.diagnostics);
 ```
 
+Use `recordSourceEvidence` for provider ingestion loops that need durable source memory, reviewable capture history and graph-aware link suggestions.
+
+```ts
+await memory.workflows.recordSourceEvidence({
+  spaceSlug: "social-monitor:tenant_1:workspace_1",
+  memoryScopeExternalRef: "source:reddit:ai-agents",
+  threadExternalRef: "scan:2026-06-22",
+  sourceAgent: "social-monitor",
+  sourceType: "reddit",
+  sourceId: "reddit:t3_abc",
+  title: "Reddit discussion on agent memory",
+  text: "Operators want Reddit freshness, citations and source scoring in summaries.",
+  occurredAt: "2026-06-22T10:00:00.000Z",
+  idempotencyKey: "reddit:t3_abc",
+  metadata: { provider: "reddit", subreddit: "LocalLLaMA" },
+  document: { process: true, classification: "public" },
+  fact: {
+    memoryScopeExternalRef: "topic:ai-agents:preferences",
+    category: "source_signal",
+    tags: ["reddit", "freshness"],
+  },
+  linkSuggestions: { persist: true, limit: 5 },
+});
+```
+
 ## Runtime readiness
 
 Use runtime guards in CI, beta smoke tests or app boot checks before relying on full memory retrieval.
