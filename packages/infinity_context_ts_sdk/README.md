@@ -20,6 +20,11 @@ Stable entry points:
 - `@infinity-context/sdk/pagination`: reusable cursor helpers.
 - `@infinity-context/sdk/workflows`: workflow facade types and classes.
 
+Installed binaries:
+
+- `infinity-context-full-memory-proof`: run the full-memory release proof script.
+- `infinity-context-runtime-canary`: run the non-mutating runtime canary script.
+
 ## Usage
 
 ```ts

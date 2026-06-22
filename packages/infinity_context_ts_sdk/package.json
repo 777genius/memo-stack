@@ -6,6 +6,10 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "infinity-context-full-memory-proof": "./scripts/full-memory-proof.mjs",
+    "infinity-context-runtime-canary": "./scripts/runtime-canary.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
