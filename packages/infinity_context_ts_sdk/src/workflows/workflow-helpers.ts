@@ -1,7 +1,7 @@
 import type { RequestControls } from "../client.js";
 import type { ContextRetrievalComponent } from "../diagnostics.js";
 import { InfinityContextError } from "../errors.js";
-import { ValueError } from "../payload.js";
+import { ValueError, type SingleScopeInput } from "../payload.js";
 import type { JsonObject, SourceRef } from "../types.js";
 
 export interface MemoryBriefRetrievalHealth {
@@ -18,6 +18,8 @@ export interface WorkflowErrorData {
   readonly retryable?: boolean;
   readonly requestId?: string;
 }
+
+export type WorkflowStepOptions<TOptions extends object> = boolean | TOptions;
 
 export function memoryBriefRetrievalHealthy(
   diagnostics: MemoryBriefRetrievalHealth,
@@ -133,6 +135,17 @@ export function workflowControls(input: RequestControls): RequestControls {
     ...optional("headers", input.headers),
     ...optional("signal", input.signal),
     ...optional("timeoutMs", input.timeoutMs),
+  };
+}
+
+export function singleScopeInput(input: SingleScopeInput): SingleScopeInput {
+  return {
+    ...optional("spaceId", input.spaceId),
+    ...optional("memoryScopeId", input.memoryScopeId),
+    ...optional("threadId", input.threadId),
+    ...optional("spaceSlug", input.spaceSlug),
+    ...optional("memoryScopeExternalRef", input.memoryScopeExternalRef),
+    ...optional("threadExternalRef", input.threadExternalRef),
   };
 }
 
