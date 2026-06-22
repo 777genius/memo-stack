@@ -26,6 +26,7 @@ import {
   InfinityContextClient,
   ReadScope,
   assertFullMemoryReady,
+  assertMemoryBriefQuality,
   healthyRetrievalComponents,
   retrievalDiagnostics,
   runRuntimeCanary,
@@ -129,6 +130,13 @@ const brief = await memory.workflows.buildMemoryBrief({
 console.log(brief.context.data.rendered_text);
 console.log(brief.digest?.data.rendered_markdown);
 console.log(brief.diagnostics);
+
+assertMemoryBriefQuality(brief, {
+  requireSearch: true,
+  requireDigest: true,
+  requireDerivedRetrieval: true,
+  requiredRetrieval: ["vector", "graph"],
+});
 ```
 
 Use `seedMemoryAndBuildBrief` when a product needs to persist user or topic preferences, wait for projections, and immediately read the memory-shaped answer.

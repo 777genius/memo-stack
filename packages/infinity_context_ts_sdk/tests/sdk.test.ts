@@ -5,7 +5,9 @@ import {
   MemoryScope,
   ReadScope,
   ValueError,
+  assertMemoryBriefQuality,
   assertFullMemoryReady,
+  evaluateMemoryBriefQuality,
   evaluateRuntimeReadiness,
   healthyRetrievalComponents,
   retrievalDiagnostics,
@@ -14,6 +16,7 @@ import {
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
   waitForRuntimeCanary,
+  type BuildMemoryBriefResult,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -1369,6 +1372,150 @@ describe("InfinityContextClient", () => {
       max_facts: 12,
       max_chunks: 8,
     });
+  });
+
+  it("evaluates memory brief quality for release gates", async () => {
+    const transport = new RecordingTransport([
+      jsonResponse(contextResponse("brief-quality", {
+        retrieval_sources_used: ["vector", "graph", "rag"],
+        vector_query_count: 2,
+        graph_query_count: 1,
+        rag_query_count: 1,
+      })),
+      jsonResponse(searchResponse({
+        retrieval_sources_used: ["graph"],
+        graph_query_count: 1,
+      })),
+      jsonResponse(digestResponse("brief-quality")),
+    ]);
+    const client = new InfinityContextClient({
+      baseUrl: "http://memory.test",
+      transport,
+      retryPolicy: { maxAttempts: 1 },
+    });
+    const brief = await client.workflows.buildMemoryBrief({
+      query: "What should today's AI digest prioritize?",
+      topic: "AI digest",
+      spaceSlug: "social-monitor:tenant:workspace",
+      memoryScopeExternalRefs: ["workspace-global", "topic:ai-agents:preferences"],
+    });
+
+    const quality = assertMemoryBriefQuality(brief, {
+      requireSearch: true,
+      minSearchItems: 1,
+      requireDigest: true,
+      requireDerivedRetrieval: true,
+      requiredRetrieval: ["vector", "graph", "rag"],
+    });
+
+    expect(quality).toMatchObject({
+      ok: true,
+      errors: [],
+      metrics: {
+        contextItems: 1,
+        contextSourceRefs: 1,
+        topEvidenceItems: 0,
+        searchItems: 1,
+        digestSections: 0,
+        digestSourceRefs: 0,
+      },
+      retrieval: {
+        derivedRetrievalUsed: true,
+        vectorHealthy: true,
+        graphHealthy: true,
+        ragHealthy: true,
+        retrievalSourcesUsed: ["vector", "graph", "rag"],
+      },
+    });
+  });
+
+  it("throws typed memory brief quality failures with diagnostics", () => {
+    const poorBrief: BuildMemoryBriefResult = {
+      context: {
+        data: {
+          ...contextResponse("poor-brief", {
+            retrieval_sources_used: ["keyword"],
+            vector_status: "disabled",
+            graph_status: "disabled",
+            rag_status: "disabled",
+            vector_query_count: 0,
+            graph_query_count: 0,
+            rag_query_count: 0,
+          }).data,
+          items: [],
+          answer_support: {
+            status: "unsupported",
+            items_returned: 0,
+            coverage: {},
+            policy: {},
+            warnings: ["no supported evidence"],
+          },
+        },
+      },
+      diagnostics: {
+        derivedRetrievalUsed: false,
+        vectorHealthy: false,
+        graphHealthy: false,
+        ragHealthy: false,
+        retrievalSourcesUsed: ["keyword"],
+        warnings: ["no supported evidence"],
+      },
+    };
+
+    const quality = evaluateMemoryBriefQuality(poorBrief, {
+      minContextItems: 1,
+      requireDigest: true,
+      requireDerivedRetrieval: true,
+      requiredRetrieval: ["vector", "graph"],
+      failOnWarnings: true,
+    });
+
+    expect(quality.ok).toBe(false);
+    expect(quality.errors).toEqual([
+      "context returned 0 item(s), expected at least 1",
+      "digest result is required",
+      "context answer support is unsupported",
+      "derived retrieval was not used",
+      "vector retrieval is not healthy",
+      "graph retrieval is not healthy",
+      "brief returned 1 warning(s)",
+    ]);
+    expect(() => assertMemoryBriefQuality(poorBrief, {
+      requireDigest: true,
+      requireDerivedRetrieval: true,
+      requiredRetrieval: ["vector"],
+      failOnWarnings: true,
+    })).toThrowError(InfinityContextError);
+
+    try {
+      assertMemoryBriefQuality(poorBrief, {
+        requireDigest: true,
+        requireDerivedRetrieval: true,
+        requiredRetrieval: ["vector"],
+        failOnWarnings: true,
+      });
+      throw new Error("expected memory brief quality failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InfinityContextError);
+      expect((error as InfinityContextError).code).toBe("memory.brief_quality_failed");
+      expect((error as InfinityContextError).details).toMatchObject({
+        metrics: {
+          context_items: 0,
+          context_source_refs: 0,
+          top_evidence_items: 0,
+          search_items: 0,
+          digest_sections: 0,
+          digest_source_refs: 0,
+        },
+        retrieval: {
+          derived_retrieval_used: false,
+          vector_healthy: false,
+          graph_healthy: false,
+          rag_healthy: false,
+          retrieval_sources_used: ["keyword"],
+        },
+      });
+    }
   });
 
   it("seeds durable memory before building a memory brief", async () => {

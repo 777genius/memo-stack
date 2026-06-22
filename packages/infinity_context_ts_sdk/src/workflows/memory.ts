@@ -148,6 +148,36 @@ export interface BuildMemoryBriefResult {
   readonly diagnostics: MemoryBriefDiagnostics;
 }
 
+export interface MemoryBriefQualityPolicy {
+  readonly minContextItems?: number;
+  readonly requireSearch?: boolean;
+  readonly minSearchItems?: number;
+  readonly requireDigest?: boolean;
+  readonly minDigestSections?: number;
+  readonly minDigestSourceRefs?: number;
+  readonly requireSupportedAnswer?: boolean;
+  readonly requireDerivedRetrieval?: boolean;
+  readonly requiredRetrieval?: readonly ContextRetrievalComponent[];
+  readonly failOnWarnings?: boolean;
+}
+
+export interface MemoryBriefQualityMetrics {
+  readonly contextItems: number;
+  readonly contextSourceRefs: number;
+  readonly topEvidenceItems: number;
+  readonly searchItems: number;
+  readonly digestSections: number;
+  readonly digestSourceRefs: number;
+}
+
+export interface MemoryBriefQualityReport {
+  readonly ok: boolean;
+  readonly errors: readonly string[];
+  readonly warnings: readonly string[];
+  readonly metrics: MemoryBriefQualityMetrics;
+  readonly retrieval: MemoryBriefDiagnostics;
+}
+
 export interface SeedMemoryFactInput extends SingleScopeInput, RequestControls {
   readonly text: string;
   readonly sourceRefs?: readonly SourceRef[];
@@ -628,6 +658,89 @@ export function summarizeSourceEvidenceBatch(
     byStatusCode,
     failedItems,
   };
+}
+
+export function evaluateMemoryBriefQuality(
+  brief: BuildMemoryBriefResult,
+  policy: MemoryBriefQualityPolicy = {},
+): MemoryBriefQualityReport {
+  const errors: string[] = [];
+  const warnings = [...brief.diagnostics.warnings];
+  const metrics = memoryBriefQualityMetrics(brief);
+  const minContextItems = policy.minContextItems ?? 1;
+  const minSearchItems = policy.minSearchItems ?? 0;
+  const minDigestSections = policy.minDigestSections ?? 0;
+  const minDigestSourceRefs = policy.minDigestSourceRefs ?? 0;
+
+  if (metrics.contextItems < minContextItems) {
+    errors.push(`context returned ${metrics.contextItems} item(s), expected at least ${minContextItems}`);
+  }
+  if ((policy.requireSearch ?? false) && brief.search === undefined) {
+    errors.push("search result is required");
+  }
+  if (brief.search !== undefined && metrics.searchItems < minSearchItems) {
+    errors.push(`search returned ${metrics.searchItems} item(s), expected at least ${minSearchItems}`);
+  }
+  if ((policy.requireDigest ?? false) && brief.digest === undefined) {
+    errors.push("digest result is required");
+  }
+  if (brief.digest !== undefined && metrics.digestSections < minDigestSections) {
+    errors.push(`digest returned ${metrics.digestSections} section(s), expected at least ${minDigestSections}`);
+  }
+  if (brief.digest !== undefined && metrics.digestSourceRefs < minDigestSourceRefs) {
+    errors.push(`digest returned ${metrics.digestSourceRefs} source ref(s), expected at least ${minDigestSourceRefs}`);
+  }
+  if ((policy.requireSupportedAnswer ?? true) && brief.context.data.answer_support.status !== "supported") {
+    errors.push(`context answer support is ${brief.context.data.answer_support.status}`);
+  }
+  if ((policy.requireDerivedRetrieval ?? false) && !brief.diagnostics.derivedRetrievalUsed) {
+    errors.push("derived retrieval was not used");
+  }
+  for (const component of policy.requiredRetrieval ?? []) {
+    if (!memoryBriefRetrievalHealthy(brief.diagnostics, component)) {
+      errors.push(`${component} retrieval is not healthy`);
+    }
+  }
+  if ((policy.failOnWarnings ?? false) && warnings.length > 0) {
+    errors.push(`brief returned ${warnings.length} warning(s)`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    metrics,
+    retrieval: brief.diagnostics,
+  };
+}
+
+export function assertMemoryBriefQuality(
+  brief: BuildMemoryBriefResult,
+  policy: MemoryBriefQualityPolicy = {},
+): MemoryBriefQualityReport {
+  const report = evaluateMemoryBriefQuality(brief, policy);
+  if (report.ok) {
+    return report;
+  }
+
+  throw new InfinityContextError({
+    statusCode: 0,
+    code: "memory.brief_quality_failed",
+    message: `Memory brief quality failed: ${report.errors.join("; ")}`,
+    retryable: false,
+    details: {
+      errors: report.errors,
+      warnings: report.warnings,
+      metrics: memoryBriefQualityMetricsDetails(report.metrics),
+      retrieval: {
+        derived_retrieval_used: report.retrieval.derivedRetrievalUsed,
+        vector_healthy: report.retrieval.vectorHealthy,
+        graph_healthy: report.retrieval.graphHealthy,
+        rag_healthy: report.retrieval.ragHealthy,
+        retrieval_sources_used: report.retrieval.retrievalSourcesUsed,
+      },
+    } satisfies JsonObject,
+  });
 }
 
 export class MemoryWorkflows {
@@ -2077,6 +2190,45 @@ function briefDiagnostics(
     ]),
     warnings: context.data.answer_support.warnings,
   };
+}
+
+function memoryBriefQualityMetrics(brief: BuildMemoryBriefResult): MemoryBriefQualityMetrics {
+  return {
+    contextItems: brief.context.data.items.length,
+    contextSourceRefs: countItemSourceRefs(brief.context.data.items),
+    topEvidenceItems: brief.context.data.top_evidence.length,
+    searchItems: brief.search?.data.items.length ?? 0,
+    digestSections: brief.digest?.data.sections.length ?? 0,
+    digestSourceRefs: brief.digest?.data.source_refs.length ?? 0,
+  };
+}
+
+function memoryBriefQualityMetricsDetails(metrics: MemoryBriefQualityMetrics): JsonObject {
+  return {
+    context_items: metrics.contextItems,
+    context_source_refs: metrics.contextSourceRefs,
+    top_evidence_items: metrics.topEvidenceItems,
+    search_items: metrics.searchItems,
+    digest_sections: metrics.digestSections,
+    digest_source_refs: metrics.digestSourceRefs,
+  };
+}
+
+function countItemSourceRefs(items: readonly { readonly source_refs?: readonly SourceRef[] }[]): number {
+  return items.reduce((total, item) => total + (item.source_refs?.length ?? 0), 0);
+}
+
+function memoryBriefRetrievalHealthy(
+  diagnostics: MemoryBriefDiagnostics,
+  component: ContextRetrievalComponent,
+): boolean {
+  if (component === "vector") {
+    return diagnostics.vectorHealthy;
+  }
+  if (component === "graph") {
+    return diagnostics.graphHealthy;
+  }
+  return diagnostics.ragHealthy;
 }
 
 function seedMemoryDiagnostics(

@@ -1,4 +1,9 @@
-export { MemoryWorkflows, summarizeSourceEvidenceBatch } from "./workflows/memory.js";
+export {
+  assertMemoryBriefQuality,
+  evaluateMemoryBriefQuality,
+  MemoryWorkflows,
+  summarizeSourceEvidenceBatch,
+} from "./workflows/memory.js";
 export type {
   BuildMemoryBriefInput,
   BuildMemoryBriefResult,
@@ -16,6 +21,9 @@ export type {
   InspectMemoryIssue,
   InspectMemoryResult,
   InspectMemoryRuntimeDiagnostics,
+  MemoryBriefQualityMetrics,
+  MemoryBriefQualityPolicy,
+  MemoryBriefQualityReport,
   MemoryWorkflowErrorData,
   MemoryBriefDiagnostics,
   MemoryMaintenanceAction,
