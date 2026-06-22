@@ -178,6 +178,32 @@ export interface MemoryBriefQualityReport {
   readonly retrieval: MemoryBriefDiagnostics;
 }
 
+export type MemoryBriefEvidenceSurface = "context" | "search" | "digest" | "top_evidence";
+
+export interface MemoryBriefEvidenceSourceRef {
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly count: number;
+  readonly surfaces: readonly MemoryBriefEvidenceSurface[];
+}
+
+export interface MemoryBriefEvidenceSummary {
+  readonly contextItems: number;
+  readonly searchItems: number;
+  readonly digestSections: number;
+  readonly topEvidenceItems: number;
+  readonly sourceRefsTotal: number;
+  readonly uniqueSourceRefs: number;
+  readonly citationsTotal: number;
+  readonly uniqueCitations: number;
+  readonly bySourceType: Readonly<Record<string, number>>;
+  readonly bySurface: Readonly<Record<MemoryBriefEvidenceSurface, number>>;
+  readonly sourceRefs: readonly MemoryBriefEvidenceSourceRef[];
+  readonly citationLabels: readonly string[];
+  readonly missingSourceRefItemIds: readonly string[];
+  readonly warnings: readonly string[];
+}
+
 export interface SeedMemoryFactInput extends SingleScopeInput, RequestControls {
   readonly text: string;
   readonly sourceRefs?: readonly SourceRef[];
@@ -741,6 +767,130 @@ export function assertMemoryBriefQuality(
       },
     } satisfies JsonObject,
   });
+}
+
+export function summarizeMemoryBriefEvidence(brief: BuildMemoryBriefResult): MemoryBriefEvidenceSummary {
+  const sourceRefs = new Map<string, MutableEvidenceSourceRef>();
+  const citationLabels = new Set<string>();
+  const missingSourceRefItemIds = new Set<string>();
+  const bySourceType: Record<string, number> = {};
+  const bySurface: Record<MemoryBriefEvidenceSurface, number> = {
+    context: 0,
+    search: 0,
+    digest: 0,
+    top_evidence: 0,
+  };
+  let citationsTotal = 0;
+  let sourceRefsTotal = 0;
+
+  const addSourceRef = (sourceRef: SourceRef, surface: MemoryBriefEvidenceSurface): void => {
+    sourceRefsTotal += 1;
+    bySurface[surface] += 1;
+    incrementCount(bySourceType, sourceRef.source_type);
+    const key = sourceRefKey(sourceRef);
+    const existing = sourceRefs.get(key);
+    if (existing === undefined) {
+      sourceRefs.set(key, {
+        sourceType: sourceRef.source_type,
+        sourceId: sourceRef.source_id,
+        count: 1,
+        surfaces: new Set([surface]),
+      });
+      return;
+    }
+
+    existing.count += 1;
+    existing.surfaces.add(surface);
+  };
+
+  const addCitation = (
+    citation: { readonly label?: string; readonly citation_id?: string; readonly source_type?: string; readonly source_id?: string },
+    surface: MemoryBriefEvidenceSurface,
+  ): void => {
+    citationsTotal += 1;
+    const label = citation.label ?? citation.citation_id;
+    if (label !== undefined && label.length > 0) {
+      citationLabels.add(label);
+    }
+    const sourceRef = citationSourceRef(citation);
+    if (sourceRef !== undefined) {
+      addSourceRef(sourceRef, surface);
+    }
+  };
+
+  const addItemEvidence = (
+    item: {
+      readonly item_id: string;
+      readonly source_refs?: readonly SourceRef[];
+      readonly citations?: readonly {
+        readonly label?: string;
+        readonly citation_id?: string;
+        readonly source_type?: string;
+        readonly source_id?: string;
+      }[];
+    },
+    surface: MemoryBriefEvidenceSurface,
+  ): void => {
+    const itemSourceRefs = item.source_refs ?? [];
+    const itemCitations = item.citations ?? [];
+    for (const sourceRef of itemSourceRefs) {
+      addSourceRef(sourceRef, surface);
+    }
+    for (const citation of itemCitations) {
+      addCitation(citation, surface);
+    }
+    if (itemSourceRefs.length === 0 && itemCitations.length === 0) {
+      missingSourceRefItemIds.add(item.item_id);
+    }
+  };
+
+  for (const item of brief.context.data.items) {
+    addItemEvidence(item, "context");
+  }
+  for (const evidence of brief.context.data.top_evidence) {
+    if (evidence.item !== undefined) {
+      addItemEvidence(evidence.item, "top_evidence");
+    }
+    if (evidence.citation !== undefined && evidence.citation !== null) {
+      addCitation(evidence.citation, "top_evidence");
+    }
+  }
+  for (const item of brief.search?.data.items ?? []) {
+    addItemEvidence(item, "search");
+  }
+  for (const section of brief.digest?.data.sections ?? []) {
+    for (const item of section.items) {
+      addItemEvidence(item, "digest");
+    }
+  }
+  for (const sourceRef of brief.digest?.data.source_refs ?? []) {
+    addSourceRef(sourceRef, "digest");
+  }
+
+  return {
+    contextItems: brief.context.data.items.length,
+    searchItems: brief.search?.data.items.length ?? 0,
+    digestSections: brief.digest?.data.sections.length ?? 0,
+    topEvidenceItems: brief.context.data.top_evidence.length,
+    sourceRefsTotal,
+    uniqueSourceRefs: sourceRefs.size,
+    citationsTotal,
+    uniqueCitations: citationLabels.size,
+    bySourceType,
+    bySurface,
+    sourceRefs: [...sourceRefs.values()]
+      .map((sourceRef) => ({
+        sourceType: sourceRef.sourceType,
+        sourceId: sourceRef.sourceId,
+        count: sourceRef.count,
+        surfaces: [...sourceRef.surfaces].sort(),
+      }))
+      .sort((left, right) => right.count - left.count || left.sourceType.localeCompare(right.sourceType) ||
+        left.sourceId.localeCompare(right.sourceId)),
+    citationLabels: [...citationLabels].sort(),
+    missingSourceRefItemIds: [...missingSourceRefItemIds].sort(),
+    warnings: brief.context.data.answer_support.warnings,
+  };
 }
 
 export class MemoryWorkflows {
@@ -1538,6 +1688,13 @@ interface MemorySnapshotPreviewBundle {
   readonly snapshotPreview: JsonObject;
 }
 
+interface MutableEvidenceSourceRef {
+  readonly sourceType: string;
+  readonly sourceId: string;
+  count: number;
+  readonly surfaces: Set<MemoryBriefEvidenceSurface>;
+}
+
 interface EnsureWorkflowResult<TRecord> {
   readonly record: TRecord;
   readonly created: boolean;
@@ -2229,6 +2386,23 @@ function memoryBriefRetrievalHealthy(
     return diagnostics.graphHealthy;
   }
   return diagnostics.ragHealthy;
+}
+
+function sourceRefKey(sourceRef: SourceRef): string {
+  return `${sourceRef.source_type}:${sourceRef.source_id}`;
+}
+
+function citationSourceRef(
+  citation: { readonly source_type?: string; readonly source_id?: string },
+): SourceRef | undefined {
+  if (!citation.source_type || !citation.source_id) {
+    return undefined;
+  }
+
+  return {
+    source_type: citation.source_type,
+    source_id: citation.source_id,
+  };
 }
 
 function seedMemoryDiagnostics(

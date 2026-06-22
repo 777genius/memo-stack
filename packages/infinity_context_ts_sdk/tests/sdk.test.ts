@@ -13,6 +13,7 @@ import {
   retrievalDiagnostics,
   runFullMemoryProof,
   runRuntimeCanary,
+  summarizeMemoryBriefEvidence,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
   waitForRuntimeCanary,
@@ -1427,6 +1428,147 @@ describe("InfinityContextClient", () => {
         retrievalSourcesUsed: ["vector", "graph", "rag"],
       },
     });
+  });
+
+  it("summarizes memory brief evidence across context, search, digest and citations", () => {
+    const brief: BuildMemoryBriefResult = {
+      context: {
+        data: {
+          ...contextResponse("evidence", {
+            retrieval_sources_used: ["vector", "graph"],
+            vector_query_count: 2,
+            graph_query_count: 1,
+          }).data,
+          items: [
+            {
+              item_id: "ctx_1",
+              item_type: "fact",
+              text: "Reddit source says users want freshness.",
+              score: 0.9,
+              source_refs: [{ source_type: "reddit", source_id: "t3_ai_agents" }],
+              citations: [{ label: "R1", source_type: "reddit", source_id: "t3_ai_agents" }],
+            },
+            {
+              item_id: "ctx_missing",
+              item_type: "fact",
+              text: "Unattributed evidence should be visible.",
+              score: 0.1,
+              source_refs: [],
+            },
+          ],
+          top_evidence: [
+            {
+              item: {
+                item_id: "top_1",
+                item_type: "fact",
+                text: "GitHub issue mentions rate limits.",
+                score: 0.8,
+                source_refs: [{ source_type: "github", source_id: "issue_1" }],
+              },
+              citation: { label: "G1", source_type: "github", source_id: "issue_1" },
+              score: 0.8,
+              reasons: ["fresh"],
+            },
+          ],
+        },
+      },
+      search: {
+        data: {
+          items: [
+            {
+              item_id: "search_1",
+              item_type: "fact",
+              text: "HN post covers launch context.",
+              score: 0.7,
+              source_refs: [{ source_type: "hackernews", source_id: "item_1" }],
+            },
+          ],
+          top_evidence: [],
+          diagnostics: {
+            vector_status: "ok",
+            graph_status: "ok",
+          },
+        },
+      },
+      digest: {
+        data: {
+          ...digestResponse("evidence").data,
+          sections: [
+            {
+              title: "Sources",
+              truncated: false,
+              items: [
+                {
+                  item_id: "digest_1",
+                  item_type: "fact",
+                  text: "Digest cites Reddit again.",
+                  score: 0.85,
+                  source_refs: [{ source_type: "reddit", source_id: "t3_ai_agents" }],
+                },
+              ],
+            },
+          ],
+          source_refs: [
+            { source_type: "reddit", source_id: "t3_ai_agents" },
+            { source_type: "github", source_id: "issue_1" },
+          ],
+        },
+      },
+      diagnostics: {
+        derivedRetrievalUsed: true,
+        vectorHealthy: true,
+        graphHealthy: true,
+        ragHealthy: false,
+        retrievalSourcesUsed: ["vector", "graph"],
+        warnings: [],
+      },
+    };
+
+    const evidence = summarizeMemoryBriefEvidence(brief);
+
+    expect(evidence).toMatchObject({
+      contextItems: 2,
+      searchItems: 1,
+      digestSections: 1,
+      topEvidenceItems: 1,
+      sourceRefsTotal: 8,
+      uniqueSourceRefs: 3,
+      citationsTotal: 2,
+      uniqueCitations: 2,
+      bySourceType: {
+        github: 3,
+        hackernews: 1,
+        reddit: 4,
+      },
+      bySurface: {
+        context: 2,
+        search: 1,
+        digest: 3,
+        top_evidence: 2,
+      },
+      citationLabels: ["G1", "R1"],
+      missingSourceRefItemIds: ["ctx_missing"],
+    });
+    expect(evidence.sourceRefs).toEqual([
+      {
+        sourceType: "reddit",
+        sourceId: "t3_ai_agents",
+        count: 4,
+        surfaces: ["context", "digest"],
+      },
+      {
+        sourceType: "github",
+        sourceId: "issue_1",
+        count: 3,
+        surfaces: ["digest", "top_evidence"],
+      },
+      {
+        sourceType: "hackernews",
+        sourceId: "item_1",
+        count: 1,
+        surfaces: ["search"],
+      },
+    ]);
   });
 
   it("throws typed memory brief quality failures with diagnostics", () => {

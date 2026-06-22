@@ -30,6 +30,7 @@ import {
   healthyRetrievalComponents,
   retrievalDiagnostics,
   runRuntimeCanary,
+  summarizeMemoryBriefEvidence,
   summarizeSourceEvidenceBatch,
   usedDerivedRetrieval,
   waitForRuntimeCanary,
@@ -137,6 +138,9 @@ assertMemoryBriefQuality(brief, {
   requireDerivedRetrieval: true,
   requiredRetrieval: ["vector", "graph"],
 });
+
+const evidence = summarizeMemoryBriefEvidence(brief);
+console.log(evidence.bySourceType, evidence.sourceRefs);
 ```
 
 Use `seedMemoryAndBuildBrief` when a product needs to persist user or topic preferences, wait for projections, and immediately read the memory-shaped answer.

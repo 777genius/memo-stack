@@ -2,6 +2,7 @@ export {
   assertMemoryBriefQuality,
   evaluateMemoryBriefQuality,
   MemoryWorkflows,
+  summarizeMemoryBriefEvidence,
   summarizeSourceEvidenceBatch,
 } from "./workflows/memory.js";
 export type {
@@ -24,6 +25,9 @@ export type {
   MemoryBriefQualityMetrics,
   MemoryBriefQualityPolicy,
   MemoryBriefQualityReport,
+  MemoryBriefEvidenceSourceRef,
+  MemoryBriefEvidenceSummary,
+  MemoryBriefEvidenceSurface,
   MemoryWorkflowErrorData,
   MemoryBriefDiagnostics,
   MemoryMaintenanceAction,
