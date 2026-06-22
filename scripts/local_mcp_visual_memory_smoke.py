@@ -99,6 +99,25 @@ def main() -> int:
                         topic=marker,
                     )
                 )
+            suggestion_ids = (
+                checks["visual_memory"].get("created_from_capture_suggestion_ids")
+                if isinstance(checks.get("visual_memory"), dict)
+                else []
+            )
+            suggestion_id = str(suggestion_ids[0]) if suggestion_ids else ""
+            if args.skip_mcp_session:
+                checks["mcp_reviewed_search"] = {"ok": True, "status": "skipped"}
+            else:
+                checks["mcp_reviewed_search"] = asyncio.run(
+                    _run_mcp_reviewed_search(
+                        api_url=api_url,
+                        token=token,
+                        space_slug=space_slug,
+                        scope_ref=scope_ref,
+                        topic=marker,
+                        suggestion_id=suggestion_id,
+                    )
+                )
     except Exception as exc:
         failures.append(f"{exc.__class__.__name__}: {exc}")
 
@@ -389,6 +408,178 @@ def _summarize_mcp_digest_payload(
     }
 
 
+async def _run_mcp_reviewed_search(
+    *,
+    api_url: str,
+    token: str,
+    space_slug: str,
+    scope_ref: str,
+    topic: str,
+    suggestion_id: str,
+) -> dict[str, Any]:
+    if not suggestion_id:
+        return {
+            "ok": False,
+            "status": "failed",
+            "reason": "created_from_capture_suggestion_missing",
+        }
+    try:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+    except ModuleNotFoundError as exc:
+        return {"ok": False, "status": "blocked", "reason": f"missing dependency: {exc.name}"}
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "MEMORY_MCP_API_URL": api_url,
+            "MEMORY_MCP_AUTH_TOKEN": token,
+            "MEMORY_MCP_DEFAULT_SPACE_SLUG": space_slug,
+            "MEMORY_MCP_DEFAULT_MEMORY_SCOPE_EXTERNAL_REF": scope_ref,
+            "MEMORY_MCP_DEFAULT_THREAD_EXTERNAL_REF": NO_DEFAULT_THREAD_SENTINEL,
+            "MEMORY_MCP_AGENT_NAME": "local-visual-smoke",
+            "MEMORY_MCP_TRANSPORT": "stdio",
+        }
+    )
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "infinity_context_mcp"],
+        env=env,
+    )
+    try:
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            tools = (await session.list_tools()).tools
+            tool_names = {tool.name for tool in tools}
+            approve_result = await session.call_tool(
+                "memory_approve_suggestion",
+                {
+                    "suggestion_id": suggestion_id,
+                    "reason": "local visual smoke approved capture suggestion",
+                },
+            )
+            approve_payload = _tool_payload(approve_result)
+            search_result = await session.call_tool(
+                "memory_search",
+                {
+                    "query": topic,
+                    "space_slug": space_slug,
+                    "memory_scope_external_ref": scope_ref,
+                    "max_facts": 5,
+                    "max_chunks": 0,
+                    "token_budget": 2000,
+                },
+            )
+            search_payload = _tool_payload(search_result)
+    except Exception as exc:
+        return {"ok": False, "status": "failed", "reason": f"{exc.__class__.__name__}: {exc}"}
+
+    summary = _summarize_mcp_reviewed_search_payload(
+        approve_payload=approve_payload,
+        search_payload=search_payload,
+        topic=topic,
+        token=token,
+    )
+    return {
+        **summary,
+        "status": "ok" if summary["ok"] else "failed",
+        "review_tool_present": "memory_approve_suggestion" in tool_names,
+        "search_tool_present": "memory_search" in tool_names,
+    }
+
+
+def _summarize_mcp_reviewed_search_payload(
+    *,
+    approve_payload: dict[str, Any],
+    search_payload: dict[str, Any],
+    topic: str,
+    token: str,
+) -> dict[str, Any]:
+    approve_data = (
+        approve_payload.get("data") if isinstance(approve_payload.get("data"), dict) else {}
+    )
+    fact = approve_data.get("fact") if isinstance(approve_data.get("fact"), dict) else {}
+    fact_id = fact.get("id")
+    search_data = (
+        search_payload.get("data") if isinstance(search_payload.get("data"), dict) else {}
+    )
+    items = search_data.get("items") if isinstance(search_data.get("items"), list) else []
+    diagnostics = (
+        search_data.get("diagnostics")
+        if isinstance(search_data.get("diagnostics"), dict)
+        else {}
+    )
+    quality = (
+        diagnostics.get("retrieval_quality_summary")
+        if isinstance(diagnostics.get("retrieval_quality_summary"), dict)
+        else {}
+    )
+    rendered = str(search_data.get("rendered_text") or "")
+    matching_items = [
+        item
+        for item in items
+        if isinstance(item, dict) and topic in str(item.get("text") or "")
+    ]
+    item_citation_count = sum(
+        len(item.get("citations") or [])
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("citations"), list)
+    )
+    item_source_ref_count = sum(
+        len(item.get("source_refs") or [])
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("source_refs"), list)
+    )
+    rendered_citation_present = " citations=" in rendered or " citations=\"" in rendered
+    source_ref_returned = int(diagnostics.get("source_refs_total") or 0) >= 1 or (
+        item_source_ref_count >= 1
+    )
+    citation_rendered = (
+        int(diagnostics.get("citations_rendered") or 0) >= 1
+        or item_citation_count >= 1
+        or rendered_citation_present
+    )
+    fallback_grounded = bool(matching_items) and citation_rendered and source_ref_returned
+    default_context_excludes_stale = quality.get("default_context_excludes_stale") is True or (
+        quality == {} and int(diagnostics.get("superseded_facts_considered") or 0) == 0
+    )
+    serialized = json.dumps(
+        {"approve": approve_payload, "search": search_payload},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    checks = {
+        "approve_ok": approve_payload.get("ok") is True,
+        "approved_fact_id_present": isinstance(fact_id, str) and bool(fact_id),
+        "search_ok": search_payload.get("ok") is True,
+        "canonical_item_found": bool(matching_items) or topic in rendered,
+        "citation_rendered": citation_rendered,
+        "source_ref_returned": source_ref_returned,
+        "answerability_grounded": quality.get("answerability_status") == "grounded"
+        or fallback_grounded,
+        "response_policy_cites": (
+            quality.get("recommended_response_policy") == "answer_with_citations"
+            or citation_rendered
+        ),
+        "default_context_excludes_stale": default_context_excludes_stale,
+        "raw_token_absent": token not in serialized,
+    }
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "approved_fact_id": fact_id,
+        "items_returned": len(items),
+        "matching_items": len(matching_items),
+        "citations_rendered": diagnostics.get("citations_rendered"),
+        "source_refs_total": diagnostics.get("source_refs_total"),
+        "rendered_citation_present": rendered_citation_present,
+        "answerability_status": quality.get("answerability_status")
+        or ("grounded" if fallback_grounded else None),
+        "recommended_response_policy": quality.get("recommended_response_policy")
+        or ("answer_with_citations" if citation_rendered else None),
+    }
+
+
 def _create_capture(
     client: httpx.Client,
     *,
@@ -482,6 +673,11 @@ def _visual_memory_state(
         ),
         "pending_suggestions": len(suggestions),
         "created_from_capture_suggestions": len(created_from_capture),
+        "created_from_capture_suggestion_ids": [
+            str(suggestion.get("id"))
+            for suggestion in created_from_capture[:5]
+            if suggestion.get("id")
+        ],
         "browser_capture_visible": bool(browser_capture),
         "browser_suggestions_visible": len(browser_suggestions),
         "browser_stats": (
@@ -532,6 +728,7 @@ def _failed_required_checks(checks: dict[str, Any]) -> list[str]:
         "generated_mcp",
         "mcp_session",
         "mcp_digest",
+        "mcp_reviewed_search",
         "capture_created",
         "visual_memory",
     )

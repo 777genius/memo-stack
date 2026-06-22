@@ -41,6 +41,15 @@ def test_local_visual_smoke_report_redacts_tokens(tmp_path: Path, capsys) -> Non
                     "raw_token_absent": True,
                 },
             },
+            "mcp_reviewed_search": {
+                "ok": True,
+                "checks": {
+                    "answerability_grounded": True,
+                    "citation_rendered": True,
+                    "source_ref_returned": True,
+                    "raw_token_absent": True,
+                },
+            },
             "capture_created": {"ok": True},
             "visual_memory": {"ok": True},
         },
@@ -74,6 +83,7 @@ def test_local_visual_smoke_required_checks_are_hard_gate() -> None:
             "generated_mcp": {"ok": True},
             "mcp_session": {"ok": False},
             "mcp_digest": {"ok": True},
+            "mcp_reviewed_search": {"ok": True},
             "capture_created": {"ok": True},
             "visual_memory": {"ok": True},
         }
@@ -88,10 +98,26 @@ def test_local_visual_smoke_required_checks_are_hard_gate() -> None:
             "generated_mcp": {"ok": True},
             "mcp_session": {"ok": True},
             "mcp_digest": {"ok": False},
+            "mcp_reviewed_search": {"ok": True},
             "capture_created": {"ok": True},
             "visual_memory": {"ok": True},
         }
     ) == ["mcp_digest"]
+
+    assert module._failed_required_checks(
+        {
+            "health": {"ok": True},
+            "capabilities": {"ok": True},
+            "ui": {"ok": True},
+            "ui_assets": {"ok": True},
+            "generated_mcp": {"ok": True},
+            "mcp_session": {"ok": True},
+            "mcp_digest": {"ok": True},
+            "mcp_reviewed_search": {"ok": False},
+            "capture_created": {"ok": True},
+            "visual_memory": {"ok": True},
+        }
+    ) == ["mcp_reviewed_search"]
 
 
 def test_local_visual_smoke_requires_first_memory_guidance() -> None:
@@ -208,6 +234,122 @@ def test_local_visual_smoke_rejects_digest_without_pending_review_evidence() -> 
     assert summary["ok"] is False
     assert summary["checks"]["pending_suggestion_visible"] is False
     assert summary["checks"]["pending_suggestions_considered"] is False
+
+
+def test_local_visual_smoke_summarizes_reviewed_search_as_grounded_evidence() -> None:
+    module = _load_module()
+    token = "unit-local-visual-secret-token"
+    topic = "LOCAL_VISUAL_MCP_SMOKE_unit"
+    approve_payload = {
+        "ok": True,
+        "data": {"fact": {"id": "fact_unit", "text": topic}},
+    }
+    search_payload = {
+        "ok": True,
+        "data": {
+            "rendered_text": f"[1] fact:fact_unit text=\"{topic}\"",
+            "items": [
+                {
+                    "item_id": "fact_unit",
+                    "text": topic,
+                    "source_refs": [{"source_type": "capture:manual", "source_id": "cap_unit"}],
+                    "citations": [{"citation_id": "cit_unit"}],
+                }
+            ],
+            "diagnostics": {
+                "citations_rendered": 1,
+                "source_refs_total": 1,
+                "retrieval_quality_summary": {
+                    "answerability_status": "grounded",
+                    "recommended_response_policy": "answer_with_citations",
+                    "default_context_excludes_stale": True,
+                },
+            },
+        },
+    }
+
+    summary = module._summarize_mcp_reviewed_search_payload(
+        approve_payload=approve_payload,
+        search_payload=search_payload,
+        topic=topic,
+        token=token,
+    )
+
+    assert summary["ok"] is True
+    assert summary["approved_fact_id"] == "fact_unit"
+    assert summary["items_returned"] == 1
+    assert summary["checks"]["citation_rendered"] is True
+    assert summary["checks"]["source_ref_returned"] is True
+    assert summary["recommended_response_policy"] == "answer_with_citations"
+
+
+def test_local_visual_smoke_accepts_public_mcp_search_payload_shape() -> None:
+    module = _load_module()
+    topic = "LOCAL_VISUAL_MCP_SMOKE_public"
+
+    summary = module._summarize_mcp_reviewed_search_payload(
+        approve_payload={"ok": True, "data": {"fact": {"id": "fact_public"}}},
+        search_payload={
+            "ok": True,
+            "data": {
+                "rendered_text": (
+                    f"[1] fact:fact_public citations=\"capture-manual:cap_public\" "
+                    f"text=\"{topic}\""
+                ),
+                "items": [
+                    {
+                        "item_id": "fact_public",
+                        "text": topic,
+                        "source_refs": [
+                            {
+                                "source_type": "capture:manual",
+                                "source_id": "cap_public",
+                            }
+                        ],
+                    }
+                ],
+                "diagnostics": {"superseded_facts_considered": 0},
+            },
+        },
+        topic=topic,
+        token="unit-token",
+    )
+
+    assert summary["ok"] is True
+    assert summary["rendered_citation_present"] is True
+    assert summary["answerability_status"] == "grounded"
+    assert summary["recommended_response_policy"] == "answer_with_citations"
+
+
+def test_local_visual_smoke_rejects_reviewed_search_without_citation() -> None:
+    module = _load_module()
+    topic = "LOCAL_VISUAL_MCP_SMOKE_unit"
+
+    summary = module._summarize_mcp_reviewed_search_payload(
+        approve_payload={"ok": True, "data": {"fact": {"id": "fact_unit"}}},
+        search_payload={
+            "ok": True,
+            "data": {
+                "rendered_text": topic,
+                "items": [{"item_id": "fact_unit", "text": topic}],
+                "diagnostics": {
+                    "citations_rendered": 0,
+                    "source_refs_total": 0,
+                    "retrieval_quality_summary": {
+                        "answerability_status": "grounded",
+                        "recommended_response_policy": "answer_with_citations",
+                        "default_context_excludes_stale": True,
+                    },
+                },
+            },
+        },
+        topic=topic,
+        token="unit-token",
+    )
+
+    assert summary["ok"] is False
+    assert summary["checks"]["citation_rendered"] is False
+    assert summary["checks"]["source_ref_returned"] is False
 
 
 def test_local_visual_state_requires_consolidated_capture_and_pending_review() -> None:

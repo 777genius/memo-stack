@@ -571,6 +571,19 @@ def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
                     "raw_token_absent": True,
                 },
             },
+            "mcp_reviewed_search": {
+                "ok": True,
+                "approved_fact_id": "fact-demo",
+                "items_returned": 1,
+                "citations_rendered": 1,
+                "answerability_status": "grounded",
+                "checks": {
+                    "answerability_grounded": True,
+                    "citation_rendered": True,
+                    "source_ref_returned": True,
+                    "raw_token_absent": True,
+                },
+            },
             "visual_memory": {
                 "browser_capture_visible": True,
                 "pending_suggestions": 1,
@@ -588,6 +601,10 @@ def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
     weak_payload["checks"]["mcp_session"]["tool_count"] = 12
     weak_digest_payload = json.loads(json.dumps(payload))
     weak_digest_payload["checks"]["mcp_digest"]["checks"]["pending_suggestion_visible"] = False
+    weak_retrieval_payload = json.loads(json.dumps(payload))
+    weak_retrieval_payload["checks"]["mcp_reviewed_search"]["checks"][
+        "citation_rendered"
+    ] = False
 
     weak = proof._summarize_local_visual_smoke(
         {"ok": True, "returncode": 0, "payload": weak_payload}
@@ -595,16 +612,25 @@ def test_local_experience_proof_requires_visual_memory_and_mcp_tools() -> None:
     weak_digest = proof._summarize_local_visual_smoke(
         {"ok": True, "returncode": 0, "payload": weak_digest_payload}
     )
+    weak_retrieval = proof._summarize_local_visual_smoke(
+        {"ok": True, "returncode": 0, "payload": weak_retrieval_payload}
+    )
 
     assert good["ok"] is True
     assert good["mcp_tool_count"] == 45
     assert good["pending_suggestions"] == 1
     assert good["digest_id"] == "dig-demo"
     assert good["digest_pending_suggestion_items"] == 1
+    assert good["approved_fact_id"] == "fact-demo"
+    assert good["retrieval_items_returned"] == 1
+    assert good["retrieval_citations_rendered"] == 1
+    assert good["retrieval_answerability_status"] == "grounded"
     assert weak["ok"] is False
     assert weak["checks"]["mcp_tool_count"] is False
     assert weak_digest["ok"] is False
     assert weak_digest["checks"]["mcp_digest_pending_review"] is False
+    assert weak_retrieval["ok"] is False
+    assert weak_retrieval["checks"]["mcp_reviewed_search_cited"] is False
 
 
 def test_local_experience_proof_failure_list_is_required_components_only() -> None:

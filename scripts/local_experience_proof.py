@@ -342,6 +342,16 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
     mcp_digest_checks = (
         mcp_digest.get("checks") if isinstance(mcp_digest.get("checks"), dict) else {}
     )
+    mcp_reviewed_search = (
+        checks_payload.get("mcp_reviewed_search")
+        if isinstance(checks_payload.get("mcp_reviewed_search"), dict)
+        else {}
+    )
+    mcp_reviewed_search_checks = (
+        mcp_reviewed_search.get("checks")
+        if isinstance(mcp_reviewed_search.get("checks"), dict)
+        else {}
+    )
     checks = {
         "command_ok": result.get("ok") is True,
         "payload_ok": payload.get("ok") is True,
@@ -357,6 +367,19 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
             mcp_digest_checks.get("pending_suggestion_visible") is True
         ),
         "mcp_digest_token_safe": mcp_digest_checks.get("raw_token_absent") is True,
+        "mcp_reviewed_search_ready": mcp_reviewed_search.get("ok") is True,
+        "mcp_reviewed_search_grounded": (
+            mcp_reviewed_search_checks.get("answerability_grounded") is True
+        ),
+        "mcp_reviewed_search_cited": (
+            mcp_reviewed_search_checks.get("citation_rendered") is True
+        ),
+        "mcp_reviewed_search_source_bound": (
+            mcp_reviewed_search_checks.get("source_ref_returned") is True
+        ),
+        "mcp_reviewed_search_token_safe": (
+            mcp_reviewed_search_checks.get("raw_token_absent") is True
+        ),
     }
     return {
         "status": "succeeded" if all(checks.values()) else "failed",
@@ -369,6 +392,10 @@ def _summarize_local_visual_smoke(result: dict[str, Any]) -> dict[str, Any]:
         "pending_suggestions": visual_memory.get("pending_suggestions"),
         "digest_id": mcp_digest.get("digest_id"),
         "digest_pending_suggestion_items": mcp_digest.get("pending_suggestion_items"),
+        "approved_fact_id": mcp_reviewed_search.get("approved_fact_id"),
+        "retrieval_items_returned": mcp_reviewed_search.get("items_returned"),
+        "retrieval_citations_rendered": mcp_reviewed_search.get("citations_rendered"),
+        "retrieval_answerability_status": mcp_reviewed_search.get("answerability_status"),
         "command": result.get("command"),
         "returncode": result.get("returncode"),
         "parse_error": result.get("parse_error"),
