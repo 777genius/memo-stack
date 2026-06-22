@@ -50,6 +50,23 @@ class QueryExpansionPlan:
 
 _EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
     (
+        frozenset({"identity"}),
+        (
+            "identity transgender trans woman transition gender identity true self "
+            "pride flag mural support group stories accepted embrace myself"
+        ),
+        "identity_bridge",
+    ),
+    (
+        frozenset({"relationship", "status"}),
+        (
+            "relationship status single parent breakup partner married husband wife "
+            "spouse friends family mentors rocks support system known friends home "
+            "country tough breakup relationship love"
+        ),
+        "relationship_status_bridge",
+    ),
+    (
         frozenset({"pursue", "career"}),
         "looking counseling mental health jobs education options work",
         "career_intent_bridge",

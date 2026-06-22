@@ -193,6 +193,16 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             "career options fields jobs counseling",
         ),
         (
+            build_query_expansion_plan("What is Caroline's identity?"),
+            "identity_bridge",
+            "transgender trans woman transition",
+        ),
+        (
+            build_query_expansion_plan("What is Caroline's relationship status?"),
+            "relationship_status_bridge",
+            "single parent breakup partner married",
+        ),
+        (
             build_query_expansion_plan(
                 "What pets would not cause any discomfort to Joanna?"
             ),
@@ -536,6 +546,40 @@ def test_best_query_relevance_uses_education_career_field_bridge() -> None:
     assert options_relevance.distinctive_term_hits >= 5
     assert counseling_reason == "education_career_field_bridge"
     assert counseling_relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_identity_and_relationship_status_bridges() -> None:
+    identity = build_query_expansion_plan("What is Caroline's identity?")
+    relationship = build_query_expansion_plan("What is Caroline's relationship status?")
+
+    _, identity_reason, identity_relevance = best_query_relevance(
+        identity,
+        text=(
+            "D1:5 Caroline: The transgender stories were so inspiring! "
+            "visual query: transgender pride flag mural"
+        ),
+    )
+    _, relationship_reason, relationship_relevance = best_query_relevance(
+        relationship,
+        text=(
+            "D2:14 Caroline: It'll be tough as a single parent, but I'm up for "
+            "the challenge after that tough breakup."
+        ),
+    )
+    _, breakup_reason, breakup_relevance = best_query_relevance(
+        relationship,
+        text=(
+            "D3:13 Caroline: My friends, family and mentors are my rocks and "
+            "support system, especially after that tough breakup."
+        ),
+    )
+
+    assert identity_reason == "identity_bridge"
+    assert identity_relevance.distinctive_term_hits >= 5
+    assert relationship_reason == "relationship_status_bridge"
+    assert relationship_relevance.distinctive_term_hits >= 5
+    assert breakup_reason == "relationship_status_bridge"
+    assert breakup_relevance.distinctive_term_hits >= 5
 
 
 def test_best_query_relevance_uses_trait_and_adverse_trip_bridges() -> None:
