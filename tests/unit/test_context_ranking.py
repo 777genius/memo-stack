@@ -70,6 +70,17 @@ def test_rank_fusion_boosts_multi_source_candidates_with_diagnostics() -> None:
     assert shared_keyword.diagnostics["provenance"]["rank_fusion_applied"] is True
 
 
+def test_rank_fusion_weights_evidence_sources_by_default() -> None:
+    artifact = _item("artifact", score=0.7, retrieval_source="artifact_evidence")
+    keyword = _item("keyword", score=0.7, retrieval_source="keyword_chunks")
+
+    boosted = apply_rank_fusion_boosts((artifact, keyword), max_boost=0.04)
+
+    assert boosted[0].score > boosted[1].score
+    assert boosted[0].diagnostics["score_signals"]["rank_fusion_source_weighted"] is True
+    assert boosted[0].diagnostics["provenance"]["rank_fusion_source_weighted"] is True
+
+
 def test_rank_fusion_does_not_apply_twice_to_same_candidate() -> None:
     keyword_top = _item("shared", score=0.8, retrieval_source="keyword_chunks")
     keyword_low = _item("keyword_low", score=0.6, retrieval_source="keyword_chunks")

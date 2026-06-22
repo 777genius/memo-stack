@@ -36,6 +36,16 @@ from infinity_context_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, Sour
 _RRF_RANK_CONSTANT = 60.0
 _RRF_MAX_RANK_PER_SOURCE = 50
 _RRF_MAX_BOOST = 0.045
+_DEFAULT_RRF_SOURCE_WEIGHTS = {
+    "approved_context_linked_anchors": 1.18,
+    "approved_context_linked_asset_manifest_evidence": 1.14,
+    "approved_context_linked_extraction_artifacts": 1.2,
+    "artifact_evidence": 1.2,
+    "canonical_anchor_relations": 1.12,
+    "canonical_anchors": 1.15,
+    "graph_hydrated": 1.08,
+    "temporal_supersedes_relation": 1.12,
+}
 _BM25_K1 = 1.2
 _BM25_B = 0.75
 _BM25_MAX_BOOST = 0.035
@@ -85,6 +95,7 @@ def apply_rank_fusion_boosts(
     rank_constant: float = _RRF_RANK_CONSTANT,
     max_rank_per_source: int = _RRF_MAX_RANK_PER_SOURCE,
     max_boost: float = _RRF_MAX_BOOST,
+    source_weights: Mapping[str, float] | None = None,
 ) -> tuple[ContextItem, ...]:
     if (
         len(items) <= 1
@@ -100,6 +111,9 @@ def apply_rank_fusion_boosts(
         rankings,
         rank_constant=rank_constant,
         max_rank_per_source=max_rank_per_source,
+        source_weights=(
+            _DEFAULT_RRF_SOURCE_WEIGHTS if source_weights is None else source_weights
+        ),
     )
     max_fusion_score = max(fusion_scores.values(), default=0.0)
     if max_fusion_score <= 0:
@@ -111,6 +125,9 @@ def apply_rank_fusion_boosts(
             max_fusion_score=max_fusion_score,
             max_boost=max_boost,
             source_count=len(rankings),
+            source_weighted=bool(
+                _DEFAULT_RRF_SOURCE_WEIGHTS if source_weights is None else source_weights
+            ),
         )
         for item in items
     )
@@ -586,6 +603,7 @@ def _with_rank_fusion_boost(
     max_fusion_score: float,
     max_boost: float,
     source_count: int,
+    source_weighted: bool = False,
 ) -> ContextItem:
     if _rank_fusion_already_applied(item):
         return item
@@ -609,11 +627,13 @@ def _with_rank_fusion_boost(
         "rank_fusion_normalized_score": round(normalized_score, 4),
         "rank_fusion_boost": boost,
         "rank_fusion_source_count": source_count,
+        "rank_fusion_source_weighted": source_weighted,
     }
     diagnostics["provenance"] = {
         **safe_diagnostic_mapping(diagnostics.get("provenance")),
         "rank_fusion_applied": True,
         "rank_fusion_source_count": source_count,
+        "rank_fusion_source_weighted": source_weighted,
     }
     return replace(
         item,
