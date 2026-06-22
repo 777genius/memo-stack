@@ -158,6 +158,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES", "25")),
     )
+    parser.add_argument(
+        "--local-state-dir",
+        type=Path,
+        default=(
+            Path(os.environ["MEMORY_PUBLIC_BENCHMARK_LOCAL_STATE_DIR"])
+            if os.getenv("MEMORY_PUBLIC_BENCHMARK_LOCAL_STATE_DIR")
+            else None
+        ),
+        help=(
+            "Optional persistent local state directory for in-process benchmark "
+            "runs. Ignored when --api-url targets an external server."
+        ),
+    )
     args = parser.parse_args(argv)
     result = run_official_public_benchmark_canary(
         benchmark=args.benchmark,
@@ -174,6 +187,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         progress_out=args.progress_out,
         checkpoint_out=args.checkpoint_out,
         checkpoint_every_cases=args.checkpoint_every_cases,
+        local_state_dir=args.local_state_dir,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["ok"] else 1
@@ -195,6 +209,7 @@ def run_official_public_benchmark_canary(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    local_state_dir: Path | None = None,
 ) -> dict[str, object]:
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
@@ -236,6 +251,7 @@ def run_official_public_benchmark_canary(
                     split=len(selected) > 1,
                 ),
                 checkpoint_every_cases=checkpoint_every_cases,
+                local_state_dir=local_state_dir,
             )
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(

@@ -14,6 +14,7 @@ import tempfile
 import time
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -230,6 +231,7 @@ def run_public_memory_benchmark(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    local_state_dir: Path | None = None,
     benchmark: str | None = None,
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
     max_cases: int | None = None,
@@ -317,11 +319,17 @@ def run_public_memory_benchmark(
         from infinity_context_server.config import DeployProfile, Settings
         from infinity_context_server.main import create_app
 
-        with tempfile.TemporaryDirectory(prefix="memo-public-benchmark-") as tmp_dir:
+        state_context = (
+            nullcontext(_prepare_local_state_dir(local_state_dir))
+            if local_state_dir is not None
+            else tempfile.TemporaryDirectory(prefix="memo-public-benchmark-")
+        )
+        with state_context as tmp_dir:
+            tmp_path = Path(tmp_dir)
             app = create_app(
                 Settings(
                     deploy_profile=DeployProfile.TEST,
-                    database_url=f"sqlite+aiosqlite:///{Path(tmp_dir) / 'memory.db'}",
+                    database_url=f"sqlite+aiosqlite:///{tmp_path / 'memory.db'}",
                     auto_create_schema=True,
                     service_token=token,
                     qdrant_enabled=False,
@@ -345,6 +353,12 @@ def run_public_memory_benchmark(
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
+    if local_state_dir is not None and not api_url:
+        result["local_state"] = {
+            "enabled": True,
+            "state_dir_label": local_state_dir.expanduser().name,
+            "database_label": "memory.db",
+        }
     _write_report(result, report_out)
     return result
 
@@ -353,6 +367,12 @@ def _default_service_token() -> str:
     from infinity_context_server.config import Settings
 
     return Settings().service_token
+
+
+def _prepare_local_state_dir(local_state_dir: Path) -> Path:
+    state_dir = local_state_dir.expanduser()
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir
 
 
 def load_public_benchmark_case_count(

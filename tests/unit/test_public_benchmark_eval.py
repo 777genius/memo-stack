@@ -134,6 +134,46 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert written["provenance"]["generated_by"] == "infinity_context_server.public_benchmark"
 
 
+def test_public_memory_benchmark_can_use_persistent_local_state(tmp_path: Path) -> None:
+    dataset = tmp_path / "public-benchmark.jsonl"
+    state_dir = tmp_path / "benchmark-state"
+    row = {
+        "benchmark": "longmemeval",
+        "case_id": "longmem-document-deadline",
+        "query": "What is the Project Falcon migration deadline?",
+        "documents": [
+            {
+                "title": "Falcon migration notes",
+                "text": "Project Falcon migration deadline is 2026-08-15.",
+            }
+        ],
+        "answer": "2026-08-15",
+    }
+    dataset.write_text(json.dumps(row), encoding="utf-8")
+
+    first = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        local_state_dir=state_dir,
+    )
+    second = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        local_state_dir=state_dir,
+    )
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert (state_dir / "memory.db").exists()
+    assert first["local_state"] == {
+        "enabled": True,
+        "state_dir_label": "benchmark-state",
+        "database_label": "memory.db",
+    }
+    assert str(tmp_path) not in json.dumps(first, sort_keys=True)
+    assert str(tmp_path) not in json.dumps(second, sort_keys=True)
+
+
 def test_public_memory_benchmark_counts_normalized_cases_without_running(
     tmp_path: Path,
 ) -> None:
