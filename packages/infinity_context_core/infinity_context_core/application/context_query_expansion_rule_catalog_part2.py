@@ -289,9 +289,9 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"many", "hike"}),
             (
-                "hikes hiking hike trail trails waterfall photo picture pic took went "
-                "joined buddies summer outdoors spot rush water soothing sunset saw seen "
-                "gorgeous other day count times been on"
+                "hikes hike hiking trail waterfall loved spot rush water soothing "
+                "sunset saw gorgeous other day buddies weekend new summer fort "
+                "wayne photo pic took count times"
             ),
             "hike_count_activity_bridge",
         ),

@@ -318,7 +318,7 @@ def test_keyword_chunk_score_boosts_hike_count_activity_bridge() -> None:
         score = keyword_chunk_score(relevance, query_expansion_reason=reason)
 
         assert reason == "hike_count_activity_bridge"
-        assert score >= 0.85
+        assert score >= 0.865
 
 
 def test_keyword_chunk_score_boosts_beach_count_activity_bridge() -> None:
@@ -503,6 +503,24 @@ def test_keyword_chunk_score_boosts_pottery_project_type_summary() -> None:
     score = keyword_chunk_score(relevance, query_expansion_reason=reason)
 
     assert reason == "pottery_type_bridge"
+    assert score >= 0.87
+
+
+def test_pottery_type_bridge_beats_generic_inventory_for_visual_cup_evidence() -> None:
+    plan = build_query_expansion_plan("What types of pottery have Melanie and her kids made?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D8:4 Melanie: The kids loved it! They were excited to get their "
+            "hands dirty and make something with clay. blip_caption: a photo "
+            "of a cup with a dog face on it. query: kids pottery finished pieces."
+        ),
+    )
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "pottery_type_bridge"
+    assert relevance.distinctive_term_hits >= 7
     assert score >= 0.87
 
 

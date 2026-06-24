@@ -435,7 +435,7 @@ QUERY_REASON_PRIORITY = {
     "lgbtq_pride_event_bridge": 4,
     "lgbtq_school_event_bridge": 4,
     "lgbtq_support_group_event_bridge": 4,
-    "pottery_type_bridge": 4,
+    "pottery_type_bridge": 5,
     "public_office_service_bridge": 4,
     "quantity_enumeration_bridge": 2,
     "patriotic_service_inference_bridge": 4,

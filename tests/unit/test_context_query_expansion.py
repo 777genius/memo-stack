@@ -569,15 +569,15 @@ def test_query_expansion_covers_activity_location_and_destress_bridges() -> None
     assert _expansion_index(post_roadtrip_hike, "post_event_activity_timing_bridge") < (
         _expansion_index(post_roadtrip_hike, "after_event_temporal_bridge")
     )
-    assert "waterfall photo picture pic took went" in _expansion_query(
+    assert "waterfall loved spot rush water soothing" in _expansion_query(
         hike_count,
         "hike_count_activity_bridge",
     )
-    assert "spot rush water soothing" in _expansion_query(
+    assert "buddies weekend new summer fort wayne" in _expansion_query(
         hike_count,
         "hike_count_activity_bridge",
     )
-    assert "sunset saw seen gorgeous other day" in _expansion_query(
+    assert "sunset saw gorgeous other day" in _expansion_query(
         hike_count,
         "hike_count_activity_bridge",
     )
