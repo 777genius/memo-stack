@@ -29,6 +29,7 @@ _INFERENCE_QUERY_TERMS = frozenset(
 )
 _FRIEND_TEAM_QUERY_TERMS = frozenset(
     {
+        "apart",
         "besides",
         "friend",
         "friends",
@@ -36,6 +37,15 @@ _FRIEND_TEAM_QUERY_TERMS = frozenset(
         "teammate",
         "teammates",
         "team",
+        "than",
+    }
+)
+_FRIEND_TEAM_PERSON_QUERY_TERMS = frozenset(
+    {
+        "friend",
+        "friends",
+        "teammate",
+        "teammates",
     }
 )
 _FRIEND_TEAM_TEXT_TERMS = frozenset(
@@ -161,8 +171,16 @@ def _degree_field_inference_signal(*, text: str) -> AnswerEvidenceSignal:
 
 def _requests_friend_team_inference(query: str) -> bool:
     query_tokens = _term_set(query)
-    return bool(query_tokens & _FRIEND_TEAM_QUERY_TERMS) and bool(
-        query_tokens & _INFERENCE_QUERY_TERMS
+    if not query_tokens & _FRIEND_TEAM_QUERY_TERMS:
+        return False
+    if query_tokens & _INFERENCE_QUERY_TERMS:
+        return True
+    if not query_tokens & _FRIEND_TEAM_PERSON_QUERY_TERMS:
+        return False
+    return bool(
+        "besides" in query_tokens
+        or {"other", "than"} <= query_tokens
+        or {"apart", "from"} <= query_tokens
     )
 
 

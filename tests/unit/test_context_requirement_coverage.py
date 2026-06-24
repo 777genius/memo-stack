@@ -398,6 +398,31 @@ def test_context_requirement_coverage_tracks_inference_answer_shape() -> None:
     assert coverage["status"] == "satisfied"
 
 
+def test_context_requirement_coverage_tracks_social_inference_without_likely_marker() -> None:
+    query = "Does Nate have friends besides Joanna?"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="nate_team_friends",
+            item_type="chunk",
+            text="Nate plays Valorant with online teammates and gaming friends from tournaments.",
+            score=0.9,
+            source_refs=(SourceRef(source_type="locomo_turn", source_id="D7:2"),),
+            diagnostics={"memory_scope_id": "scope"},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert "inference" not in coverage["missing_answer_shapes"]
+
+
 def test_context_requirement_coverage_tracks_support_role_inference_evidence() -> None:
     query = "Would Caroline be a good mentor for Alex?"
     intent = build_query_anchor_intent(query)

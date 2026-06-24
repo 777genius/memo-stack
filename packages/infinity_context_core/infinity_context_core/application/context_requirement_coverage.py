@@ -218,6 +218,11 @@ _INFERENCE_ANSWER_QUERY_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_SOCIAL_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\b(?:friends?|teammates?)\b(?=.{0,80}\b(?:besides|other\s+than|apart\s+from)\b)|"
+    r"\b(?:besides|other\s+than|apart\s+from)\b(?=.{0,80}\b(?:friends?|teammates?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:or|или)\b(?=.{0,96}\b("
     r"prefer|preference|interested|more|less|rather|choose|choice|option|alternative|"
@@ -521,6 +526,13 @@ _INFERENCE_ANSWER_TEXT_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_SOCIAL_INFERENCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:friends?|teammates?|team|squad|guild|clan|buddies)\b"
+    r"(?=.{0,80}\b(?:online|gaming|games?|plays?|played|tournament|valorant)\b)|"
+    r"\b(?:online|gaming|games?|plays?|played|tournament|valorant)\b"
+    r"(?=.{0,80}\b(?:friends?|teammates?|team|squad|guild|clan|buddies)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_TEXT_RE = re.compile(
     r"\b("
     r"prefer(?:s|red)?|chose|chosen|choose|selected|rather|more|less|"
@@ -745,7 +757,7 @@ def context_requirement_coverage(
     requested_evidence_features = _requested_evidence_features(query)
     covered_evidence_features = _covered_evidence_features(items)
     requested_answer_shapes = _requested_answer_shapes(query)
-    covered_answer_shapes = _covered_answer_shapes(items)
+    covered_answer_shapes = _covered_answer_shapes(items, query=query)
 
     missing_anchor_kinds = tuple(
         kind for kind in requested_anchor_kinds if kind not in covered_anchor_kinds
@@ -1073,7 +1085,9 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         shapes.append("temporal")
     if _CAUSAL_ANSWER_QUERY_RE.search(query):
         shapes.append("causal")
-    if _INFERENCE_ANSWER_QUERY_RE.search(query):
+    if _INFERENCE_ANSWER_QUERY_RE.search(query) or _SOCIAL_INFERENCE_ANSWER_QUERY_RE.search(
+        query
+    ):
         shapes.append("inference")
     if _CHOICE_ANSWER_QUERY_RE.search(query):
         shapes.append("choice")
@@ -1111,7 +1125,11 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
     return _bounded_unique(shapes)
 
 
-def _covered_answer_shapes(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
+def _covered_answer_shapes(
+    items: tuple[ContextItem, ...],
+    *,
+    query: str,
+) -> tuple[str, ...]:
     shapes: list[str] = []
     for item in items:
         text = item.text
@@ -1127,7 +1145,10 @@ def _covered_answer_shapes(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
             shapes.append("temporal")
         if _CAUSAL_ANSWER_TEXT_RE.search(text):
             shapes.append("causal")
-        if _INFERENCE_ANSWER_TEXT_RE.search(text):
+        if _INFERENCE_ANSWER_TEXT_RE.search(text) or (
+            _SOCIAL_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and _SOCIAL_INFERENCE_ANSWER_TEXT_RE.search(text)
+        ):
             shapes.append("inference")
         if _CHOICE_ANSWER_TEXT_RE.search(text):
             shapes.append("choice")

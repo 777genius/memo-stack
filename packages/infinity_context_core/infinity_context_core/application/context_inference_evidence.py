@@ -675,6 +675,9 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
 
     if _requests_causal_answer(query):
         return _causal_answer_signal(query=query, text=text)
+    social_education_signal = social_education_inference_signal(query=query, text=text)
+    if social_education_signal.reason:
+        return social_education_signal
     if not _requests_inference(query):
         if _requests_career_inference(query):
             return _career_inference_signal(query=query, text=text)
@@ -686,9 +689,6 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
         return preference_signal
     if _requests_career_inference(query):
         return _career_inference_signal(query=query, text=text)
-    social_education_signal = social_education_inference_signal(query=query, text=text)
-    if social_education_signal.reason:
-        return social_education_signal
     if _requests_willingness_inference(query):
         return _willingness_inference_signal(query=query, text=text)
     if _requests_children_books_inference(query):
