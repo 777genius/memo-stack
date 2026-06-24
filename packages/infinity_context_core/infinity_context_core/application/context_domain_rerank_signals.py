@@ -37,6 +37,12 @@ _SUPPORT_NETWORK_TECHNICAL_RE = re.compile(
     r"tool|web)\b",
     re.IGNORECASE,
 )
+_SUPPORT_NETWORK_RERANK_REASONS = frozenset(
+    (
+        "negative_experience_support_bridge",
+        "support_network_bridge",
+    )
+)
 _INVENTORY_LIST_RERANK_REASONS = frozenset(
     (
         "decomposition_inventory_list",
@@ -1306,11 +1312,9 @@ def _is_inventory_list_candidate(*, query_reason: str, item: ContextItem) -> boo
 
 
 def _is_support_network_candidate(*, query_reason: str, item: ContextItem) -> bool:
-    return _matches_query_or_score_signal_reason(
-        query_reason=query_reason,
-        item=item,
-        target_reason="support_network_bridge",
-    )
+    if query_reason in _SUPPORT_NETWORK_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _SUPPORT_NETWORK_RERANK_REASONS
 
 
 def _is_event_sequence_candidate(

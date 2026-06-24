@@ -2250,6 +2250,43 @@ def test_support_network_rerank_treats_family_roles_as_exact_social_support() ->
     ]
 
 
+def test_support_network_rerank_covers_negative_experience_support_bridge() -> None:
+    query = "Who supports Caroline when she has a negative experience?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    support_roles = _item(
+        "support_roles",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D3:11 Caroline's friends, family and mentors are her rocks. "
+            "They motivate her and give her strength to push on."
+        ),
+    )
+    technical_support = _item(
+        "technical_support",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline contacted customer support after a negative API experience.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (technical_support, support_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["support_roles"].score > by_id["technical_support"].score
+    assert (
+        "support_network_exact_evidence"
+        in by_id["support_roles"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_keyword_chunk_score_boosts_multimodal_evidence_bridge_policies() -> None:
     cases = [
         (

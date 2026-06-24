@@ -51,6 +51,26 @@ def test_support_network_signal_prefers_social_support_over_technical_noise() ->
     assert weak_signal.reason == "support_network_weak_evidence"
 
 
+def test_support_network_signal_accepts_negative_experience_support_bridge() -> None:
+    exact = _item(
+        "negative_experience_support",
+        text=(
+            "Caroline's friends, family, and mentors are her rocks and give "
+            "her strength after a hard experience."
+        ),
+        query_expansion_reason="negative_experience_support_bridge",
+    )
+
+    signal = support_network_rerank_signal(
+        query_reason="negative_experience_support_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=6, unique_term_hits=6),
+    )
+
+    assert signal.boost > 0
+    assert signal.reason == "support_network_exact_evidence"
+
+
 def test_inventory_signal_requires_query_specific_exact_slot() -> None:
     pottery = _item(
         "pottery",
