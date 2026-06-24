@@ -6534,6 +6534,77 @@ def test_deterministic_rerank_prefers_direct_speaker_for_existence_query() -> No
     )
 
 
+def test_deterministic_rerank_penalizes_relation_requirement_decoy() -> None:
+    query = "Did Alex ever mention Project Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    evidence = _item(
+        "alex_mentioned_atlas",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="D3:4 Alex: I mentioned Project Atlas during the billing call.",
+    )
+    decoy = _item(
+        "alex_atlas_anchor_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex and Project Atlas appeared in the planning summary.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (decoy, evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_mentioned_atlas"].score > by_id["alex_atlas_anchor_only"].score
+    assert (
+        "relation_requirement_match"
+        in by_id["alex_mentioned_atlas"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "relation_requirement_missing_relation"
+        in by_id["alex_atlas_anchor_only"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_penalizes_possession_relation_decoy() -> None:
+    query = "Is there any evidence that Alex has a cat?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    evidence = _item(
+        "alex_cat_negative_evidence",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="No evidence mentions Alex having a cat.",
+    )
+    decoy = _item(
+        "alex_cat_cafe",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex visited the Cat Cafe after the billing call.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (decoy, evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_cat_negative_evidence"].score > by_id["alex_cat_cafe"].score
+    assert (
+        "relation_requirement_missing_relation"
+        in by_id["alex_cat_cafe"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_prefers_correct_action_actor_recipient_order() -> None:
     query = "What did Alex promise Maria after the Atlas call?"
     plan = build_query_expansion_plan(query)

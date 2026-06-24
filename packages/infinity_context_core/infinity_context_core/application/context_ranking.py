@@ -96,6 +96,9 @@ from infinity_context_core.application.context_relevance import (
     is_query_relevance_sufficient,
     score_query_relevance,
 )
+from infinity_context_core.application.context_relation_requirement import (
+    relation_requirement_signal,
+)
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
 )
@@ -1534,6 +1537,13 @@ def _deterministic_rerank_signals(
     if object_penalty > 0:
         penalty += object_penalty
         reasons.append(object_reason)
+    relation_signal = relation_requirement_signal(query=query, text=item.text)
+    if relation_signal.boost > 0:
+        boost += relation_signal.boost
+        reasons.append(relation_signal.reason)
+    if relation_signal.penalty > 0:
+        penalty += relation_signal.penalty
+        reasons.append(relation_signal.reason)
     conversation_boost, conversation_penalty, conversation_reason = (
         conversation_counterparty_evidence_signal(
             query=query,

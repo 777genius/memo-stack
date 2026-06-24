@@ -43,6 +43,47 @@ def test_requirement_guard_keeps_object_kind_match_evidence() -> None:
     assert diagnostics["requirement_guard_items_dropped"] == 0
 
 
+def test_requirement_guard_drops_relation_requirement_mismatch_evidence() -> None:
+    item = _item(
+        "alex_atlas_anchor_only",
+        "Alex and Project Atlas appeared in the planning summary.",
+        deterministic_reasons=("relation_requirement_missing_relation",),
+    )
+    query = "Did Alex ever mention Project Atlas?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == ()
+    assert diagnostics["requirement_guard_status"] == (
+        "dropped_relation_requirement_mismatch"
+    )
+    assert diagnostics["requirement_guard_items_dropped"] == 1
+    assert diagnostics["requirement_guard_relation_mismatch_drop_count"] == 1
+
+
+def test_requirement_guard_keeps_relation_requirement_match_evidence() -> None:
+    item = _item(
+        "alex_mentioned_atlas",
+        "Alex mentioned Project Atlas during the billing call.",
+        deterministic_reasons=("relation_requirement_match",),
+    )
+    query = "Did Alex ever mention Project Atlas?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == (item,)
+    assert diagnostics["requirement_guard_status"] == "satisfied"
+    assert diagnostics["requirement_guard_items_dropped"] == 0
+
+
 def _item(
     item_id: str,
     text: str,

@@ -212,6 +212,8 @@ _LOW_SIGNAL_INVENTORY_AGGREGATION_TERMS = frozenset(
 )
 _OBJECT_KIND_MISMATCH_RERANK_REASON = "object_kind_species_mismatch"
 _OBJECT_KIND_MATCH_RERANK_REASON = "object_kind_match"
+_RELATION_REQUIREMENT_MISMATCH_RERANK_REASON = "relation_requirement_missing_relation"
+_RELATION_REQUIREMENT_MATCH_RERANK_REASON = "relation_requirement_match"
 
 
 class BuildContextUseCase:
@@ -2361,6 +2363,7 @@ def _apply_explicit_requirement_guard(
         "requirement_guard_items_considered": len(items),
         "requirement_guard_items_dropped": 0,
         "requirement_guard_object_kind_mismatch_drop_count": 0,
+        "requirement_guard_relation_mismatch_drop_count": 0,
     }
     if "project" in requested_anchor_kinds and "project" in missing_anchor_kinds:
         diagnostics.update(
@@ -2381,6 +2384,19 @@ def _apply_explicit_requirement_guard(
             "dropped_object_kind_mismatch" if not kept_items else "filtered_object_kind_mismatch"
         )
         return kept_items, diagnostics
+    kept_items = tuple(item for item in items if not _has_relation_requirement_mismatch(item))
+    relation_mismatch_drop_count = len(items) - len(kept_items)
+    if relation_mismatch_drop_count > 0:
+        diagnostics["requirement_guard_items_dropped"] = relation_mismatch_drop_count
+        diagnostics["requirement_guard_relation_mismatch_drop_count"] = (
+            relation_mismatch_drop_count
+        )
+        diagnostics["requirement_guard_status"] = (
+            "dropped_relation_requirement_mismatch"
+            if not kept_items
+            else "filtered_relation_requirement_mismatch"
+        )
+        return kept_items, diagnostics
     diagnostics["requirement_guard_status"] = "satisfied"
     return items, diagnostics
 
@@ -2390,6 +2406,14 @@ def _has_object_kind_mismatch(item: ContextItem) -> bool:
     return (
         _OBJECT_KIND_MISMATCH_RERANK_REASON in reasons
         and _OBJECT_KIND_MATCH_RERANK_REASON not in reasons
+    )
+
+
+def _has_relation_requirement_mismatch(item: ContextItem) -> bool:
+    reasons = _deterministic_rerank_reasons(item)
+    return (
+        _RELATION_REQUIREMENT_MISMATCH_RERANK_REASON in reasons
+        and _RELATION_REQUIREMENT_MATCH_RERANK_REASON not in reasons
     )
 
 
