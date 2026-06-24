@@ -153,12 +153,63 @@ _SLOT_RULES: tuple[
         ),
     ),
     (
+        re.compile(r"\b(?:friends?|made\s+friends?)\b", re.IGNORECASE),
+        (
+            (
+                "friend_place_volunteering",
+                re.compile(r"\b(?:homeless\s+shelter|fellow\s+volunteers?)\b", re.IGNORECASE),
+            ),
+            (
+                "friend_place_gym",
+                re.compile(r"\b(?:gym|workout\s+routine)\b", re.IGNORECASE),
+            ),
+            (
+                "friend_place_church",
+                re.compile(r"\b(?:church|faith\s+community|local\s+church)\b", re.IGNORECASE),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:european\s+countries|countries|england|spain)\b"
+            r"(?=.{0,100}\b(?:been\s+to|visited|trip|travel|abroad|european)\b)|"
+            r"\b(?:been\s+to|visited|trip|travel|abroad)\b"
+            r"(?=.{0,100}\b(?:european\s+countries|countries|england|spain)\b)",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        (
+            ("travel_country_england", re.compile(r"\bengland\b", re.IGNORECASE)),
+            ("travel_country_spain", re.compile(r"\bspain\b", re.IGNORECASE)),
+        ),
+    ),
+    (
+        re.compile(
+            r"\bshelters?\b(?=.{0,100}\bvolunteer)|"
+            r"\bvolunteer\b(?=.{0,100}\bshelters?\b)",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        (
+            (
+                "volunteer_shelter_homeless",
+                re.compile(r"\bhomeless\s+shelter\b", re.IGNORECASE),
+            ),
+            (
+                "volunteer_shelter_dog",
+                re.compile(r"\bdog\s+shelter\b", re.IGNORECASE),
+            ),
+        ),
+    ),
+    (
         re.compile(r"\b(?:causes?|support(?:ing)?|passionate)\b", re.IGNORECASE),
         (
             ("cause_veterans", re.compile(r"\b(?:veterans?|military)\b", re.IGNORECASE)),
             (
-                "cause_education_infrastructure",
-                re.compile(r"\b(?:education|infrastructure)\b", re.IGNORECASE),
+                "cause_education",
+                re.compile(r"\b(?:education|schools?|education\s+reform)\b", re.IGNORECASE),
+            ),
+            (
+                "cause_infrastructure",
+                re.compile(r"\b(?:infrastructure|infrastructure\s+development)\b", re.IGNORECASE),
             ),
         ),
     ),

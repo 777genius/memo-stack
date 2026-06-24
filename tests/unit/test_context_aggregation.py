@@ -138,6 +138,41 @@ def test_lgbtq_event_answer_slots_require_nearby_lgbtq_context() -> None:
     ) == frozenset()
 
 
+def test_inventory_answer_slots_cover_real_locomo_places_and_causes() -> None:
+    assert aggregation_answer_slots(
+        query="Where has Maria made friends?",
+        text=(
+            "D4:1 Maria is now friends with a fellow volunteer. "
+            "D19:1 Maria joined a gym and the people are awesome. "
+            "D14:10 Maria joined a nearby church and community."
+        ),
+    ) == frozenset(
+        {
+            "friend_place_church",
+            "friend_place_gym",
+            "friend_place_volunteering",
+        }
+    )
+    assert aggregation_answer_slots(
+        query="What European countries has Maria been to?",
+        text="D13:24 Maria took a solo trip to Spain. D8:15 Maria visited England.",
+    ) == frozenset({"travel_country_england", "travel_country_spain"})
+    assert aggregation_answer_slots(
+        query="What shelters does Maria volunteer at?",
+        text=(
+            "D2:1 Maria donated her car to a homeless shelter. "
+            "D17:12 Maria started volunteering at a local dog shelter."
+        ),
+    ) == frozenset({"volunteer_shelter_dog", "volunteer_shelter_homeless"})
+    assert aggregation_answer_slots(
+        query="What causes does John feel passionate about supporting?",
+        text=(
+            "D15:3 John is passionate about veterans and their rights. "
+            "D12:5 John supports education reform and infrastructure development."
+        ),
+    ) == frozenset({"cause_education", "cause_infrastructure", "cause_veterans"})
+
+
 def test_keyword_aggregation_query_kind_handles_inventory_list_queries() -> None:
     cases = [
         "What European countries has Maria been to?",

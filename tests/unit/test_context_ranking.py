@@ -422,7 +422,7 @@ def test_deterministic_rerank_prefers_list_aggregation_over_single_mention() -> 
 
     assert by_id["aggregation_shelters"].score > by_id["single_shelter"].score
     assert (
-        "aggregation_list_multi_evidence"
+        "aggregation_list_slot_diverse_evidence"
         in by_id["aggregation_shelters"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
@@ -813,6 +813,51 @@ def test_deterministic_rerank_prefers_broad_lgbtq_event_slot_coverage() -> None:
     assert (
         "aggregation_list_single_evidence_incomplete"
         in by_id["single_pride_event"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_broad_inventory_slot_coverage() -> None:
+    query = "What causes does John feel passionate about supporting?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    multi_slot = _item(
+        "john_cause_slots",
+        score=0.77,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D15:3 John is passionate about veterans and their rights. "
+            "D12:5 John supports education reform and infrastructure development."
+        ),
+        score_signals={
+            "query_expansion_reason": "cause_education_infrastructure_inventory_bridge"
+        },
+    )
+    single_slot = _item(
+        "john_veterans_only",
+        score=0.785,
+        retrieval_source="keyword_chunks",
+        text="D15:3 John is passionate about veterans and their rights.",
+        score_signals={"query_expansion_reason": "cause_veterans_inventory_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (single_slot, multi_slot),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["john_cause_slots"].score > by_id["john_veterans_only"].score
+    assert (
+        "aggregation_list_slot_diverse_evidence"
+        in by_id["john_cause_slots"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "aggregation_list_single_evidence_incomplete"
+        in by_id["john_veterans_only"]
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
 
