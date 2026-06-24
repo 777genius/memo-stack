@@ -552,6 +552,32 @@ def test_context_requirement_coverage_tracks_community_membership_inference() ->
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_allergy_condition_inference() -> None:
+    query = "What underlying condition might Joanna have based on her allergies?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="joanna_broad_animal_allergy",
+        item_type="chunk",
+        text=(
+            "Joanna is allergic to reptiles, animals with fur, and cockroaches. "
+            "Her face gets puffy and itchy."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D2:23"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
 def test_context_requirement_coverage_keeps_topic_only_music_out_of_inference() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     intent = build_query_anchor_intent(query)

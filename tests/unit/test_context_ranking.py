@@ -3288,6 +3288,45 @@ def test_allergy_condition_rerank_penalizes_weak_evidence_overlap() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_allergy_condition_evidence() -> None:
+    query = "What underlying condition might Joanna have based on her allergies?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    strong = _item(
+        "strong",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D2:23 Joanna: I'm allergic to most reptiles and animals with fur. "
+            "My face gets puffy and itchy."
+        ),
+    )
+    topic_only = _item(
+        "topic_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D2:24 Joanna: I keep cute reptile photos and animal drawings as reminders.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (strong, topic_only),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["strong"].score > by_id["topic_only"].score
+    assert (
+        "inference_allergy_condition_evidence"
+        in by_id["strong"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "inference_allergy_condition_topic_only_noise"
+        in by_id["topic_only"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_personality_source_boost_prefers_precise_trait_turn_over_session_summary() -> None:
     plan = build_query_expansion_plan("What personality traits might Melanie say Caroline has?")
     _, reason, relevance = best_query_relevance(

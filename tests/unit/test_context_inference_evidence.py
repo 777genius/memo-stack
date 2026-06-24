@@ -431,6 +431,42 @@ def test_inference_evidence_signal_penalizes_general_community_topic_noise() -> 
     assert signal.reason == "inference_community_membership_topic_only_noise"
 
 
+def test_inference_evidence_signal_boosts_allergy_condition_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="What underlying condition might Joanna have based on her allergies?",
+        text=(
+            "Joanna is allergic to most reptiles and animals with fur. "
+            "Her face gets puffy and itchy around them."
+        ),
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_allergy_condition_evidence"
+
+
+def test_inference_evidence_signal_penalizes_allergy_condition_topic_noise() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="What underlying condition might Joanna have based on her allergies?",
+        text="Joanna keeps cute reptile photos and animal drawings as reminders.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_allergy_condition_topic_only_noise"
+
+
+def test_inference_evidence_signal_does_not_overboost_food_only_allergy_inventory() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="What underlying condition might Joanna have based on her allergies?",
+        text="Joanna cannot have dairy, so she asked for a dairy-free recipe.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty == 0
+    assert signal.reason == ""
+
+
 def test_inference_evidence_signal_penalizes_degree_measurement_noise() -> None:
     signal = inference_evidence_rerank_signal(
         query="What might John's degree be in?",

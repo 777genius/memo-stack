@@ -7,6 +7,9 @@ import re
 from infinity_context_core.application.context_answer_evidence_types import (
     AnswerEvidenceSignal,
 )
+from infinity_context_core.application.context_allergy_condition_inference import (
+    allergy_condition_inference_signal,
+)
 from infinity_context_core.application.context_community_membership_inference import (
     community_membership_inference_signal,
 )
@@ -699,6 +702,12 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
     )
     if community_membership_signal.reason:
         return community_membership_signal
+    allergy_condition_signal = allergy_condition_inference_signal(
+        query=query,
+        text=text,
+    )
+    if allergy_condition_signal.reason:
+        return allergy_condition_signal
     if not _requests_inference(query):
         if _requests_career_inference(query):
             return _career_inference_signal(query=query, text=text)

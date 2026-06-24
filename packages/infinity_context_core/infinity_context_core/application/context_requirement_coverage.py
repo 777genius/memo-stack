@@ -240,6 +240,16 @@ _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"(?=.{0,120}\b(?:member|membership|part\s+of|belong(?:s|ed|ing)?)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_ALLERGY_CONDITION_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\b(?:underlying\s+condition|condition|health\s+condition|medical\s+condition)\b"
+    r"(?=.{0,120}\b(?:allerg(?:y|ies|ic)|allergic)\b)|"
+    r"\b(?:allerg(?:y|ies|ic)|allergic)\b"
+    r"(?=.{0,120}\b(?:underlying\s+condition|condition|health\s+condition|"
+    r"medical\s+condition)\b)|"
+    r"\b(?:состояни\w*|заболевани\w*)\b(?=.{0,120}\bаллерги\w*\b)|"
+    r"\bаллерги\w*\b(?=.{0,120}\b(?:состояни\w*|заболевани\w*)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:or|или)\b(?=.{0,96}\b("
     r"prefer|preference|interested|more|less|rather|choose|choice|option|alternative|"
@@ -574,6 +584,16 @@ _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"\b(?:lgbtq?|trans(?:gender)?|queer|pride|support\s+group|community)\b"
     r"(?=.{0,120}\b(?:identif(?:y|ies|ied)|member|part\s+of|belong(?:s|ed|ing)?|"
     r"came\s+out|joined)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ALLERGY_CONDITION_INFERENCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:allerg(?:y|ies|ic)|allergic\s+to)\b"
+    r"(?=.{0,120}\b(?:animals?|pets?|reptiles?|cockroaches?|fur|puffy|itchy|"
+    r"swollen|rash)\b)|"
+    r"\b(?:animals?|pets?|reptiles?|cockroaches?|fur|puffy|itchy|swollen|rash)\b"
+    r"(?=.{0,120}\b(?:allerg(?:y|ies|ic)|allergic\s+to)\b)|"
+    r"\b(?:аллерги\w*)\b(?=.{0,120}\b(?:животн\w*|питомц\w*|рептили\w*|"
+    r"шерст\w*|зуд|от[её]к\w*)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _CHOICE_ANSWER_TEXT_RE = re.compile(
@@ -1136,6 +1156,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         query
     ) or _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(
         query
+    ) or _ALLERGY_CONDITION_INFERENCE_ANSWER_QUERY_RE.search(
+        query
     ):
         shapes.append("inference")
     if _CHOICE_ANSWER_QUERY_RE.search(query):
@@ -1206,6 +1228,9 @@ def _covered_answer_shapes(
         ) or (
             _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(text)
+        ) or (
+            _ALLERGY_CONDITION_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and _ALLERGY_CONDITION_INFERENCE_ANSWER_TEXT_RE.search(text)
         ):
             shapes.append("inference")
         if _CHOICE_ANSWER_TEXT_RE.search(text):
