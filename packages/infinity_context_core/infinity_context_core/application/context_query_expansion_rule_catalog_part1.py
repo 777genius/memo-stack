@@ -36,6 +36,30 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "relationship_status_bridge",
         ),
     (
+            frozenset({"отношения"}),
+            (
+                "отношения статус друзья дружба пара партнер супруг семья вместе "
+                "relationship status friends friendship partner dating family together"
+            ),
+            "relationship_status_bridge",
+        ),
+    (
+            frozenset({"пара"}),
+            (
+                "отношения статус пара партнеры супруги dating married together "
+                "relationship status partner spouse couple family together"
+            ),
+            "relationship_status_bridge",
+        ),
+    (
+            frozenset({"связан"}),
+            (
+                "как связан связаны отношения статус друзья дружба семья партнер "
+                "relationship status connected related friend partner family"
+            ),
+            "relationship_status_bridge",
+        ),
+    (
             frozenset({"where", "meet"}),
             (
                 "relationship origin first met meet meeting introduced known since "

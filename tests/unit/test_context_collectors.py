@@ -490,6 +490,7 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
 def test_bounded_retrieval_queries_keep_russian_relationship_bridges() -> None:
     duration = build_query_expansion_plan("Как давно Алекс знает Марию?")
     status = build_query_expansion_plan("Алекс и Мария друзья?")
+    connected = build_query_expansion_plan("Как Алекс связан с Марией?")
     friends_besides = build_query_expansion_plan("Есть ли у Нейта друзья помимо Жанны?")
 
     assert [
@@ -515,6 +516,18 @@ def test_bounded_retrieval_queries_keep_russian_relationship_bridges() -> None:
         "decomposition_relationship_status",
         "relationship_status_bridge",
         "decomposition_clause",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            connected,
+            fallback="fallback",
+            limit=4,
+        )
+    ] == [
+        "original_query",
+        "decomposition_relationship_status",
+        "relationship_status_bridge",
     ]
     assert "relationship_status_bridge" not in {
         query.reason
