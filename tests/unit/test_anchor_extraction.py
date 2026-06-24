@@ -684,6 +684,35 @@ def test_anchor_extraction_keeps_russian_message_actor_and_counterparty() -> Non
     assert events["ответил с марии по атласу вчера"]["event_participant_canonical_key"] == "mariya"
 
 
+def test_anchor_extraction_does_not_promote_russian_asset_objects_to_people() -> None:
+    cases = (
+        ("Дана скинула файл про Атлас вчера.", "файл", "скинула с дана про атлас вчера"),
+        (
+            "Ирина отправила документ по Атласу вчера.",
+            "документ",
+            "отправила с ирина по атласу вчера",
+        ),
+        (
+            "Сергей прислал скриншот по Атласу вчера.",
+            "скриншот",
+            "прислал с сергей по атласу вчера",
+        ),
+    )
+
+    for text, object_key, expected_event_key in cases:
+        anchors = extract_observed_anchors(text)
+        person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+        events = {
+            anchor.normalized_key: anchor.metadata
+            for anchor in anchors
+            if anchor.kind.value == "event"
+        }
+
+        assert object_key not in person_keys
+        assert not any(f"с {object_key}" in event_key for event_key in events)
+        assert expected_event_key in events
+
+
 def test_anchor_extraction_handles_chat_handles_and_email_people() -> None:
     anchors = extract_observed_anchors(
         "DM @alex.cooper yesterday about Atlas invoice. "
