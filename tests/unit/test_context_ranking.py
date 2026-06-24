@@ -5853,6 +5853,40 @@ def test_deterministic_rerank_prefers_relative_time_conversation_event_shape() -
     )
 
 
+def test_deterministic_rerank_prefers_russian_message_recency_event() -> None:
+    query = "Что Алекс написал вчера?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    event_note = _item(
+        "alex_message_yesterday",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Вчера Алекс написал про Atlas migration risks.",
+    )
+    generic_note = _item(
+        "generic_alex",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex owns the Project Atlas renewal follow-up.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_note, event_note),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_message_yesterday"].score > by_id["generic_alex"].score
+    assert (
+        "conversation_recency_temporal_evidence"
+        in by_id["alex_message_yesterday"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_uses_temporal_hint_for_latest_conversation() -> None:
     query = "What was the latest conversation with Alex?"
     plan = build_query_expansion_plan(query)

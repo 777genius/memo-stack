@@ -121,11 +121,40 @@ def test_conversation_recency_evidence_signal_supports_relative_time_queries() -
     assert russian_reason == "conversation_recency_temporal_evidence"
 
 
+def test_conversation_recency_evidence_signal_supports_russian_message_events() -> None:
+    cases = (
+        (
+            "Что Алекс написал вчера?",
+            "Вчера Алекс написал про Atlas migration risks.",
+        ),
+        (
+            "Что Мария сообщила вчера?",
+            "Вчера Мария сообщила про Atlas migration risks.",
+        ),
+        (
+            "Что Дана скинула вчера?",
+            "Вчера Дана скинула файл про Atlas migration risks.",
+        ),
+    )
+
+    for query, text in cases:
+        boost, penalty, reason = conversation_recency_evidence_signal(
+            query=query,
+            text=text,
+        )
+
+        assert boost > 0
+        assert penalty == 0
+        assert reason == "conversation_recency_temporal_evidence"
+
+
 def test_requests_conversation_recency_detects_latest_conversation_queries() -> None:
     assert requests_conversation_recency("What was my latest call with Alex about?")
     assert requests_conversation_recency("Что было на последнем созвоне с Алексом?")
     assert requests_conversation_recency("What did I discuss with Alex two hours ago?")
     assert requests_conversation_recency("Что я обсуждал с Алексом час назад?")
+    assert requests_conversation_recency("Что Алекс написал вчера?")
+    assert requests_conversation_recency("Что Мария сообщила вчера?")
     assert not requests_conversation_recency("What did Alex and Maria talk about?")
 
 
