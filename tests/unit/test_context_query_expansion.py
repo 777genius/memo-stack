@@ -1057,6 +1057,7 @@ def test_query_expansion_splits_broad_attribute_questions_into_facets() -> None:
         "attribute_calm_resourcefulness_bridge",
         "attribute_service_helpfulness_bridge",
         "attribute_rescue_purpose_bridge",
+        "attribute_trait_inventory_bridge",
     }.issubset(reasons)
     assert _expansion_query(plan, "attribute_family_support_bridge").startswith("John ")
     assert "family rock tough times" in _expansion_query(
@@ -1066,6 +1067,10 @@ def test_query_expansion_splits_broad_attribute_questions_into_facets() -> None:
     assert "stayed calm asked assistance" in _expansion_query(
         plan,
         "attribute_calm_resourcefulness_bridge",
+    )
+    assert "selfless family-oriented passionate" in _expansion_query(
+        plan,
+        "attribute_trait_inventory_bridge",
     )
 
 

@@ -3239,6 +3239,7 @@ def test_broad_attribute_query_prefers_specific_attribute_facets() -> None:
                 "means a lot to me."
             ),
             "attribute_family_support_bridge",
+            0.9,
         ),
         (
             (
@@ -3246,6 +3247,7 @@ def test_broad_attribute_query_prefers_specific_attribute_facets() -> None:
                 "which helped me handle the situation and make it back safely."
             ),
             "attribute_calm_resourcefulness_bridge",
+            0.9,
         ),
         (
             (
@@ -3253,6 +3255,7 @@ def test_broad_attribute_query_prefers_specific_attribute_facets() -> None:
                 "supplies and organized a toy drive for kids in need."
             ),
             "attribute_service_helpfulness_bridge",
+            0.9,
         ),
         (
             (
@@ -3260,14 +3263,34 @@ def test_broad_attribute_query_prefers_specific_attribute_facets() -> None:
                 "purpose, and we were able to save a family from a burning building."
             ),
             "attribute_rescue_purpose_bridge",
+            0.9,
+        ),
+        (
+            (
+                "D15:3 John: I feel passionate about supporting veterans and "
+                "their rights through public service."
+            ),
+            "attribute_trait_inventory_bridge",
+            0.88,
+        ),
+        (
+            (
+                "D9:8 John: Education and infrastructure policy interest me, "
+                "and I like thinking through the tradeoffs rationally."
+            ),
+            "attribute_trait_inventory_bridge",
+            0.88,
         ),
     ]
 
-    for text, expected_reason in cases:
+    for text, expected_reason, expected_min_score in cases:
         _, reason, relevance = best_query_relevance(plan, text=text)
 
         assert reason == expected_reason
-        assert keyword_chunk_score(relevance, query_expansion_reason=reason) >= 0.9
+        assert (
+            keyword_chunk_score(relevance, query_expansion_reason=reason)
+            >= expected_min_score
+        )
 
 
 def test_attribute_source_boost_prefers_precise_evidence_over_session_summary() -> None:

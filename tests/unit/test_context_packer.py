@@ -679,6 +679,64 @@ def test_answer_support_family_prefers_exact_turn_for_attribute_family_support()
     assert candidates[family].item_id == exact.item_id
 
 
+def test_answer_support_family_prefers_exact_turn_for_attribute_trait_inventory() -> None:
+    broad = ContextItem(
+        item_id="d15_broad_traits",
+        item_type="chunk",
+        text=(
+            "D15:1 John discussed several civic topics. D15:3 John is passionate "
+            "about supporting veterans and public service."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-41:session_15:observation",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_15:D15:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "attribute_trait_inventory_bridge",
+                "distinctive_term_hits": 8,
+            },
+            "provenance": {"keyword_aggregation_source_group": "locomo:conv-41:session_15"},
+        },
+    )
+    exact = ContextItem(
+        item_id="d15_3_turn",
+        item_type="chunk",
+        text=(
+            "D15:3 John: I feel passionate about supporting veterans and their "
+            "rights through public service."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_15:D15:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "attribute_trait_inventory_bridge",
+                "distinctive_term_hits": 8,
+            },
+            "provenance": {"keyword_aggregation_source_group": "locomo:conv-41:session_15"},
+        },
+    )
+
+    family = _answer_support_diversity_family(exact)
+    candidates = _answer_support_diversity_candidates([broad, exact])
+
+    assert candidates[family].item_id == exact.item_id
+
+
 def test_answer_support_family_prefers_exact_turn_for_lgbtq_school_event() -> None:
     broad = ContextItem(
         item_id="d3_school_event_broad",

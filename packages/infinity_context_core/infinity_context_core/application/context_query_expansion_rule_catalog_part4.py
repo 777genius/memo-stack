@@ -236,6 +236,15 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "attribute_rescue_purpose_bridge",
         ),
     (
+            frozenset({"attribute", "describe"}),
+            (
+                "attributes describe traits selfless family-oriented passionate "
+                "rational dedicated public service veterans education infrastructure "
+                "policy tradeoffs support"
+            ),
+            "attribute_trait_inventory_bridge",
+        ),
+    (
             frozenset({"personality", "traits"}),
             (
                 "thoughtful authentic driven drive determined dedicated passionate "
