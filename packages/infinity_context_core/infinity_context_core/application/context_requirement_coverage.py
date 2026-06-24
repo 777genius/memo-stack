@@ -223,6 +223,11 @@ _SOCIAL_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:besides|other\s+than|apart\s+from)\b(?=.{0,80}\b(?:friends?|teammates?)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\bstate\b(?=.{0,120}\b(?:live|lives|living|reside|residence)\b)|"
+    r"\b(?:live|lives|living|reside|residence)\b(?=.{0,120}\bstate\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:or|или)\b(?=.{0,96}\b("
     r"prefer|preference|interested|more|less|rather|choose|choice|option|alternative|"
@@ -531,6 +536,13 @@ _SOCIAL_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"(?=.{0,80}\b(?:online|gaming|games?|plays?|played|tournament|valorant)\b)|"
     r"\b(?:online|gaming|games?|plays?|played|tournament|valorant)\b"
     r"(?=.{0,80}\b(?:friends?|teammates?|team|squad|guild|clan|buddies)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_STATE_RESIDENCE_INFERENCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:map|photo|image|caption)\b(?=.{0,120}\b(?:trail|trails|hiking|park|forest|"
+    r"lake|route|state|county|city|minnesota|voyageurs)\b)|"
+    r"\b(?:trail|trails|hiking|park|forest|lake|route|state|county|city|"
+    r"minnesota|voyageurs)\b(?=.{0,120}\b(?:map|photo|image|caption)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _CHOICE_ANSWER_TEXT_RE = re.compile(
@@ -1087,6 +1099,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         shapes.append("causal")
     if _INFERENCE_ANSWER_QUERY_RE.search(query) or _SOCIAL_INFERENCE_ANSWER_QUERY_RE.search(
         query
+    ) or _STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE.search(
+        query
     ):
         shapes.append("inference")
     if _CHOICE_ANSWER_QUERY_RE.search(query):
@@ -1148,6 +1162,9 @@ def _covered_answer_shapes(
         if _INFERENCE_ANSWER_TEXT_RE.search(text) or (
             _SOCIAL_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _SOCIAL_INFERENCE_ANSWER_TEXT_RE.search(text)
+        ) or (
+            _STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and _STATE_RESIDENCE_INFERENCE_ANSWER_TEXT_RE.search(text)
         ):
             shapes.append("inference")
         if _CHOICE_ANSWER_TEXT_RE.search(text):

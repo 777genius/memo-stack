@@ -474,6 +474,32 @@ def test_context_requirement_coverage_tracks_preference_inference_evidence() -> 
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_state_residence_inference_evidence() -> None:
+    query = "Which US state do Audrey and Andrew potentially live in?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="andrew_map_trail",
+        item_type="chunk",
+        text=(
+            "Andrew image caption: a photo of a map of a park with a lot of "
+            "trees. Andrew image query: hiking trails map perfect spot."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D11:9"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
 def test_context_requirement_coverage_keeps_topic_only_music_out_of_inference() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     intent = build_query_anchor_intent(query)

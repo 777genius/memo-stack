@@ -17,6 +17,9 @@ from infinity_context_core.application.context_query_support_role import (
 from infinity_context_core.application.context_social_education_inference import (
     social_education_inference_signal,
 )
+from infinity_context_core.application.context_state_residence_inference import (
+    state_residence_inference_signal,
+)
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -678,6 +681,9 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
     social_education_signal = social_education_inference_signal(query=query, text=text)
     if social_education_signal.reason:
         return social_education_signal
+    state_residence_signal = state_residence_inference_signal(query=query, text=text)
+    if state_residence_signal.reason:
+        return state_residence_signal
     if not _requests_inference(query):
         if _requests_career_inference(query):
             return _career_inference_signal(query=query, text=text)

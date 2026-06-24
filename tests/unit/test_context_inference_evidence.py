@@ -345,6 +345,31 @@ def test_inference_evidence_signal_boosts_degree_policy_evidence() -> None:
     assert signal.reason == "inference_degree_policy_evidence"
 
 
+def test_inference_evidence_signal_boosts_state_residence_geo_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Which US state do Audrey and Andrew potentially live in?",
+        text=(
+            "Andrew image caption: a photo of a map of a park with a lot of "
+            "trees. Andrew image query: hiking trails map perfect spot."
+        ),
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_state_residence_geo_evidence"
+
+
+def test_inference_evidence_signal_penalizes_state_residence_technical_noise() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Which US state do Audrey and Andrew potentially live in?",
+        text="Andrew talked about a state machine and map code in the app repository.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_state_residence_technical_noise"
+
+
 def test_inference_evidence_signal_penalizes_degree_measurement_noise() -> None:
     signal = inference_evidence_rerank_signal(
         query="What might John's degree be in?",

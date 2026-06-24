@@ -3391,6 +3391,49 @@ def test_state_residence_source_boost_prefers_precise_map_turn() -> None:
     assert observation_boosted == score
 
 
+def test_deterministic_rerank_prefers_state_residence_geo_evidence() -> None:
+    query = "Which US state do Audrey and Andrew potentially live in?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    technical_noise = _item(
+        "andrew_state_machine_noise",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="Andrew talked about a state machine and map code in the app repository.",
+    )
+    map_evidence = _item(
+        "andrew_map_trail",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Andrew image caption: a photo of a map of a park with a lot of "
+            "trees. Andrew image query: hiking trails map perfect spot."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (technical_noise, map_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["andrew_map_trail"].score > by_id["andrew_state_machine_noise"].score
+    assert (
+        "inference_state_residence_geo_evidence"
+        in by_id["andrew_map_trail"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_state_residence_technical_noise"
+        in by_id["andrew_state_machine_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_keyword_chunk_source_score_boost_prefers_inference_observations() -> None:
     cases = [
         (
