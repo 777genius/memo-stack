@@ -5619,6 +5619,46 @@ def test_deterministic_rerank_demotes_plain_text_stale_state_for_current_query()
             "deterministic_rerank_reasons"
         ]
     )
+    assert (
+        "current_state_stale_conflict"
+        in by_id["stale_text_provider"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_boosts_current_state_text_for_current_query() -> None:
+    query = "What is the current Atlas provider?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    active = _item(
+        "active_provider",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Atlas final decision: OpenAI is the selected current provider.",
+    )
+    stale_topic = _item(
+        "stale_topic_provider",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="LocalAI was a previous Atlas provider before the review.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (stale_topic, active),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["active_provider"].score > by_id["stale_topic_provider"].score
+    assert (
+        "current_state_exact_evidence"
+        in by_id["active_provider"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
 
 
 def test_deterministic_rerank_prefers_previous_state_for_no_longer_query() -> None:
@@ -5653,6 +5693,18 @@ def test_deterministic_rerank_prefers_previous_state_for_no_longer_query() -> No
     assert (
         "temporal_query_previous_state_evidence"
         in by_id["superseded_provider"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "stale_state_exact_evidence"
+        in by_id["superseded_provider"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "stale_state_current_conflict"
+        in by_id["active_provider"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
     )

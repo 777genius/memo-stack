@@ -13,6 +13,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     aggregation_evidence_rerank_signal,
     birthplace_rerank_signal,
     commonality_rerank_signal,
+    current_state_rerank_signal,
     current_goal_rerank_signal,
     event_sequence_rerank_signal,
     inventory_list_rerank_signal,
@@ -136,6 +137,12 @@ def _domain_rerank_signals(
             relevance=relevance,
         ),
         state_transition_rerank_signal(
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
+        current_state_rerank_signal(
+            query=query,
             query_reason=query_reason,
             item=item,
             relevance=relevance,

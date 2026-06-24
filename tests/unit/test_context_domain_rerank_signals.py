@@ -6,6 +6,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     aggregation_evidence_rerank_signal,
     birthplace_rerank_signal,
     commonality_rerank_signal,
+    current_state_rerank_signal,
     current_goal_rerank_signal,
     event_sequence_rerank_signal,
     inventory_list_rerank_signal,
@@ -423,6 +424,28 @@ def test_relationship_status_signal_prefers_status_over_social_decoy() -> None:
     assert work_signal.reason == "relationship_status_weak_evidence"
 
 
+def test_relationship_status_signal_penalizes_non_romantic_partner_contexts() -> None:
+    cases = (
+        "Alex is Caroline's accountability partner for marathon training.",
+        "Maria is Caroline's study partner in the evening class.",
+        "John is Caroline's research partner in the lab.",
+    )
+
+    for text in cases:
+        signal = relationship_status_rerank_signal(
+            query_reason="relationship_status_bridge",
+            item=_item(
+                "non_romantic_partner",
+                text=text,
+                query_expansion_reason="relationship_status_bridge",
+            ),
+            relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+        )
+
+        assert signal.penalty > 0
+        assert signal.reason == "relationship_status_weak_evidence"
+
+
 def test_relationship_duration_signal_prefers_duration_over_generic_relation() -> None:
     exact = _item(
         "known_for_years",
@@ -479,6 +502,83 @@ def test_state_transition_signal_prefers_explicit_transition_pair_over_topic_not
     assert exact_signal.reason == "state_transition_exact_evidence"
     assert weak_signal.penalty > 0
     assert weak_signal.reason == "state_transition_weak_evidence"
+
+
+def test_current_state_signal_prefers_active_state_over_stale_text() -> None:
+    active = _item(
+        "active_provider",
+        text="Atlas provider remains valid and active: OpenAI.",
+        query_expansion_reason="current_state_temporal_bridge",
+    )
+    stale = _item(
+        "stale_provider",
+        text="LocalAI is no longer valid for Atlas after the provider switch.",
+        query_expansion_reason="current_state_temporal_bridge",
+    )
+
+    active_signal = current_state_rerank_signal(
+        query="Which Atlas provider is still valid?",
+        query_reason="current_state_temporal_bridge",
+        item=active,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+    stale_signal = current_state_rerank_signal(
+        query="Which Atlas provider is still valid?",
+        query_reason="current_state_temporal_bridge",
+        item=stale,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+
+    assert active_signal.boost > 0
+    assert active_signal.reason == "current_state_exact_evidence"
+    assert stale_signal.penalty > 0
+    assert stale_signal.reason == "current_state_stale_conflict"
+
+
+def test_current_state_signal_prefers_stale_evidence_for_no_longer_query() -> None:
+    stale = _item(
+        "stale_provider",
+        text="LocalAI is no longer valid because it was superseded by OpenAI.",
+        query_expansion_reason="stale_state_temporal_bridge",
+    )
+    active = _item(
+        "active_provider",
+        text="OpenAI is the selected current Atlas provider.",
+        query_expansion_reason="stale_state_temporal_bridge",
+    )
+
+    stale_signal = current_state_rerank_signal(
+        query="Which Atlas provider is no longer valid?",
+        query_reason="stale_state_temporal_bridge",
+        item=stale,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+    active_signal = current_state_rerank_signal(
+        query="Which Atlas provider is no longer valid?",
+        query_reason="stale_state_temporal_bridge",
+        item=active,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+
+    assert stale_signal.boost > 0
+    assert stale_signal.reason == "stale_state_exact_evidence"
+    assert active_signal.penalty > 0
+    assert active_signal.reason == "stale_state_current_conflict"
+
+
+def test_current_state_signal_does_not_treat_previous_conversation_as_stale_state() -> None:
+    signal = current_state_rerank_signal(
+        query="What did Alex say in the previous conversation?",
+        query_reason="original_query",
+        item=_item(
+            "active_provider",
+            text="Atlas final decision: OpenAI is the selected current provider.",
+            query_expansion_reason="original_query",
+        ),
+        relevance=_relevance(distinctive_term_hits=4, unique_term_hits=4),
+    )
+
+    assert signal == type(signal)()
 
 
 def test_age_birthday_signal_prefers_birth_evidence_over_old_word_noise() -> None:

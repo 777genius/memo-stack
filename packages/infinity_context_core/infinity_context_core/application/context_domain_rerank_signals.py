@@ -89,6 +89,14 @@ _STATE_TRANSITION_RERANK_REASONS = frozenset(
         "state_transition_bridge",
     )
 )
+_CURRENT_STATE_RERANK_REASONS = frozenset(
+    (
+        "current_recommendation_bridge",
+        "current_state_temporal_bridge",
+        "decomposition_knowledge_update_current",
+    )
+)
+_STALE_STATE_RERANK_REASONS = frozenset(("stale_state_temporal_bridge",))
 _AGE_BIRTHDAY_RERANK_REASONS = frozenset(("age_birthday_bridge",))
 _BIRTHPLACE_RERANK_REASONS = frozenset(("birthplace_origin_bridge",))
 _INVENTORY_POTTERY_QUERY_RE = re.compile(
@@ -311,10 +319,14 @@ _RELATIONSHIP_STATUS_EXACT_RE = re.compile(
     re.IGNORECASE,
 )
 _RELATIONSHIP_STATUS_WORK_PARTNER_RE = re.compile(
-    r"\b(?:business|work|project|cofounder|co-founder|founder|startup|team)\s+"
+    r"\b(?:accountability|business|class|cofounder|co-founder|conversation|"
+    r"dance|founder|gym|lab|project|research|running|school|sparring|startup|"
+    r"study|team|training|volunteer|work)\s+"
     r"partners?\b|\bpartners?\s+(?:on|for|in)\s+"
-    r"(?:project|work|business|startup|atlas)\b|"
-    r"\b(?:рабоч\w*|бизнес|проектн\w*)\s+партн[её]р\w*\b",
+    r"(?:atlas|business|class|gym|lab|project|research|running|school|startup|"
+    r"study|team|training|volunteer|work)\b|"
+    r"\b(?:рабоч\w*|бизнес|проектн\w*|учебн\w*|тренировочн\w*)\s+"
+    r"партн[её]р\w*\b",
     re.IGNORECASE,
 )
 _RELATIONSHIP_STATUS_SOCIAL_WEAK_RE = re.compile(
@@ -389,6 +401,42 @@ _STATE_TRANSITION_MARKER_RE = re.compile(
     r"\b(?:изменил\w*|изменилось|обновил\w*|смени\w*|переш[её]л\w*|"
     r"мигрировал\w*|заменил\w*|заменен\w*|заменён\w*|текущ\w*|"
     r"актуальн\w*|нов\w*|стар\w*|предыдущ\w*|устаревш\w*|теперь|сейчас)\b",
+    re.IGNORECASE,
+)
+_CURRENT_STATE_EXACT_RE = re.compile(
+    r"\b(?:current|active|latest|final|selected|chosen|recommended|"
+    r"canonical|source\s+of\s+truth|decided\s+to\s+use|should\s+use|"
+    r"using\s+now|right\s+now|remains?\s+valid|still\s+valid|"
+    r"valid\s+and\s+active)\b|"
+    r"\b(?:актуальн\w*|текущ\w*|финальн\w*|окончательн\w*|"
+    r"выбранн\w*|рекомендованн\w*|сейчас|действу\w*)\b",
+    re.IGNORECASE,
+)
+_STALE_STATE_EXACT_RE = re.compile(
+    r"\b(?:no\s+longer\s+(?:valid|current|active|used?|using)|"
+    r"not\s+current|not\s+valid|stale|outdated|deprecated|superseded|"
+    r"replaced\s+by|switched\s+away|previous(?:ly)?\s+valid|former|"
+    r"old\s+(?:provider|tool|model|plan|policy|decision|source))\b|"
+    r"\b(?:устаревш\w*|больше\s+не\s+(?:актуальн\w*|использ\w*)|"
+    r"не\s+актуальн\w*|предыдущ\w*|замен[её]н\w*)\b",
+    re.IGNORECASE,
+)
+_CURRENT_STATE_QUERY_RE = re.compile(
+    r"\b(?:current|currently|latest|active|final|selected|chosen|recommended|"
+    r"canonical|source\s+of\s+truth|still\s+valid|should\s+(?:i\s+)?use|"
+    r"what\s+did\s+i\s+decide\s+to\s+use)\b|"
+    r"\b(?:актуальн\w*|текущ\w*|финальн\w*|окончательн\w*|"
+    r"выбранн\w*|рекомендованн\w*)\b",
+    re.IGNORECASE,
+)
+_STALE_STATE_QUERY_RE = re.compile(
+    r"\b(?:no\s+longer\s+(?:valid|current|active|used?|using)|not\s+current|"
+    r"not\s+valid|stale|outdated|deprecated|"
+    r"(?:previous|former|old)\s+"
+    r"(?:provider|tool|model|plan|policy|decision|source|state|option)|"
+    r"should\s+(?:i\s+)?no\s+longer\s+use)\b|"
+    r"\b(?:устаревш\w*|больше\s+не\s+(?:актуальн\w*|использ\w*)|"
+    r"не\s+актуальн\w*|предыдущ\w*)\b",
     re.IGNORECASE,
 )
 _AGE_BIRTHDAY_EXACT_RE = re.compile(
@@ -751,6 +799,38 @@ def state_transition_rerank_signal(
     )
 
 
+def current_state_rerank_signal(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if _is_stale_state_candidate(query=query, query_reason=query_reason, item=item):
+        if _STALE_STATE_EXACT_RE.search(item.text) is not None:
+            return DomainRerankSignal(boost=0.032, reason="stale_state_exact_evidence")
+        if _CURRENT_STATE_EXACT_RE.search(item.text) is not None:
+            return DomainRerankSignal(
+                penalty=0.045,
+                reason="stale_state_current_conflict",
+            )
+        if relevance.distinctive_term_hits < 4:
+            return DomainRerankSignal(penalty=0.035, reason="stale_state_weak_evidence")
+        return DomainRerankSignal()
+    if not _is_current_state_candidate(query=query, query_reason=query_reason, item=item):
+        return DomainRerankSignal()
+    if _STALE_STATE_EXACT_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            penalty=0.055,
+            reason="current_state_stale_conflict",
+        )
+    if _CURRENT_STATE_EXACT_RE.search(item.text) is not None:
+        return DomainRerankSignal(boost=0.028, reason="current_state_exact_evidence")
+    if relevance.distinctive_term_hits < 3:
+        return DomainRerankSignal(penalty=0.026, reason="current_state_weak_evidence")
+    return DomainRerankSignal()
+
+
 def age_birthday_rerank_signal(
     *,
     query: str = "",
@@ -957,6 +1037,22 @@ def _is_state_transition_candidate(*, query_reason: str, item: ContextItem) -> b
     if query_reason in _STATE_TRANSITION_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _STATE_TRANSITION_RERANK_REASONS
+
+
+def _is_current_state_candidate(*, query: str, query_reason: str, item: ContextItem) -> bool:
+    if _CURRENT_STATE_QUERY_RE.search(query) is not None:
+        return True
+    if query_reason in _CURRENT_STATE_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _CURRENT_STATE_RERANK_REASONS
+
+
+def _is_stale_state_candidate(*, query: str, query_reason: str, item: ContextItem) -> bool:
+    if _STALE_STATE_QUERY_RE.search(query) is not None:
+        return True
+    if query_reason in _STALE_STATE_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _STALE_STATE_RERANK_REASONS
 
 
 def _is_age_birthday_candidate(*, query_reason: str, item: ContextItem) -> bool:
