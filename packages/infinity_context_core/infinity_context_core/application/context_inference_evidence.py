@@ -11,6 +11,9 @@ from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_preference_inference import (
     preference_inference_signal,
 )
+from infinity_context_core.application.context_political_inference import (
+    political_inference_signal,
+)
 from infinity_context_core.application.context_query_support_role import (
     support_role_query_variants,
 )
@@ -684,6 +687,9 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
     state_residence_signal = state_residence_inference_signal(query=query, text=text)
     if state_residence_signal.reason:
         return state_residence_signal
+    political_signal = political_inference_signal(query=query, text=text)
+    if political_signal.reason:
+        return political_signal
     if not _requests_inference(query):
         if _requests_career_inference(query):
             return _career_inference_signal(query=query, text=text)

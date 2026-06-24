@@ -228,6 +228,11 @@ _STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:live|lives|living|reside|residence)\b(?=.{0,120}\bstate\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_POLITICAL_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\bpolitical\b(?=.{0,80}\b(?:leaning|likely|would|infer|inference)\b)|"
+    r"\b(?:leaning|likely|would|infer|inference)\b(?=.{0,80}\bpolitical\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:or|или)\b(?=.{0,96}\b("
     r"prefer|preference|interested|more|less|rather|choose|choice|option|alternative|"
@@ -543,6 +548,15 @@ _STATE_RESIDENCE_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"lake|route|state|county|city|minnesota|voyageurs)\b)|"
     r"\b(?:trail|trails|hiking|park|forest|lake|route|state|county|city|"
     r"minnesota|voyageurs)\b(?=.{0,120}\b(?:map|photo|image|caption)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_POLITICAL_INFERENCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:lgbtq?|trans(?:gender)?|transition|rights|equality|inclusion)\b"
+    r"(?=.{0,120}\b(?:conservative|unwelcoming|support|supportive|acceptance|"
+    r"progressive|liberal|rights)\b)|"
+    r"\b(?:conservative|unwelcoming|support|supportive|acceptance|progressive|"
+    r"liberal|rights)\b(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|transition|"
+    r"rights|equality|inclusion)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _CHOICE_ANSWER_TEXT_RE = re.compile(
@@ -1101,6 +1115,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         query
     ) or _STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE.search(
         query
+    ) or _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(
+        query
     ):
         shapes.append("inference")
     if _CHOICE_ANSWER_QUERY_RE.search(query):
@@ -1165,6 +1181,9 @@ def _covered_answer_shapes(
         ) or (
             _STATE_RESIDENCE_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _STATE_RESIDENCE_INFERENCE_ANSWER_TEXT_RE.search(text)
+        ) or (
+            _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and _POLITICAL_INFERENCE_ANSWER_TEXT_RE.search(text)
         ):
             shapes.append("inference")
         if _CHOICE_ANSWER_TEXT_RE.search(text):

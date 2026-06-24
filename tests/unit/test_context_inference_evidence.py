@@ -370,6 +370,31 @@ def test_inference_evidence_signal_penalizes_state_residence_technical_noise() -
     assert signal.reason == "inference_state_residence_technical_noise"
 
 
+def test_inference_evidence_signal_boosts_political_values_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="What would Caroline's political leaning likely be?",
+        text=(
+            "Caroline said religious conservatives made her feel unwelcoming "
+            "about her transition and LGBTQ rights."
+        ),
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_political_values_evidence"
+
+
+def test_inference_evidence_signal_penalizes_political_topic_only_noise() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="What would Caroline's political leaning likely be?",
+        text="Caroline discussed political news but did not share any views.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_political_topic_only_noise"
+
+
 def test_inference_evidence_signal_penalizes_degree_measurement_noise() -> None:
     signal = inference_evidence_rerank_signal(
         query="What might John's degree be in?",

@@ -3434,6 +3434,49 @@ def test_deterministic_rerank_prefers_state_residence_geo_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_political_values_evidence() -> None:
+    query = "What would Caroline's political leaning likely be?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_noise = _item(
+        "caroline_political_news",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="Caroline discussed political news but did not share any views.",
+    )
+    values_evidence = _item(
+        "caroline_political_values",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline said religious conservatives made her feel unwelcoming "
+            "about her transition and LGBTQ rights."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_noise, values_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_political_values"].score > by_id["caroline_political_news"].score
+    assert (
+        "inference_political_values_evidence"
+        in by_id["caroline_political_values"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_political_topic_only_noise"
+        in by_id["caroline_political_news"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_keyword_chunk_source_score_boost_prefers_inference_observations() -> None:
     cases = [
         (
