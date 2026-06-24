@@ -763,6 +763,60 @@ def test_deterministic_rerank_prefers_positive_event_participation_over_missed_e
     )
 
 
+def test_deterministic_rerank_prefers_broad_lgbtq_event_slot_coverage() -> None:
+    query = "What LGBTQ+ events has Caroline participated in?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    multi_slot = _item(
+        "multi_event_slots",
+        score=0.77,
+        retrieval_source="keyword_aggregation_chunks",
+        text=(
+            "D9:2 Caroline joined a mentorship program for LGBTQ youth. "
+            "D10:3 Caroline joined a new LGBTQ activist group. "
+            "D14:33 Caroline organized an LGBTQ art show with her paintings."
+        ),
+        score_signals={"query_expansion_reason": "event_participation_bridge"},
+    )
+    single_slot = _item(
+        "single_pride_event",
+        score=0.765,
+        retrieval_source="keyword_chunks",
+        text="D5:1 Caroline went to an LGBTQ pride parade and felt accepted.",
+        score_signals={"query_expansion_reason": "lgbtq_pride_event_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (single_slot, multi_slot),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["multi_event_slots"].score > by_id["single_pride_event"].score
+    assert (
+        "aggregation_list_slot_diverse_evidence"
+        in by_id["multi_event_slots"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "explicit_answer_shape_missing"
+        not in by_id["multi_event_slots"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "explicit_evidence_feature_missing"
+        not in by_id["multi_event_slots"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "aggregation_list_single_evidence_incomplete"
+        in by_id["single_pride_event"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_prefers_activity_companion_evidence() -> None:
     query = "Who did Melanie go camping with?"
     plan = build_query_expansion_plan(query)

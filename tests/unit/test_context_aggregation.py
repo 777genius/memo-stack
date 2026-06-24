@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from infinity_context_core.application import BuildContextQuery
+from infinity_context_core.application.context_aggregation_answer_slots import (
+    aggregation_answer_slots,
+)
 from infinity_context_core.application.context_query_expansion import build_query_expansion_plan
 from infinity_context_core.application.context_relevance import score_query_relevance
 from infinity_context_core.application.dto import ContextItem
@@ -111,6 +114,28 @@ def test_keyword_aggregation_query_kind_handles_band_list_queries() -> None:
 def test_keyword_aggregation_query_kind_handles_type_list_queries() -> None:
     assert _keyword_aggregation_query_kind("What types of pottery have Melanie made?") == "list"
     assert _keyword_aggregation_query_kind("Which kinds of documents did Alex save?") == "list"
+
+
+def test_lgbtq_event_answer_slots_require_nearby_lgbtq_context() -> None:
+    query = "What LGBTQ+ events has Caroline participated in?"
+
+    assert aggregation_answer_slots(
+        query=query,
+        text=(
+            "Caroline mentored LGBTQ youth, joined a new LGBTQ activist group, "
+            "and organized an LGBTQ art show."
+        ),
+    ) == frozenset(
+        {
+            "lgbtq_activist_group",
+            "lgbtq_art_show",
+            "lgbtq_mentorship_program",
+        }
+    )
+    assert aggregation_answer_slots(
+        query=query,
+        text="Caroline attended a general art show and later mentored students.",
+    ) == frozenset()
 
 
 def test_keyword_aggregation_query_kind_handles_inventory_list_queries() -> None:

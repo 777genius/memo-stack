@@ -171,6 +171,35 @@ def test_apply_domain_rerank_signals_boosts_slot_diverse_vector_event_evidence()
     assert "aggregation_list_slot_diverse_evidence" in adjustment.reasons
 
 
+def test_apply_domain_rerank_signals_boosts_broad_lgbtq_event_slots() -> None:
+    item = ContextItem(
+        item_id="lgbtq_event_activity_vector",
+        item_type="chunk",
+        text=(
+            "D9:2 Caroline joined a mentorship program for LGBTQ youth. "
+            "D10:3 She joined a new LGBTQ activist group. "
+            "D14:33 She organized an LGBTQ art show with her paintings."
+        ),
+        score=0.79,
+        source_refs=(SourceRef(source_type="document", source_id="doc"),),
+        diagnostics={
+            "retrieval_source": "vector_chunks",
+            "retrieval_sources": ["vector_chunks"],
+            "score_signals": {"query_expansion_reason": "event_participation_bridge"},
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="What LGBTQ+ events has Caroline participated in?",
+        query_reason="event_participation_bridge",
+        item=item,
+        relevance=_relevance(distinctive_term_hits=8),
+    )
+
+    assert adjustment.boost >= 0.058
+    assert "aggregation_list_slot_diverse_evidence" in adjustment.reasons
+
+
 def test_apply_domain_rerank_signals_penalizes_single_slot_list_evidence() -> None:
     item = ContextItem(
         item_id="single_pride_event",

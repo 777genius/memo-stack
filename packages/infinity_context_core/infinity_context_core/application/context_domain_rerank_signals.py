@@ -735,7 +735,7 @@ def aggregation_evidence_rerank_signal(
     if (
         is_list_query
         and has_multi_evidence_competitor
-        and _is_single_list_evidence(item)
+        and _is_single_list_evidence(query=query, item=item)
     ):
         return DomainRerankSignal(
             penalty=0.04,
@@ -1618,9 +1618,11 @@ def _is_single_weak_count_evidence(item: ContextItem) -> bool:
     return _AGGREGATION_NUMERIC_ANSWER_RE.search(item.text) is None
 
 
-def _is_single_list_evidence(item: ContextItem) -> bool:
+def _is_single_list_evidence(*, query: str, item: ContextItem) -> bool:
     if _is_aggregation_context_item(item) or _aggregation_evidence_count(item) >= 2:
         return False
+    if aggregation_answer_slot_count(query=query, text=item.text) == 1:
+        return True
     return not _list_evidence_looks_multi_value(item.text)
 
 

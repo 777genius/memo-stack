@@ -11,6 +11,9 @@ from infinity_context_core.application.context_action_roles import action_role_r
 from infinity_context_core.application.context_activity_companion import (
     activity_companion_signal,
 )
+from infinity_context_core.application.context_aggregation_answer_slots import (
+    aggregation_answer_slot_count,
+)
 from infinity_context_core.application.context_conversation_counterparty import (
     conversation_counterparty_evidence_signal,
     conversation_recency_evidence_signal,
@@ -1693,14 +1696,15 @@ def _deterministic_rerank_signals(
     boost += domain_adjustment.boost
     penalty += domain_adjustment.penalty
     reasons.extend(domain_adjustment.reasons)
+    slot_diverse_aggregation = aggregation_answer_slot_count(query=query, text=item.text) >= 2
     if requested_total > 0:
         if coverage_ratio <= 0:
             penalty += 0.025
             reasons.append("explicit_requirement_missing")
-        elif coverage_ratio < 0.5:
+        elif coverage_ratio < 0.5 and not slot_diverse_aggregation:
             penalty += 0.012
             reasons.append("explicit_requirement_partial")
-    if coverage.missing_answer_shapes:
+    if coverage.missing_answer_shapes and not slot_diverse_aggregation:
         penalty += min(
             0.02,
             0.014 * len(coverage.missing_answer_shapes),
@@ -1714,7 +1718,7 @@ def _deterministic_rerank_signals(
         )
         reasons.append("explicit_requirement_missing")
         reasons.append("explicit_modality_missing")
-    if coverage.missing_evidence_features:
+    if coverage.missing_evidence_features and not slot_diverse_aggregation:
         penalty += min(
             0.028,
             0.02 * len(coverage.missing_evidence_features),

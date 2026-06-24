@@ -70,6 +70,53 @@ _SLOT_RULES: tuple[
                 re.compile(r"\b(?:advocacy\s+campaign|lgbtq\s+rights)\b", re.IGNORECASE),
             ),
             (
+                "lgbtq_mentorship_program",
+                re.compile(
+                    r"\b(?:mentorship|mentoring|mentor(?:ed|s)?)\b"
+                    r"(?=.{0,100}\b(?:lgbtq|lgbt|transgender|trans)\b)|"
+                    r"\b(?:lgbtq|lgbt|transgender|trans)\b"
+                    r"(?=.{0,100}\b(?:mentorship|mentoring|mentor(?:ed|s)?)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "lgbtq_art_show",
+                re.compile(
+                    r"\b(?:lgbtq|lgbt|transgender|trans)\b(?=.{0,100}\bart\s+show\b)|"
+                    r"\bart\s+show\b(?=.{0,100}\b(?:lgbtq|lgbt|transgender|trans)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "lgbtq_activist_group",
+                re.compile(
+                    r"\b(?:lgbtq|lgbt|lgbtq\s+rights)\b"
+                    r"(?=.{0,100}\bactivist\s+group\b)|"
+                    r"\bactivist\s+group\b(?=.{0,100}\b(?:lgbtq|lgbt|lgbtq\s+rights)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "lgbtq_youth_center",
+                re.compile(
+                    r"\b(?:lgbtq|lgbt|transgender|trans)\b"
+                    r"(?=.{0,100}\byouth\s+center\b)|"
+                    r"\byouth\s+center\b"
+                    r"(?=.{0,100}\b(?:lgbtq|lgbt|transgender|trans)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "lgbtq_counseling_workshop",
+                re.compile(
+                    r"\b(?:lgbtq|lgbt|transgender|trans)\b"
+                    r"(?=.{0,120}\bcounsel(?:ing|ling)\s+workshop\b)|"
+                    r"\bcounsel(?:ing|ling)\s+workshop\b"
+                    r"(?=.{0,120}\b(?:lgbtq|lgbt|transgender|trans)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
                 "transgender_poetry_reading",
                 re.compile(r"\btransgender\s+poetry\s+reading\b", re.IGNORECASE),
             ),
