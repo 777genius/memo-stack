@@ -684,11 +684,11 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
         return AnswerEvidenceSignal()
     if support_role_query_variants(query):
         return _support_role_fit_signal(query=query, text=text)
+    if _requests_career_inference(query):
+        return _career_inference_signal(query=query, text=text)
     preference_signal = preference_inference_signal(query=query, text=text)
     if preference_signal.reason:
         return preference_signal
-    if _requests_career_inference(query):
-        return _career_inference_signal(query=query, text=text)
     if _requests_willingness_inference(query):
         return _willingness_inference_signal(query=query, text=text)
     if _requests_children_books_inference(query):

@@ -31,6 +31,8 @@ _PREFERENCE_QUERY_TERMS = frozenset(
     {
         "enjoy",
         "enjoying",
+        "interest",
+        "interested",
         "like",
         "likes",
         "love",

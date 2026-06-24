@@ -4899,6 +4899,53 @@ def test_deterministic_rerank_prefers_negative_preference_fit_over_unrelated_ins
     )
 
 
+def test_deterministic_rerank_prefers_comparison_preference_evidence() -> None:
+    query = "Would Melanie be more interested in a national park or a theme park?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    option_echo = _item(
+        "theme_park_option_echo",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Melanie discussed whether a national park or a theme park sounded nice someday.",
+    )
+    outdoor_fit = _item(
+        "melanie_outdoor_fit",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="Melanie loves camping, hiking, and quiet outdoor trips in national parks.",
+    )
+    theme_negative = _item(
+        "melanie_theme_negative",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie dislikes loud theme parks and avoids noisy rides.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (option_echo, outdoor_fit, theme_negative),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_outdoor_fit"].score > by_id["theme_park_option_echo"].score
+    assert by_id["melanie_theme_negative"].score > by_id["theme_park_option_echo"].score
+    assert (
+        "inference_preference_fit_evidence"
+        in by_id["melanie_outdoor_fit"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_negative_preference_fit_evidence"
+        in by_id["melanie_theme_negative"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_penalizes_classical_music_topic_without_preference() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     plan = build_query_expansion_plan(query)

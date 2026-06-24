@@ -136,6 +136,28 @@ def test_inference_evidence_signal_boosts_generic_negative_preference_fit() -> N
     assert signal.reason == "inference_negative_preference_fit_evidence"
 
 
+def test_inference_evidence_signal_boosts_comparison_preference_fit() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Melanie be more interested in a national park or a theme park?",
+        text="Melanie loves camping, hiking, and quiet outdoor trips in national parks.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_preference_fit_evidence"
+
+
+def test_inference_evidence_signal_boosts_negative_comparison_option_fit() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Melanie be more interested in a national park or a theme park?",
+        text="Melanie dislikes loud theme parks and avoids noisy rides.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_negative_preference_fit_evidence"
+
+
 def test_inference_evidence_signal_does_not_treat_podcast_domain_as_negative() -> None:
     signal = inference_evidence_rerank_signal(
         query="Would Melanie likely enjoy podcasts?",
