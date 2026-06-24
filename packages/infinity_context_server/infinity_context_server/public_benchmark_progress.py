@@ -74,6 +74,7 @@ class _BenchmarkProgress:
     checkpoint_out: Path | None = None
     checkpoint_every_cases: int = 25
     checkpoint_min_interval_seconds: float = DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS
+    selected_case_fingerprint: str | None = None
     _event_index: int = field(default=0, init=False, repr=False)
     _last_checkpoint_at: float = field(default=0.0, init=False, repr=False)
 
@@ -130,6 +131,7 @@ class _BenchmarkProgress:
             "dataset_path_label": self.dataset_path.name,
             "dataset_hash": self.dataset_hash,
             "case_selection": dict(self.case_selection or {}),
+            "selected_case_count": self.total_case_count,
             "checkpoint_policy": {
                 "checkpoint_every_cases": interval,
                 "checkpoint_min_interval_seconds": interval_seconds,
@@ -173,6 +175,8 @@ class _BenchmarkProgress:
             "recent_cases": [_case_payload(item) for item in run_results[-20:]],
             "recent_failures": list(failures[-20:]),
         }
+        if self.selected_case_fingerprint:
+            payload["selected_case_fingerprint"] = self.selected_case_fingerprint
         self.checkpoint_out.parent.mkdir(parents=True, exist_ok=True)
         _write_json_atomic(self.checkpoint_out, payload)
         self._last_checkpoint_at = now

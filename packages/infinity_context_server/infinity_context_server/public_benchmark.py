@@ -46,9 +46,14 @@ from infinity_context_server.public_benchmark_checkpoint import (
     safe_identifier,
     seed_corpus_identity,
     seed_corpus_metadata,
+    selected_case_fingerprint,
 )
 from infinity_context_server.public_benchmark_checkpoint import (
     SeedCorpusMetadata as _SeedCorpusMetadata,
+)
+from infinity_context_server.public_benchmark_environment import (
+    check_local_benchmark_environment,
+    local_environment_failure_result,
 )
 from infinity_context_server.public_benchmark_execution import (
     CaseExecutionEntry as _CaseExecutionEntry,
@@ -88,10 +93,6 @@ from infinity_context_server.public_benchmark_execution import (
 )
 from infinity_context_server.public_benchmark_execution import (
     ordered_run_results as _ordered_run_results,
-)
-from infinity_context_server.public_benchmark_environment import (
-    check_local_benchmark_environment,
-    local_environment_failure_result,
 )
 from infinity_context_server.public_benchmark_metrics import (
     accuracy as _accuracy,
@@ -642,6 +643,7 @@ def _execute_cases(
         checkpoint_out=checkpoint_out,
         checkpoint_every_cases=checkpoint_every_cases,
         checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
+        selected_case_fingerprint=selected_case_fingerprint(cases),
     )
 
     progress.event(

@@ -27,6 +27,7 @@ from infinity_context_server.public_benchmark import (
 )
 from infinity_context_server.public_benchmark_checkpoint import (
     load_checkpoint_resume_state_with_diagnostics,
+    selected_case_fingerprint,
 )
 
 
@@ -1623,6 +1624,8 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         "longmemeval:knowledge_update": 0,
     }
     assert checkpoint["status"] == "completed"
+    assert checkpoint["selected_case_count"] == 2
+    assert checkpoint["selected_case_fingerprint"] == selected_case_fingerprint(cases)
     assert checkpoint["progress"]["processed_case_count"] == 2
     assert checkpoint["progress"]["processed_case_ratio"] == 1.0
     assert checkpoint["progress"]["cases_per_second"] > 0
@@ -1856,6 +1859,58 @@ def test_checkpoint_resume_reports_invalid_case_payload_count(tmp_path: Path) ->
     assert result.reason == "no_selected_successful_case_results"
     assert result.checkpoint_case_count == 1
     assert result.checkpoint_invalid_case_count == 1
+
+
+def test_checkpoint_resume_skips_selected_case_fingerprint_mismatch(
+    tmp_path: Path,
+) -> None:
+    checkpoint_out = tmp_path / "checkpoint.json"
+    checkpoint_out.write_text(
+        json.dumps(
+            {
+                "schema_version": "public-benchmark-checkpoint-v1",
+                "dataset_hash": "dataset-hash",
+                "case_selection": {},
+                "selected_case_fingerprint": "different-selection",
+                "cases": [
+                    {
+                        "benchmark": "locomo",
+                        "case_id": "resume-one",
+                        "capability": "locomo_unknown",
+                        "status": "ok",
+                        "expected_ok": True,
+                        "forbidden_ok": True,
+                        "missing_terms": [],
+                        "leaked_terms": [],
+                        "item_ids": ["chunk_shared"],
+                        "latency_ms": 10.0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="resume-one",
+            question="Where is the marker?",
+            expected_terms=("SHARED_MARKER",),
+        ),
+    )
+
+    result = load_checkpoint_resume_state_with_diagnostics(
+        checkpoint_out=checkpoint_out,
+        dataset_hash="dataset-hash",
+        case_selection=None,
+        cases=cases,
+    )
+
+    assert result.state is None
+    assert result.status == "skipped"
+    assert result.reason == "selected_case_fingerprint_mismatch"
+    assert result.selected_case_count == 1
+    assert result.checkpoint_case_count == 1
 
 
 def test_public_memory_benchmark_resumes_from_compatible_checkpoint(

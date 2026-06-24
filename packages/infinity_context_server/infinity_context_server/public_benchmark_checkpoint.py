@@ -148,6 +148,18 @@ def load_checkpoint_resume_state_with_diagnostics(
             selected_case_count=selected_case_count,
             checkpoint_case_count=len(raw_cases),
         )
+    checkpoint_selected_case_fingerprint = _non_empty_str(
+        payload.get("selected_case_fingerprint")
+    )
+    if (
+        checkpoint_selected_case_fingerprint is not None
+        and checkpoint_selected_case_fingerprint != selected_case_fingerprint(cases)
+    ):
+        return _resume_load_skipped(
+            "selected_case_fingerprint_mismatch",
+            selected_case_count=selected_case_count,
+            checkpoint_case_count=len(raw_cases),
+        )
     run_results: list[CaseRunResult] = []
     checkpoint_failures: list[Mapping[str, object]] = []
     checkpoint_failure_reports = _checkpoint_failure_reports_by_case(payload.get("failures"))
@@ -282,6 +294,22 @@ def resume_seed_state(
 
 def case_result_key(benchmark: str, case_id: str) -> tuple[str, str]:
     return benchmark, case_id
+
+
+def selected_case_fingerprint(cases: Sequence[Any]) -> str:
+    encoded = json.dumps(
+        [
+            {
+                "benchmark": str(getattr(case, "benchmark", "")),
+                "case_id": str(getattr(case, "case_id", "")),
+            }
+            for case in cases
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def seed_corpus_identity(
