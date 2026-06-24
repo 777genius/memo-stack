@@ -17,6 +17,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     relationship_status_rerank_signal,
     state_transition_rerank_signal,
     support_network_rerank_signal,
+    temporal_camping_detail_rerank_signal,
 )
 from infinity_context_core.application.context_relevance import QueryRelevance
 from infinity_context_core.application.dto import ContextItem
@@ -387,6 +388,40 @@ def test_family_hike_detail_signal_prefers_campfire_actions_over_topic_only() ->
     assert exact_signal.reason == "family_hike_detail_exact_evidence"
     assert topic_signal.penalty > 0
     assert topic_signal.reason == "family_hike_detail_topic_only_noise"
+
+
+def test_temporal_camping_detail_signal_prefers_event_details_over_topic_only() -> None:
+    exact = _item(
+        "campfire_actions",
+        text=(
+            "D4:8 Melanie explored nature, roasted marshmallows around the "
+            "campfire, went on a hike, and spent special moments with family."
+        ),
+        query_expansion_reason="temporal_event_detail_bridge",
+    )
+    topic_only = _item(
+        "topic_only",
+        text="D9:1 Melanie went camping with family last weekend.",
+        query_expansion_reason="temporal_event_detail_bridge",
+    )
+
+    exact_signal = temporal_camping_detail_rerank_signal(
+        query="When did Melanie go camping in June?",
+        query_reason="temporal_event_detail_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=9, unique_term_hits=9),
+    )
+    topic_signal = temporal_camping_detail_rerank_signal(
+        query="When did Melanie go camping in June?",
+        query_reason="temporal_event_detail_bridge",
+        item=topic_only,
+        relevance=_relevance(distinctive_term_hits=8, unique_term_hits=8),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "temporal_camping_detail_evidence"
+    assert topic_signal.boost == 0
+    assert topic_signal.penalty == 0
 
 
 def test_commonality_signal_boosts_who_else_single_anchor_answer() -> None:

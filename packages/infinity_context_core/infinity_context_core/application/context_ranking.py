@@ -1697,8 +1697,11 @@ def _deterministic_rerank_signals(
     penalty += domain_adjustment.penalty
     reasons.extend(domain_adjustment.reasons)
     slot_diverse_aggregation = aggregation_answer_slot_count(query=query, text=item.text) >= 2
+    event_detail_requirement_support = "temporal_camping_detail_evidence" in reasons
     if requested_total > 0:
-        if coverage_ratio <= 0:
+        if coverage_ratio <= 0 and event_detail_requirement_support:
+            reasons.append("explicit_requirement_supported_by_event_detail")
+        elif coverage_ratio <= 0:
             penalty += 0.025
             reasons.append("explicit_requirement_missing")
         elif coverage_ratio < 0.5 and not slot_diverse_aggregation:

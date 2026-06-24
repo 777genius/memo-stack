@@ -90,6 +90,12 @@ _FAMILY_HIKE_DETAIL_RERANK_REASONS = frozenset(
         "family_hike_detail_bridge",
     )
 )
+_TEMPORAL_CAMPING_DETAIL_RERANK_REASONS = frozenset(
+    (
+        "camping_detail_bridge",
+        "temporal_event_detail_bridge",
+    )
+)
 _RELATIONSHIP_STATUS_RERANK_REASONS = frozenset(
     (
         "relationship_status_bridge",
@@ -385,6 +391,20 @@ _FAMILY_HIKE_DETAIL_QUERY_RE = re.compile(
     r"(?=.{0,80}\b(?:hikes?|hiking)\b)|"
     r"\b(?:hikes?|hiking)\b(?=.{0,80}\b(?:family|kids?|children)\b)",
     re.IGNORECASE | re.DOTALL,
+)
+_TEMPORAL_CAMPING_DETAIL_QUERY_RE = re.compile(
+    r"\bwhen\b(?=.{0,120}\bcamp(?:ing|ed)?\b)|"
+    r"\bcamp(?:ing|ed)?\b(?=.{0,120}\bwhen\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_TEMPORAL_CAMPING_CORE_DETAIL_RE = re.compile(
+    r"\b(?:roast(?:ed|ing)?\s+marshmallows?|marshmallows?|campfire)\b",
+    re.IGNORECASE,
+)
+_TEMPORAL_CAMPING_DETAIL_TERM_RE = re.compile(
+    r"\b(?:campfire|marshmallows?|roast(?:ed|ing)?|hikes?|hiking|trail|"
+    r"mountains?|nature|view|family|kids?|children|moments?)\b",
+    re.IGNORECASE,
 )
 _COMMONALITY_NAMED_ANCHOR_RE = re.compile(r"\b[A-Z][A-Za-z0-9._-]{1,}\b")
 _COMMONALITY_IGNORED_ANCHORS = frozenset(
@@ -967,6 +987,35 @@ def family_hike_detail_rerank_signal(
     return DomainRerankSignal()
 
 
+def temporal_camping_detail_rerank_signal(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_temporal_camping_detail_candidate(
+        query=query,
+        query_reason=query_reason,
+        item=item,
+    ):
+        return DomainRerankSignal()
+    if relevance.distinctive_term_hits < 6:
+        return DomainRerankSignal()
+    if _TEMPORAL_CAMPING_CORE_DETAIL_RE.search(item.text) is None:
+        return DomainRerankSignal()
+    detail_terms = {
+        match.group(0).casefold()
+        for match in _TEMPORAL_CAMPING_DETAIL_TERM_RE.finditer(item.text)
+    }
+    if len(detail_terms) < 4:
+        return DomainRerankSignal()
+    return DomainRerankSignal(
+        boost=0.058,
+        reason="temporal_camping_detail_evidence",
+    )
+
+
 def commonality_who_else_anchor_override(
     *,
     query: str,
@@ -1421,6 +1470,20 @@ def _is_family_hike_detail_candidate(
         query_reason in _FAMILY_HIKE_DETAIL_RERANK_REASONS
         or _score_signal_reason(item) in _FAMILY_HIKE_DETAIL_RERANK_REASONS
         or _FAMILY_HIKE_DETAIL_QUERY_RE.search(query) is not None
+    )
+
+
+def _is_temporal_camping_detail_candidate(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    if _TEMPORAL_CAMPING_DETAIL_QUERY_RE.search(query) is None:
+        return False
+    return (
+        query_reason in _TEMPORAL_CAMPING_DETAIL_RERANK_REASONS
+        or _score_signal_reason(item) in _TEMPORAL_CAMPING_DETAIL_RERANK_REASONS
     )
 
 

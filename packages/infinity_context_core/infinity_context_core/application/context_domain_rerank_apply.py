@@ -31,6 +31,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     state_transition_rerank_signal,
     support_network_rerank_signal,
     symbol_importance_rerank_signal,
+    temporal_camping_detail_rerank_signal,
 )
 from infinity_context_core.application.context_frequency_rerank import (
     frequency_recurrence_rerank_signal,
@@ -122,6 +123,12 @@ def _domain_rerank_signals(
             relevance=relevance,
         ),
         family_hike_detail_rerank_signal(
+            query=query,
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
+        temporal_camping_detail_rerank_signal(
             query=query,
             query_reason=query_reason,
             item=item,

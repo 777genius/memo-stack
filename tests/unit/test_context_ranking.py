@@ -3224,6 +3224,61 @@ def test_keyword_chunk_score_boosts_reliable_locomo_failure_bridges() -> None:
         assert score >= 0.88
 
 
+def test_deterministic_rerank_prefers_temporal_camping_event_details() -> None:
+    query = "When did Melanie go camping in June?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    raw_event_detail = _item(
+        "d4_8_campfire_detail",
+        score=0.9275,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:8 Melanie: It was an awesome time, Caroline! We explored "
+            "nature, roasted marshmallows around the campfire and even went "
+            "on a hike. The view from the top was amazing! The 2 younger "
+            "kids love nature. It was so special having these moments "
+            "together as a family - I'll never forget it!"
+        ),
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_4:D4:8:turn",
+            ),
+        ),
+    )
+    literal_topic = _item(
+        "literal_topic",
+        score=0.8985,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D9:1 Melanie: I went camping with my family last weekend and "
+            "talked about June plans."
+        ),
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_9:D9:1:turn",
+            ),
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (literal_topic, raw_event_detail),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["d4_8_campfire_detail"].score > by_id["literal_topic"].score
+    assert (
+        "temporal_camping_detail_evidence"
+        in by_id["d4_8_campfire_detail"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_relocation_origin_bridge_does_not_overrank_family_home_decoys() -> None:
     plan = build_query_expansion_plan("Where did Caroline move from 4 years ago?")
     _, origin_reason, origin_relevance = best_query_relevance(
