@@ -59,6 +59,13 @@ _POSITIVE_PREFERENCE_RERANK_REASONS = frozenset(
         "classical_music_preference_bridge",
         "decomposition_current_preference_or_goal",
         "food_preference_bridge",
+        "outdoor_nature_memory_bridge",
+        "outdoor_preference_bridge",
+    )
+)
+_OUTDOOR_PREFERENCE_RERANK_REASONS = frozenset(
+    (
+        "outdoor_nature_memory_bridge",
         "outdoor_preference_bridge",
     )
 )
@@ -263,6 +270,11 @@ _POSITIVE_PREFERENCE_WEAK_TOPIC_RE = re.compile(
     r"shared|sent|saw|watched|listened\s+to|usually\s+listen(?:s|ed)?\s+to|"
     r"recipe\s+includes?|cooked|served|brought)\b|"
     r"\b(?:обсуждал\w*|упомянул\w*|слушал\w*|смотрел\w*|готовил\w*)\b",
+    re.IGNORECASE,
+)
+_OUTDOOR_NATURE_EVIDENCE_RE = re.compile(
+    r"\b(?:camp(?:ing|fire)|hikes?|hiking|trail|forest|mountains?|nature|"
+    r"outdoors?|national\s+park|meteor\s+shower|perseid|sky|universe)\b",
     re.IGNORECASE,
 )
 _COMMONALITY_QUERY_RE = re.compile(
@@ -709,6 +721,12 @@ def positive_preference_rerank_signal(
     ):
         return DomainRerankSignal()
     if (
+        _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
+        and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None
+        and relevance.distinctive_term_hits >= 3
+    ):
+        return DomainRerankSignal(boost=0.026, reason="outdoor_preference_exact_evidence")
+    if (
         _POSITIVE_PREFERENCE_MARKER_RE.search(item.text) is not None
         and relevance.distinctive_term_hits >= 3
     ):
@@ -1138,6 +1156,13 @@ def _is_positive_preference_candidate(
     if _score_signal_reason(item) in _POSITIVE_PREFERENCE_RERANK_REASONS:
         return True
     return _POSITIVE_PREFERENCE_QUERY_RE.search(query) is not None
+
+
+def _is_outdoor_preference_candidate(*, query_reason: str, item: ContextItem) -> bool:
+    return (
+        query_reason in _OUTDOOR_PREFERENCE_RERANK_REASONS
+        or _score_signal_reason(item) in _OUTDOOR_PREFERENCE_RERANK_REASONS
+    )
 
 
 def _is_commonality_candidate(

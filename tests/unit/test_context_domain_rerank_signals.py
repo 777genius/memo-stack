@@ -6,8 +6,8 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     aggregation_evidence_rerank_signal,
     birthplace_rerank_signal,
     commonality_rerank_signal,
-    current_state_rerank_signal,
     current_goal_rerank_signal,
+    current_state_rerank_signal,
     event_sequence_rerank_signal,
     inventory_list_rerank_signal,
     positive_preference_rerank_signal,
@@ -174,6 +174,40 @@ def test_positive_preference_signal_prefers_explicit_preference_over_topic_menti
 
     assert exact_signal.boost > 0
     assert exact_signal.reason == "preference_exact_evidence"
+    assert topical_signal.penalty > 0
+    assert topical_signal.reason == "preference_weak_evidence"
+
+
+def test_positive_preference_signal_prefers_outdoor_nature_evidence() -> None:
+    exact = _item(
+        "perseid_trip",
+        text=(
+            "Melanie remembered the camping trip where her family watched the Perseid "
+            "meteor shower and felt at one with the universe."
+        ),
+        query_expansion_reason="outdoor_preference_bridge",
+    )
+    topical = _item(
+        "generic_park",
+        text="Melanie took her kids to a park and saw them play outside.",
+        query_expansion_reason="outdoor_preference_bridge",
+    )
+
+    exact_signal = positive_preference_rerank_signal(
+        query="Would Melanie be more interested in a national park or a theme park?",
+        query_reason="outdoor_preference_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=6),
+    )
+    topical_signal = positive_preference_rerank_signal(
+        query="Would Melanie be more interested in a national park or a theme park?",
+        query_reason="outdoor_preference_bridge",
+        item=topical,
+        relevance=_relevance(distinctive_term_hits=4, unique_term_hits=4),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "outdoor_preference_exact_evidence"
     assert topical_signal.penalty > 0
     assert topical_signal.reason == "preference_weak_evidence"
 
