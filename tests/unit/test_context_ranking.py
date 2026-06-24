@@ -643,6 +643,44 @@ def test_book_suggestion_bridge_does_not_prioritize_generic_project_suggestion()
     assert relevance.distinctive_term_hits < 5
 
 
+def test_deterministic_rerank_prefers_book_recommendation_followup_evidence() -> None:
+    query = "What book did Melanie read from Caroline's suggestion?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    followup = _item(
+        "recommendation_followup",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D17:10 Melanie: Thanks, Caroline. Been reading that book you "
+            "recommended a while ago and painting to keep busy."
+        ),
+        score_signals={"query_expansion_reason": "book_suggestion_bridge"},
+    )
+    topical = _item(
+        "topical_book",
+        score=0.715,
+        retrieval_source="keyword_chunks",
+        text="D14:4 Melanie read a book about painting techniques.",
+        score_signals={"query_expansion_reason": "book_suggestion_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topical, followup),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["recommendation_followup"].score > by_id["topical_book"].score
+    assert (
+        "recommendation_followup_evidence"
+        in by_id["recommendation_followup"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_uses_suggestion_source_roles() -> None:
     query = "What book did Melanie read from Caroline's suggestion?"
     plan = build_query_expansion_plan(query)

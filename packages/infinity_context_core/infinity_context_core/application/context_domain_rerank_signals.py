@@ -103,6 +103,13 @@ _RELATIONSHIP_DURATION_RERANK_REASONS = frozenset(
     )
 )
 _RELATIONSHIP_ORIGIN_RERANK_REASONS = frozenset(("relationship_origin_bridge",))
+_RECOMMENDATION_FOLLOWUP_RERANK_REASONS = frozenset(
+    (
+        "book_suggestion_bridge",
+        "decomposition_recommendation_source",
+        "recommendation_source_bridge",
+    )
+)
 _STATE_TRANSITION_RERANK_REASONS = frozenset(
     (
         "change_over_time_bridge",
@@ -196,6 +203,15 @@ _EVENT_SEQUENCE_QUERY_RE = re.compile(
     r"meeting|chat|message|event|decid(?:e|ed)|chang(?:e|ed)|happened)\b)|"
     r"\b(?:что|кто|когда|где|как)\b(?=.{0,120}\b(?:после|до|перед|с\s+тех\s+пор)\b)",
     re.IGNORECASE | re.DOTALL,
+)
+_RECOMMENDATION_FOLLOWUP_BOOK_RE = re.compile(
+    r"\b(?:book|novel|memoir|story|read(?:ing)?|чит(?:аю|ал\w*|ает\w*)|книг\w*)\b",
+    re.IGNORECASE,
+)
+_RECOMMENDATION_FOLLOWUP_SIGNAL_RE = re.compile(
+    r"\b(?:recommend(?:ed|ation)?|suggest(?:ed|ion)?|told\s+me\s+about|"
+    r"посоветовал\w*|порекомендовал\w*)\b",
+    re.IGNORECASE,
 )
 _EVENT_SEQUENCE_NAMED_ANCHOR_RE = re.compile(
     r"\b[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9._-]{1,}\b"
@@ -1047,6 +1063,24 @@ def relationship_origin_rerank_signal(
     return DomainRerankSignal()
 
 
+def recommendation_followup_rerank_signal(
+    *,
+    query_reason: str,
+    item: ContextItem,
+) -> DomainRerankSignal:
+    if not _is_recommendation_followup_candidate(query_reason=query_reason, item=item):
+        return DomainRerankSignal()
+    if (
+        _RECOMMENDATION_FOLLOWUP_BOOK_RE.search(item.text) is None
+        or _RECOMMENDATION_FOLLOWUP_SIGNAL_RE.search(item.text) is None
+    ):
+        return DomainRerankSignal()
+    return DomainRerankSignal(
+        boost=0.018,
+        reason="recommendation_followup_evidence",
+    )
+
+
 def state_transition_rerank_signal(
     *,
     query_reason: str,
@@ -1315,6 +1349,12 @@ def _is_support_network_candidate(*, query_reason: str, item: ContextItem) -> bo
     if query_reason in _SUPPORT_NETWORK_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _SUPPORT_NETWORK_RERANK_REASONS
+
+
+def _is_recommendation_followup_candidate(*, query_reason: str, item: ContextItem) -> bool:
+    if query_reason in _RECOMMENDATION_FOLLOWUP_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _RECOMMENDATION_FOLLOWUP_RERANK_REASONS
 
 
 def _is_event_sequence_candidate(

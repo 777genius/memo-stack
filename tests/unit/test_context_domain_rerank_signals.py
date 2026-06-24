@@ -12,6 +12,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     family_hike_detail_rerank_signal,
     inventory_list_rerank_signal,
     positive_preference_rerank_signal,
+    recommendation_followup_rerank_signal,
     relationship_duration_rerank_signal,
     relationship_status_rerank_signal,
     state_transition_rerank_signal,
@@ -134,6 +135,33 @@ def test_event_sequence_signal_requires_exact_event_anchors_and_outcome() -> Non
     assert exact_signal.reason == "event_sequence_exact_evidence"
     assert weak_signal.penalty > 0
     assert weak_signal.reason == "event_sequence_anchor_mismatch"
+
+
+def test_recommendation_followup_signal_boosts_reading_recommendation_evidence() -> None:
+    followup = _item(
+        "book_followup",
+        text="Melanie has been reading that book Caroline recommended a while ago.",
+        query_expansion_reason="book_suggestion_bridge",
+    )
+    topical = _item(
+        "book_topic",
+        text="Melanie read a book about painting techniques.",
+        query_expansion_reason="book_suggestion_bridge",
+    )
+
+    followup_signal = recommendation_followup_rerank_signal(
+        query_reason="book_suggestion_bridge",
+        item=followup,
+    )
+    topical_signal = recommendation_followup_rerank_signal(
+        query_reason="book_suggestion_bridge",
+        item=topical,
+    )
+
+    assert followup_signal.boost > 0
+    assert followup_signal.reason == "recommendation_followup_evidence"
+    assert topical_signal.boost == 0.0
+    assert topical_signal.reason == ""
 
 
 def test_current_goal_signal_prefers_goal_evidence_over_weak_decoy() -> None:
