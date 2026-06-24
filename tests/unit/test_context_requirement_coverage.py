@@ -526,6 +526,32 @@ def test_context_requirement_coverage_tracks_political_inference_evidence() -> N
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_community_membership_inference() -> None:
+    query = "Would Melanie be considered a member of the LGBTQ community?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="melanie_lgbtq_membership",
+        item_type="chunk",
+        text=(
+            "Melanie identifies as part of the LGBTQ community and joined "
+            "the pride support group."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D12:8"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
 def test_context_requirement_coverage_keeps_topic_only_music_out_of_inference() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     intent = build_query_anchor_intent(query)

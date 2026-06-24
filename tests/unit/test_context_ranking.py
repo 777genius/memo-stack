@@ -3477,6 +3477,62 @@ def test_deterministic_rerank_prefers_political_values_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_community_membership_evidence() -> None:
+    query = "Would Melanie be considered a member of the LGBTQ community?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    ally_noise = _item(
+        "melanie_ally_noise",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Melanie is supportive of Caroline and encourages the LGBTQ community as an ally.",
+    )
+    membership = _item(
+        "melanie_lgbtq_membership",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Melanie identifies as part of the LGBTQ community and joined "
+            "the pride support group."
+        ),
+    )
+    topic_noise = _item(
+        "melanie_community_event",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Melanie attended a public community fundraiser downtown.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (ally_noise, topic_noise, membership),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_lgbtq_membership"].score > by_id["melanie_ally_noise"].score
+    assert by_id["melanie_lgbtq_membership"].score > by_id["melanie_community_event"].score
+    assert (
+        "inference_community_membership_evidence"
+        in by_id["melanie_lgbtq_membership"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_community_membership_ally_noise"
+        in by_id["melanie_ally_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_community_membership_topic_only_noise"
+        in by_id["melanie_community_event"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_keyword_chunk_source_score_boost_prefers_inference_observations() -> None:
     cases = [
         (

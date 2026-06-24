@@ -233,6 +233,13 @@ _POLITICAL_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:leaning|likely|would|infer|inference)\b(?=.{0,80}\bpolitical\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\b(?:member|membership|part\s+of|belong(?:s|ed|ing)?)\b"
+    r"(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|queer|pride|community)\b)|"
+    r"\b(?:lgbtq?|trans(?:gender)?|queer|pride|community)\b"
+    r"(?=.{0,120}\b(?:member|membership|part\s+of|belong(?:s|ed|ing)?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _CHOICE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:or|или)\b(?=.{0,96}\b("
     r"prefer|preference|interested|more|less|rather|choose|choice|option|alternative|"
@@ -557,6 +564,16 @@ _POLITICAL_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"\b(?:conservative|unwelcoming|support|supportive|acceptance|progressive|"
     r"liberal|rights)\b(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|transition|"
     r"rights|equality|inclusion)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:identif(?:y|ies|ied)|member|part\s+of|belong(?:s|ed|ing)?\s+to|"
+    r"came\s+out|is\s+(?:transgender|queer|lgbtq?)|joined)\b"
+    r"(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|queer|pride|support\s+group|"
+    r"community)\b)|"
+    r"\b(?:lgbtq?|trans(?:gender)?|queer|pride|support\s+group|community)\b"
+    r"(?=.{0,120}\b(?:identif(?:y|ies|ied)|member|part\s+of|belong(?:s|ed|ing)?|"
+    r"came\s+out|joined)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _CHOICE_ANSWER_TEXT_RE = re.compile(
@@ -1117,6 +1134,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         query
     ) or _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(
         query
+    ) or _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(
+        query
     ):
         shapes.append("inference")
     if _CHOICE_ANSWER_QUERY_RE.search(query):
@@ -1184,6 +1203,9 @@ def _covered_answer_shapes(
         ) or (
             _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _POLITICAL_INFERENCE_ANSWER_TEXT_RE.search(text)
+        ) or (
+            _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(text)
         ):
             shapes.append("inference")
         if _CHOICE_ANSWER_TEXT_RE.search(text):

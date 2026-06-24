@@ -7,6 +7,9 @@ import re
 from infinity_context_core.application.context_answer_evidence_types import (
     AnswerEvidenceSignal,
 )
+from infinity_context_core.application.context_community_membership_inference import (
+    community_membership_inference_signal,
+)
 from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_preference_inference import (
     preference_inference_signal,
@@ -690,6 +693,12 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
     political_signal = political_inference_signal(query=query, text=text)
     if political_signal.reason:
         return political_signal
+    community_membership_signal = community_membership_inference_signal(
+        query=query,
+        text=text,
+    )
+    if community_membership_signal.reason:
+        return community_membership_signal
     if not _requests_inference(query):
         if _requests_career_inference(query):
             return _career_inference_signal(query=query, text=text)
