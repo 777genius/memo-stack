@@ -109,6 +109,7 @@ def test_query_decomposition_covers_conversational_event_wording() -> None:
     russian_relative_recent = build_query_decomposition_plan(
         "Что я обсуждал с Алексом час назад?"
     )
+    russian_message_recent = build_query_decomposition_plan("Что Алекс написал вчера?")
 
     english_context = next(
         item for item in english.decompositions if item.reason == "decomposition_event_context"
@@ -216,6 +217,11 @@ def test_query_decomposition_covers_conversational_event_wording() -> None:
         for item in russian_relative_recent.decompositions
         if item.reason == "decomposition_conversation_recency"
     )
+    russian_message_recent_focus = next(
+        item
+        for item in russian_message_recent.decompositions
+        if item.reason == "decomposition_conversation_recency"
+    )
 
     assert "chat message dm transcript" in english_context.query
     assert "meeting call chat message conversation event" in english_sequence.query
@@ -254,6 +260,8 @@ def test_query_decomposition_covers_conversational_event_wording() -> None:
     assert "latest recent newest current conversation call" in (
         russian_relative_recent_focus.query
     )
+    assert "алекс" in russian_message_recent_focus.query.casefold()
+    assert "написал ответил сказал сообщил" in russian_message_recent_focus.query
 
 
 def test_query_decomposition_covers_relocation_life_event_origin() -> None:

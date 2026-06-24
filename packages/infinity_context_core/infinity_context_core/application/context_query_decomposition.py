@@ -85,6 +85,31 @@ _QUESTION_STOPWORDS = frozenset(
         "откуда",
     }
 )
+_RUSSIAN_MESSAGE_EVENT_TERMS = frozenset(
+    {
+        "написал",
+        "написала",
+        "написали",
+        "ответил",
+        "ответила",
+        "ответили",
+        "сказал",
+        "сказала",
+        "сказали",
+        "сообщил",
+        "сообщила",
+        "сообщили",
+        "скинул",
+        "скинула",
+        "скинули",
+        "прислал",
+        "прислала",
+        "прислали",
+        "отправил",
+        "отправила",
+        "отправили",
+    }
+)
 _EVENT_TERMS = frozenset(
     {
         "call",
@@ -141,6 +166,7 @@ _EVENT_TERMS = frozenset(
         "говорил",
         "говорила",
         "говорили",
+        *_RUSSIAN_MESSAGE_EVENT_TERMS,
         "переезд",
         "переехал",
         "переехала",
@@ -1436,11 +1462,7 @@ def build_query_decomposition_plan(
             candidates,
             query=_compose_query(
                 (*identities, *salient_terms),
-                (
-                    "latest recent newest current conversation call meeting chat dm "
-                    "message talked spoke discussed transcript turn topic subject "
-                    "agenda outcome today yesterday hours ago temporal event"
-                ),
+                _conversation_recency_tail(raw_tokens=raw_tokens, variants=variants),
             ),
             reason="decomposition_conversation_recency",
         )
@@ -2097,6 +2119,27 @@ def _requests_conversation_counterparty(
     if not variants.intersection(_CONVERSATION_COUNTERPARTY_ACTION_TERMS):
         return False
     return True
+
+
+def _conversation_recency_tail(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> str:
+    if raw_tokens.intersection(_RUSSIAN_MESSAGE_EVENT_TERMS) or variants.intersection(
+        _RUSSIAN_MESSAGE_EVENT_TERMS
+    ):
+        return (
+            "latest recent newest current today yesterday hours ago temporal event "
+            "conversation call meeting chat dm message написал ответил сказал сообщил "
+            "скинул прислал отправил talked spoke discussed transcript turn topic "
+            "subject agenda outcome"
+        )
+    return (
+        "latest recent newest current conversation call meeting chat dm "
+        "message talked spoke discussed transcript turn topic subject "
+        "agenda outcome today yesterday hours ago temporal event"
+    )
 
 
 def _requests_recommendation_source_context(
