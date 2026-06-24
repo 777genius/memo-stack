@@ -1904,6 +1904,77 @@ def test_deterministic_rerank_prefers_exact_after_conversation_sequence() -> Non
     )
 
 
+def test_deterministic_rerank_prefers_sequence_answer_over_topic_note() -> None:
+    query = "What did Alex decide after talking with Sam about Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_note = _item(
+        "sam_atlas_topic_note",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text="After talking with Sam about Atlas, Alex reviewed launch meeting notes.",
+    )
+    exact = _item(
+        "sam_atlas_decision",
+        score=0.70,
+        retrieval_source="keyword_chunks",
+        text=(
+            "After talking with Sam about Atlas, Alex decided to wait for "
+            "invoice approval before launch."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_note, exact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["sam_atlas_decision"].score > by_id["sam_atlas_topic_note"].score
+    assert (
+        "event_sequence_shape_missing"
+        in by_id["sam_atlas_topic_note"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_russian_sequence_answer_over_topic_note() -> None:
+    query = "Что решил Алекс после созвона по Атласу?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_note = _item(
+        "atlas_topic_note_ru",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text="После созвона по Атласу Алекс просмотрел заметки по запуску.",
+    )
+    exact = _item(
+        "atlas_decision_ru",
+        score=0.70,
+        retrieval_source="keyword_chunks",
+        text="После созвона по Атласу Алекс решил перейти на OpenAI для запуска.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_note, exact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["atlas_decision_ru"].score > by_id["atlas_topic_note_ru"].score
+    assert (
+        "event_sequence_exact_evidence"
+        in by_id["atlas_decision_ru"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_keyword_chunk_score_boosts_inference_support_decomposition_policy() -> None:
     relevance = score_query_relevance(
         query=(

@@ -188,9 +188,16 @@ _PERSON_HINT_STOP_WORDS = frozenset(
         "where",
         "who",
         "why",
+        "after",
+        "before",
+        "following",
         "kiev",
         "kyiv",
+        "later",
+        "posle",
+        "since",
         "them",
+        "then",
         "sweden",
         "team",
         "user",
@@ -222,11 +229,16 @@ _PERSON_HINT_STOP_WORDS = frozenset(
         "кто",
         "куда",
         "откуда",
+        "перед",
+        "после",
+        "потом",
         "почему",
         "проект",
         "проектом",
         "пользователь",
+        "раньше",
         "что",
+        "затем",
     }
 ).union(_RELATIVE_TIME_HINT_STOP_WORDS)
 _PROJECT_HINT_STOP_WORDS = frozenset(
@@ -577,7 +589,7 @@ def match_query_anchor_intent_to_text(
 ) -> QueryAnchorMatch | None:
     if intent.empty:
         return None
-    anchors = tuple(extract_observed_anchors(text))
+    anchors = _text_intent_observed_anchors(text)
     if not anchors:
         return None
     if _observed_anchor_conflicts_intent(intent, anchors, text=text):
@@ -637,8 +649,34 @@ def query_anchor_intent_text_conflicts(
 
     if intent.empty:
         return False
-    anchors = tuple(extract_observed_anchors(text))
+    anchors = _text_intent_observed_anchors(text)
     return bool(anchors and _observed_anchor_conflicts_intent(intent, anchors, text=text))
+
+
+def _text_intent_observed_anchors(text: str) -> tuple[ObservedAnchor, ...]:
+    return tuple(
+        anchor
+        for anchor in extract_observed_anchors(text)
+        if not _observed_anchor_is_text_intent_noise(anchor)
+    )
+
+
+def _observed_anchor_is_text_intent_noise(anchor: ObservedAnchor) -> bool:
+    canonical_key = _metadata_text(anchor.metadata.get("canonical_key"))
+    if not canonical_key:
+        canonical_key = canonical_anchor_key_for_kind(anchor.kind, anchor.label)
+    normalized_label = _normalized(anchor.label)
+    if anchor.kind == MemoryAnchorKind.PERSON:
+        return (
+            canonical_key in _PERSON_HINT_STOP_WORDS
+            or normalized_label in _PERSON_HINT_STOP_WORDS
+        )
+    if anchor.kind == MemoryAnchorKind.PROJECT:
+        return (
+            canonical_key in _PROJECT_HINT_STOP_WORDS
+            or normalized_label in _PROJECT_HINT_STOP_WORDS
+        )
+    return False
 
 
 def _append_observed_hint(
@@ -1310,8 +1348,32 @@ def _identity_term_variants(value: str) -> frozenset[str]:
     if not text:
         return frozenset()
     spaced = " ".join(part for part in text.replace("_", " ").split() if part)
+    person_normalized = " ".join(
+        normalize_cyrillic_person_case(part) for part in spaced.split() if part
+    )
+    project_normalized = " ".join(
+        normalize_cyrillic_project_case(part) for part in spaced.split() if part
+    )
     canonical = " ".join(canonical_token(part) for part in spaced.split() if part)
-    return frozenset(term for term in (text, spaced, canonical) if term)
+    person_canonical = " ".join(
+        canonical_token(part) for part in person_normalized.split() if part
+    )
+    project_canonical = " ".join(
+        canonical_token(part) for part in project_normalized.split() if part
+    )
+    return frozenset(
+        term
+        for term in (
+            text,
+            spaced,
+            canonical,
+            person_normalized,
+            project_normalized,
+            person_canonical,
+            project_canonical,
+        )
+        if term
+    )
 
 
 def _compatible_identity_matches(

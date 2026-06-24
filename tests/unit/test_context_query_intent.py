@@ -345,6 +345,18 @@ def test_query_anchor_intent_ignores_russian_question_words_as_people() -> None:
     assert "что" not in intent.keys_for_kind(MemoryAnchorKind.PERSON)
 
 
+def test_query_anchor_intent_ignores_russian_temporal_noise_in_text_match() -> None:
+    intent = build_query_anchor_intent("Что решил Алекс после созвона по Атласу?")
+    text = "После созвона по Атласу Алекс решил перейти на OpenAI для запуска."
+
+    match = match_query_anchor_intent_to_text(intent, text)
+
+    assert query_anchor_intent_text_conflicts(intent, text) is False
+    assert match is not None
+    assert "query_project_identity_match" in match.reasons
+    assert "atlas" in match.matched_keys
+
+
 def test_query_anchor_intent_matches_text_entity_evidence() -> None:
     intent = build_query_anchor_intent("Would Melanie be considered an ally?")
 

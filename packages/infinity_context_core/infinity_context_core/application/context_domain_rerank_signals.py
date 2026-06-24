@@ -174,7 +174,9 @@ _EVENT_SEQUENCE_QUERY_RE = re.compile(
     r"\b(?:что|кто|когда|где|как)\b(?=.{0,120}\b(?:после|до|перед|с\s+тех\s+пор)\b)",
     re.IGNORECASE | re.DOTALL,
 )
-_EVENT_SEQUENCE_NAMED_ANCHOR_RE = re.compile(r"\b[A-Z][A-Za-z0-9._-]{1,}\b")
+_EVENT_SEQUENCE_NAMED_ANCHOR_RE = re.compile(
+    r"\b[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9._-]{1,}\b"
+)
 _EVENT_SEQUENCE_IGNORED_ANCHORS = frozenset(
     {
         "After",
@@ -189,6 +191,19 @@ _EVENT_SEQUENCE_IGNORED_ANCHORS = frozenset(
         "Which",
         "Who",
         "Why",
+        "Где",
+        "До",
+        "Зачем",
+        "Как",
+        "Какая",
+        "Какие",
+        "Какой",
+        "Когда",
+        "Кто",
+        "Перед",
+        "После",
+        "Почему",
+        "Что",
     }
 )
 _EVENT_SEQUENCE_MIN_QUERY_DISTINCTIVE_TERMS = 3
@@ -652,13 +667,13 @@ def event_sequence_rerank_signal(
         and relevance.distinctive_term_hits >= _EVENT_SEQUENCE_MIN_EXACT_DISTINCTIVE_HITS
         and has_required_anchors
     ):
-        return DomainRerankSignal(boost=0.026, reason="event_sequence_exact_evidence")
+        return DomainRerankSignal(boost=0.034, reason="event_sequence_exact_evidence")
     if required_anchor_hits > 0 and anchor_hits < required_anchor_hits:
         return DomainRerankSignal(penalty=0.06, reason="event_sequence_anchor_mismatch")
     if relevance.distinctive_term_hits < _EVENT_SEQUENCE_MIN_EXACT_DISTINCTIVE_HITS:
         return DomainRerankSignal(penalty=0.06, reason="event_sequence_weak_evidence")
     if not has_sequence_shape:
-        return DomainRerankSignal(penalty=0.025, reason="event_sequence_shape_missing")
+        return DomainRerankSignal(penalty=0.075, reason="event_sequence_shape_missing")
     return DomainRerankSignal()
 
 
