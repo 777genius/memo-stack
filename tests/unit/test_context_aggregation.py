@@ -7,17 +7,26 @@ from infinity_context_core.application.context_relevance import score_query_rele
 from infinity_context_core.application.use_cases.build_context import (
     _aggregation_evidence_text,
     _aggregation_source_kind_rank,
+    _dedupe_chunks_by_id,
     _is_dialogue_visual_reference_source_sibling,
     _is_pottery_type_observation_companion,
     _keyword_aggregation_chunk_items,
     _keyword_aggregation_query_kind,
+    _prioritized_chunks_for_source_groups,
+    _ranked_keyword_chunk_scores,
+    _selected_keyword_prompt_items,
+    _strict_query_window_match_counts,
     _source_group_seed_turns,
+    _source_sibling_candidate_rank_key,
+    _source_sibling_marker_coverage_count,
     _source_sibling_companion_extra_slot,
     _source_sibling_rank,
     _source_sibling_relevance_allowed,
     _source_sibling_score,
+    _weighted_aggregation_query_variant_sets,
     _SourceSiblingRank,
 )
+from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import (
     MemoryChunk,
     MemoryChunkId,
@@ -25,6 +34,7 @@ from infinity_context_core.domain.entities import (
     MemoryDocumentId,
     MemoryScopeId,
     SpaceId,
+    SourceRef,
 )
 
 
@@ -101,6 +111,22 @@ def test_keyword_aggregation_query_kind_handles_band_list_queries() -> None:
 def test_keyword_aggregation_query_kind_handles_type_list_queries() -> None:
     assert _keyword_aggregation_query_kind("What types of pottery have Melanie made?") == "list"
     assert _keyword_aggregation_query_kind("Which kinds of documents did Alex save?") == "list"
+
+
+def test_keyword_aggregation_query_kind_handles_inventory_list_queries() -> None:
+    cases = [
+        "What European countries has Maria been to?",
+        "What areas of the U.S. has John been to or is planning to go to?",
+        "What shelters does Maria volunteer at?",
+        "What causes does John feel passionate about supporting?",
+        "What people has Maria met and helped while volunteering?",
+        "What martial arts has John done?",
+        "Where has Maria made friends?",
+    ]
+
+    for query in cases:
+        assert _keyword_aggregation_query_kind(query) == "list"
+    assert _keyword_aggregation_query_kind("Where did Caroline move from 4 years ago?") != "list"
 
 
 def test_keyword_aggregation_source_kind_prefers_observation_over_raw_session() -> None:
@@ -220,6 +246,187 @@ def test_keyword_aggregation_chunks_use_expansion_query_for_list_evidence_window
     }
 
 
+def test_keyword_aggregation_chunks_use_inventory_list_expansion_for_places() -> None:
+    query_text = "What European countries has Maria been to?"
+    items, diagnostics = _keyword_aggregation_chunk_items(
+        query=_build_query(query_text),
+        query_plan=build_query_expansion_plan(query_text),
+        seed_chunks=(
+            _chunk(
+                "country_inventory",
+                (
+                    "D8:15 Maria went to England and loved traveling abroad. "
+                    "D8:16 John asked whether she had other trips planned. "
+                    "D13:24 Maria visited Spain during a school trip."
+                ),
+                source_external_id="locomo:conv-41:session_13:observation",
+            ),
+        ),
+    )
+
+    assert diagnostics["keyword_aggregation_query_kind"] == "list"
+    assert diagnostics["keyword_aggregation_chunks_used"] == 1
+    assert "D8:15 Maria" in items[0].text
+    assert "D13:24 Maria" in items[0].text
+
+
+def test_inventory_aggregation_ignores_identity_and_scaffold_terms() -> None:
+    query_terms = _weighted_aggregation_query_variant_sets(
+        (
+            "maria countries inventory list evidence observed mentioned answer options "
+            "country countries europe european england spain abroad solo trip travel visited"
+        ),
+        identity_terms=frozenset({"maria"}),
+    )
+
+    assert (
+        _strict_query_window_match_counts(
+            text="Maria inventory evidence observed mentioned answer options.",
+            query_variant_sets=query_terms,
+        )
+        == (0.0, 0.0)
+    )
+    assert _strict_query_window_match_counts(
+        text="D13:24 Maria took a solo trip in Spain.",
+        query_variant_sets=query_terms,
+    ) == (3.0, 3.0)
+
+
+def test_selected_keyword_prompt_items_keep_high_signal_inventory_tail() -> None:
+    generic_items = [
+        ContextItem(
+            item_id=f"generic_{index}",
+            item_type="chunk",
+            text=f"D{index}:1 Maria literal friend overlap item {index}.",
+            score=0.7,
+            source_refs=(SourceRef(source_type="chunk", source_id=f"generic:{index}"),),
+        )
+        for index in range(8)
+    ]
+    church = ContextItem(
+        item_id="d14_church",
+        item_type="chunk",
+        text="D14:10 Maria joined a nearby church to feel closer to a community.",
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_14:D14:10:turn",
+            ),
+        ),
+    )
+    weak_inventory = ContextItem(
+        item_id="weak_inventory",
+        item_type="chunk",
+        text="D30:1 Maria mentioned a place.",
+        score=0.78,
+        source_refs=(SourceRef(source_type="chunk", source_id="weak"),),
+    )
+    scored_items = [
+        (8 - index, 2, 2, 0.4, 0.8, index, "original_query", item)
+        for index, item in enumerate(generic_items)
+    ]
+    scored_items.extend(
+        [
+            (0, 7, 7, 0.875, 0.95, 8, "friend_place_church_inventory_bridge", church),
+            (0, 3, 3, 0.3, 0.85, 9, "friend_place_church_inventory_bridge", weak_inventory),
+        ]
+    )
+
+    selected = _selected_keyword_prompt_items(scored_items, limit=8)
+
+    assert [item.item_id for item in selected[:8]] == [
+        item.item_id for item in generic_items
+    ]
+    assert "d14_church" in {item.item_id for item in selected}
+    assert "weak_inventory" not in {item.item_id for item in selected}
+
+
+def test_keyword_aggregation_skips_identity_only_inventory_scaffold() -> None:
+    query_text = "What European countries has Maria been to?"
+    items, diagnostics = _keyword_aggregation_chunk_items(
+        query=_build_query(query_text),
+        query_plan=build_query_expansion_plan(query_text),
+        seed_chunks=(
+            _chunk(
+                "identity_scaffold",
+                "Maria inventory evidence observed mentioned answer options.",
+                source_external_id="locomo:conv-41:session_13:observation",
+            ),
+            _chunk(
+                "country_turn",
+                "D13:24 Maria took a solo trip in Spain.",
+                source_external_id="locomo:conv-41:session_13:D13:24:turn",
+            ),
+        ),
+    )
+
+    assert diagnostics["keyword_aggregation_query_kind"] == "list"
+    assert diagnostics["keyword_aggregation_chunks_used"] == 1
+    assert items[0].item_id == "country_turn"
+    assert "Spain" in items[0].text
+    assert (
+        items[0].diagnostics["score_signals"]["query_expansion_reason"]
+        == "travel_country_inventory_bridge"
+    )
+
+
+def test_keyword_aggregation_chunks_use_inventory_list_expansion_for_shelters() -> None:
+    query_text = "What shelters does Maria volunteer at?"
+    items, diagnostics = _keyword_aggregation_chunk_items(
+        query=_build_query(query_text),
+        query_plan=build_query_expansion_plan(query_text),
+        seed_chunks=(
+            _chunk(
+                "shelter_inventory",
+                (
+                    "D2:1 Maria volunteers at the homeless shelter. "
+                    "D2:2 John asked how it was going. "
+                    "D11:10 Maria also started volunteering at the dog shelter."
+                ),
+                source_external_id="locomo:conv-41:session_11:observation",
+            ),
+        ),
+    )
+
+    assert diagnostics["keyword_aggregation_query_kind"] == "list"
+    assert diagnostics["keyword_aggregation_chunks_used"] == 1
+    assert "D2:1 Maria" in items[0].text
+    assert "D11:10 Maria" in items[0].text
+    assert (
+        items[0].diagnostics["score_signals"]["query_expansion_reason"]
+        == "decomposition_inventory_list"
+    )
+
+
+def test_keyword_aggregation_chunks_use_inventory_list_expansion_for_where_places() -> None:
+    query_text = "Where has Maria made friends?"
+    items, diagnostics = _keyword_aggregation_chunk_items(
+        query=_build_query(query_text),
+        query_plan=build_query_expansion_plan(query_text),
+        seed_chunks=(
+            _chunk(
+                "where_place_inventory",
+                (
+                    "D2:1 Maria made friends at the homeless shelter. "
+                    "D4:1 Maria also met friends at the gym. "
+                    "D14:10 Maria made friends at church."
+                ),
+                source_external_id="locomo:conv-41:session_14:observation",
+            ),
+        ),
+    )
+
+    assert diagnostics["keyword_aggregation_query_kind"] == "list"
+    assert diagnostics["keyword_aggregation_chunks_used"] == 1
+    assert "D2:1 Maria" in items[0].text
+    assert "D14:10 Maria" in items[0].text
+    assert (
+        items[0].diagnostics["score_signals"]["query_expansion_reason"]
+        == "friend_place_inventory_bridge"
+    )
+
+
 def test_keyword_aggregation_chunks_collect_modified_list_queries() -> None:
     items, diagnostics = _keyword_aggregation_chunk_items(
         query=_build_query("What LGBTQ+ events has Caroline participated in?"),
@@ -247,6 +454,52 @@ def test_keyword_aggregation_chunks_skip_non_aggregation_queries() -> None:
     assert diagnostics["keyword_aggregation_query_kind"] == ""
     assert diagnostics["keyword_aggregation_chunks_considered"] == 0
     assert items == ()
+
+
+def test_source_sibling_seed_order_can_prioritize_used_keyword_chunks() -> None:
+    low_rank_used = _chunk("used", "D12:4 pottery bowl")
+    high_rank_tail = _chunk("tail", "D15:2 unrelated gym")
+    duplicate_used = _chunk("used", "D12:4 pottery bowl duplicate")
+
+    ranked_tail = tuple(
+        chunk
+        for *_, chunk in _ranked_keyword_chunk_scores(
+            [
+                (0, 1, 1, 0.1, 0.5, 1, low_rank_used),
+                (4, 8, 8, 0.9, 0.99, 0, high_rank_tail),
+            ]
+        )
+    )
+    sibling_seed_chunks = _dedupe_chunks_by_id(
+        (
+            low_rank_used,
+            duplicate_used,
+            *ranked_tail,
+        )
+    )
+
+    assert sibling_seed_chunks[0].id == low_rank_used.id
+    assert sibling_seed_chunks[1].id == high_rank_tail.id
+
+
+def test_source_sibling_seed_order_prioritizes_aggregation_source_groups() -> None:
+    aggregation_group_chunk = _chunk(
+        "session_12",
+        "D12:4 pottery bowl",
+        source_external_id="locomo:conv-26:session_12",
+    )
+    unrelated_chunk = _chunk(
+        "session_15",
+        "D15:2 unrelated gym",
+        source_external_id="locomo:conv-26:session_15",
+    )
+
+    prioritized = _prioritized_chunks_for_source_groups(
+        (unrelated_chunk, aggregation_group_chunk),
+        source_groups=("locomo:conv-26:session_12",),
+    )
+
+    assert prioritized == (aggregation_group_chunk,)
 
 
 def test_source_sibling_score_promotes_query_relevant_adjacent_turn() -> None:
@@ -295,6 +548,90 @@ def test_source_sibling_relevance_rejects_single_hit_long_no_candidate_query() -
             text=text,
         )
         == rank.score
+    )
+
+
+def test_source_sibling_allows_activity_duration_answer_turn_only() -> None:
+    strong_text = (
+        "D4:6 Maria: I started volunteering at the homeless shelter three years ago "
+        "and I still help at the front desk."
+    )
+    weak_text = (
+        "D4:7 Maria: The shelter repainted the lobby and the team liked the new sign."
+    )
+    query = (
+        "Maria volunteer shelter duration since for years months weeks days "
+        "started began still ongoing"
+    )
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=1, turn_delta=1)
+    strong_relevance = score_query_relevance(query=query, text=strong_text)
+    weak_relevance = score_query_relevance(query=query, text=weak_text)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="decomposition_activity_duration",
+        text=strong_text,
+    )
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="decomposition_activity_duration",
+        text=weak_text,
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=strong_relevance,
+            expansion_query=query,
+            expansion_reason="decomposition_activity_duration",
+            text=strong_text,
+        )
+        > 0.974
+    )
+
+
+def test_source_sibling_allows_frequency_recurrence_answer_turn_only() -> None:
+    strong_text = (
+        "D9:4 Maria: I volunteer at the homeless shelter every weekend "
+        "and usually help on Friday nights too."
+    )
+    weak_text = (
+        "D9:5 Maria: I visited the shelter once for orientation and met the coordinator."
+    )
+    query = (
+        "Maria volunteer shelter frequency recurrence cadence every daily weekly "
+        "weekend usually often times per week"
+    )
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=1, turn_delta=1)
+    strong_relevance = score_query_relevance(query=query, text=strong_text)
+    weak_relevance = score_query_relevance(query=query, text=weak_text)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="decomposition_frequency_recurrence",
+        text=strong_text,
+    )
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="decomposition_frequency_recurrence",
+        text=weak_text,
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=strong_relevance,
+            expansion_query=query,
+            expansion_reason="decomposition_frequency_recurrence",
+            text=strong_text,
+        )
+        > 0.974
     )
 
 
@@ -347,6 +684,68 @@ def test_source_sibling_score_rejects_subject_only_visual_reference_noise() -> N
         expansion_reason="symbol_importance_bridge",
         text=text,
     ) is False
+
+
+def test_source_sibling_score_allows_recommendation_source_turn() -> None:
+    text = (
+        "D9:2 Caroline: I recommended Becoming Nicole to Melanie. "
+        "D9:3 Melanie: I followed Caroline's recommendation and read it."
+    )
+    expansion_query = (
+        "Caroline Melanie Becoming Nicole recommendation suggestion advice "
+        "source actor recipient to from because of followed read watched tried used"
+    )
+    relevance = score_query_relevance(query=expansion_query, text=text)
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=1, turn_delta=1)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=expansion_query,
+        expansion_reason="decomposition_recommendation_source",
+        text=text,
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=relevance,
+            expansion_query=expansion_query,
+            expansion_reason="decomposition_recommendation_source",
+            text=text,
+        )
+        > 0.976
+    )
+
+
+def test_source_sibling_score_allows_inventory_list_turn() -> None:
+    text = (
+        "D13:24 Maria visited Spain during a school trip. "
+        "D13:25 Maria said she went to England too and loved traveling abroad."
+    )
+    expansion_query = (
+        "Maria countries inventory list evidence place area country state city "
+        "been to visited went travel trip vacation planning go destination abroad"
+    )
+    relevance = score_query_relevance(query=expansion_query, text=text)
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=1, turn_delta=1)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=expansion_query,
+        expansion_reason="decomposition_inventory_list",
+        text=text,
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=relevance,
+            expansion_query=expansion_query,
+            expansion_reason="decomposition_inventory_list",
+            text=text,
+        )
+        > 0.976
+    )
 
 
 def test_source_sibling_score_allows_event_visual_reference_followup() -> None:
@@ -442,8 +841,16 @@ def test_source_sibling_score_caps_low_signal_precise_bridge_noise() -> None:
         expansion_reason="symbol_importance_bridge",
         text=strong_text,
     )
+    weak_recency_score = _source_sibling_score(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query="latest conversation alex call",
+        expansion_reason="decomposition_conversation_recency",
+        text=weak_text,
+    )
 
     assert weak_score < strong_score
+    assert weak_recency_score <= 0.976
     assert strong_score == 0.99
 
 
@@ -535,6 +942,103 @@ def test_source_sibling_promotes_pottery_observation_companion() -> None:
         )
         >= 0.99
     )
+
+
+def test_source_sibling_marker_coverage_prefers_richer_pottery_observation_window() -> None:
+    early = (
+        "D12:2 Melanie: Melanie finished another pottery project. "
+        "Related turns: D12:4. "
+        "D12:8 Melanie: Melanie's pottery project was fulfilling. "
+        "Related turns: D12:2 D12:4 D12:10."
+    )
+    later = (
+        "D12:8 Melanie: Melanie's pottery project was a source of happiness. "
+        "Related turns: D12:2 D12:4 D12:10. "
+        "D12:14 Melanie: Melanie values friendship with Caroline. "
+        "Related turns: D12:6 D12:16."
+    )
+
+    assert _source_sibling_marker_coverage_count(
+        expansion_reason="pottery_type_bridge",
+        text=later,
+    ) > _source_sibling_marker_coverage_count(
+        expansion_reason="pottery_type_bridge",
+        text=early,
+    )
+    assert _source_sibling_marker_coverage_count(
+        expansion_reason="decomposition_inventory_list",
+        text=later,
+    ) == _source_sibling_marker_coverage_count(
+        expansion_reason="pottery_type_bridge",
+        text=later,
+    )
+    assert (
+        _source_sibling_marker_coverage_count(
+            expansion_reason="original_query",
+            text=later,
+        )
+        == 0
+    )
+
+
+def test_source_sibling_rank_key_prefers_answer_observation_window_over_generic_turn() -> None:
+    rank = _SourceSiblingRank(
+        score=0.968,
+        group_priority=7,
+        turn_distance=0,
+        turn_delta=0,
+        group_level_seed=True,
+    )
+    query = "Melanie pottery types pieces made clay finished ceramic bowl bowls cup mug kids"
+    observation_chunk = _chunk(
+        "observation",
+        (
+            "D12:8 Melanie: Melanie's pottery project was a source of happiness. "
+            "Related turns: D12:2 D12:4 D12:10. "
+            "D12:14 Melanie: Melanie values friendship with Caroline. "
+            "Related turns: D12:6 D12:16."
+        ),
+        source_external_id="locomo:conv-26:session_12:observation",
+    )
+    precise_turn = _chunk(
+        "precise",
+        (
+            "D16:8 Melanie: Seven years now, and I've finally found my real muses: "
+            "painting and pottery. It's so calming."
+        ),
+        source_external_id="locomo:conv-26:session_16:D16:8:turn",
+    )
+
+    observation_relevance = score_query_relevance(query=query, text=observation_chunk.text)
+    precise_relevance = score_query_relevance(query=query, text=precise_turn.text)
+
+    observation_key = _source_sibling_candidate_rank_key(
+        precise_turn=False,
+        dialogue_visual_reference=False,
+        visual_continuation=False,
+        observation_companion=True,
+        marker_coverage=_source_sibling_marker_coverage_count(
+            expansion_reason="decomposition_inventory_list",
+            text=observation_chunk.text,
+        ),
+        relevance=observation_relevance,
+        score=0.976,
+        rank=rank,
+        chunk=observation_chunk,
+    )
+    precise_key = _source_sibling_candidate_rank_key(
+        precise_turn=True,
+        dialogue_visual_reference=False,
+        visual_continuation=False,
+        observation_companion=False,
+        marker_coverage=0,
+        relevance=precise_relevance,
+        score=0.99,
+        rank=rank,
+        chunk=precise_turn,
+    )
+
+    assert observation_key < precise_key
 
 
 def test_source_sibling_companion_extra_slot_distinguishes_observation_windows() -> None:

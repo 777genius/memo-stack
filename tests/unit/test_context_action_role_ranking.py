@@ -47,6 +47,84 @@ def test_deterministic_rerank_uses_after_recommendation_roles() -> None:
     )
 
 
+def test_deterministic_rerank_uses_recommended_that_recipient_roles() -> None:
+    query = "Who recommended that Melanie read Becoming Nicole?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_recommended_melanie",
+        score=0.7,
+        text="Caroline recommended that Melanie read Becoming Nicole by Amy Ellis Nutt.",
+    )
+    reversed_roles = _item(
+        "melanie_recommended_caroline",
+        score=0.72,
+        text="Melanie recommended that Caroline read Becoming Nicole by Amy Ellis Nutt.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (reversed_roles, correct),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_recommended_melanie"].score > by_id[
+        "melanie_recommended_caroline"
+    ].score
+    assert (
+        "action_role_recipient_match"
+        in by_id["caroline_recommended_melanie"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "action_role_recipient_mismatch"
+        in by_id["melanie_recommended_caroline"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_uses_recommend_object_actor_recipient_roles() -> None:
+    query = "What book did Caroline recommend Melanie read?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_to_melanie",
+        score=0.7,
+        text="Caroline recommended that Melanie read Becoming Nicole by Amy Ellis Nutt.",
+    )
+    reversed_roles = _item(
+        "melanie_to_caroline",
+        score=0.72,
+        text="Melanie recommended that Caroline read Becoming Nicole by Amy Ellis Nutt.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (reversed_roles, correct),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_to_melanie"].score > by_id["melanie_to_caroline"].score
+    assert (
+        "action_role_actor_recipient_match"
+        in by_id["caroline_to_melanie"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "action_role_actor_recipient_reversed"
+        in by_id["melanie_to_caroline"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_requested_recipient_evidence() -> None:
     query = "Who did Caroline recommend Becoming Nicole to?"
     plan = build_query_expansion_plan(query)
@@ -91,6 +169,94 @@ def test_deterministic_rerank_prefers_requested_recipient_evidence() -> None:
     )
     assert (
         "action_role_actor_mismatch"
+        in by_id["melanie_to_caroline"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_passive_requested_recipient_evidence() -> None:
+    query = "Who was told about the Atlas delay by Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "alex_to_maria",
+        score=0.7,
+        text="Alex told Maria about the Atlas delay after the call.",
+    )
+    actor_only = _item(
+        "alex_actor_only",
+        score=0.72,
+        text="Alex told the Atlas delay story after the call.",
+    )
+    wrong_actor = _item(
+        "sam_to_alex",
+        score=0.73,
+        text="Sam told Alex about the Atlas delay after the call.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (actor_only, wrong_actor, correct),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_to_maria"].score > by_id["alex_actor_only"].score
+    assert by_id["alex_to_maria"].score > by_id["sam_to_alex"].score
+    assert (
+        "action_role_actor_to_recipient_evidence"
+        in by_id["alex_to_maria"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "action_role_requested_recipient_missing"
+        in by_id["alex_actor_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "action_role_actor_mismatch"
+        in by_id["sam_to_alex"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_uses_russian_whose_advice_recipient() -> None:
+    query = "По чьему совету Мелани прочитала Becoming Nicole?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_to_melanie",
+        score=0.7,
+        text="Кэролайн посоветовала Мелани прочитать Becoming Nicole.",
+    )
+    reversed_roles = _item(
+        "melanie_to_caroline",
+        score=0.72,
+        text="Мелани посоветовала Кэролайн прочитать Becoming Nicole.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (reversed_roles, correct),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_to_melanie"].score > by_id["melanie_to_caroline"].score
+    assert (
+        "action_role_recipient_match"
+        in by_id["caroline_to_melanie"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "action_role_recipient_mismatch"
         in by_id["melanie_to_caroline"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]

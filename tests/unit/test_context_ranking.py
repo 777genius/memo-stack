@@ -337,6 +337,127 @@ def test_keyword_chunk_score_boosts_beach_count_activity_bridge() -> None:
     assert score >= 0.9
 
 
+def test_deterministic_rerank_prefers_count_aggregation_over_single_mention() -> None:
+    query = "How many times has Melanie gone to the beach in 2023?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    single_mention = _item(
+        "single_beach",
+        score=0.81,
+        retrieval_source="keyword_chunks",
+        text="Melanie went to the beach recently and the kids had a blast.",
+    )
+    aggregation = _item(
+        "aggregation_beach",
+        score=0.7,
+        retrieval_source="keyword_aggregation_chunks",
+        source_refs=(
+            SourceRef(source_type="locomo_turn", source_id="doc:session_1:D1:2:turn"),
+            SourceRef(source_type="locomo_turn", source_id="doc:session_4:D4:7:turn"),
+            SourceRef(source_type="locomo_turn", source_id="doc:session_8:D8:3:turn"),
+        ),
+        text=(
+            "D1:2 Melanie went to the beach in March. "
+            "D4:7 Melanie went to the beach again in July. "
+            "D8:3 She visited the beach one more time in September."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (single_mention, aggregation),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["aggregation_beach"].score > by_id["single_beach"].score
+    assert (
+        "aggregation_multi_evidence"
+        in by_id["aggregation_beach"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "aggregation_single_evidence_noise"
+        in by_id["single_beach"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_list_aggregation_over_single_mention() -> None:
+    query = "What shelters does Maria volunteer at?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    single_mention = _item(
+        "single_shelter",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="D2:1 Maria volunteers at the homeless shelter every weekend.",
+        score_signals={"query_expansion_reason": "decomposition_inventory_list"},
+    )
+    aggregation = _item(
+        "aggregation_shelters",
+        score=0.71,
+        retrieval_source="keyword_aggregation_chunks",
+        source_refs=(
+            SourceRef(source_type="locomo_turn", source_id="doc:session_2:D2:1:turn"),
+            SourceRef(source_type="locomo_turn", source_id="doc:session_11:D11:10:turn"),
+        ),
+        text=(
+            "D2:1 Maria volunteers at the homeless shelter. "
+            "D11:10 Maria also started volunteering at the dog shelter."
+        ),
+        score_signals={"query_expansion_reason": "decomposition_inventory_list"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (single_mention, aggregation),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["aggregation_shelters"].score > by_id["single_shelter"].score
+    assert (
+        "aggregation_list_multi_evidence"
+        in by_id["aggregation_shelters"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "aggregation_list_single_evidence_incomplete"
+        in by_id["single_shelter"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_keeps_direct_numeric_count_answer() -> None:
+    query = "How many children does Melanie have?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    direct_count = _item(
+        "children_count",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie has three children.",
+    )
+
+    (reranked,) = apply_deterministic_rerank_adjustments(
+        (direct_count,),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert "aggregation_single_evidence_noise" not in reranked.diagnostics[
+        "provenance"
+    ].get("deterministic_rerank_reasons", [])
+
+
 def test_keyword_chunk_score_boosts_allergy_inventory_equivalents() -> None:
     plan = build_query_expansion_plan("What is Joanna allergic to?")
     _, reason, relevance = best_query_relevance(
@@ -568,6 +689,80 @@ def test_deterministic_rerank_prefers_positive_event_participation_over_missed_e
     )
 
 
+def test_deterministic_rerank_prefers_activity_companion_evidence() -> None:
+    query = "Who did Melanie go camping with?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    companion = _item(
+        "melanie_family_camping",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D9:1 Melanie: I went camping with my family and enjoyed "
+            "unplugging with the kids."
+        ),
+    )
+    missing_companion = _item(
+        "melanie_camping_topical",
+        score=0.735,
+        retrieval_source="keyword_chunks",
+        text="D10:4 Melanie: I went camping last weekend and loved the trail.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (missing_companion, companion),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_family_camping"].score > by_id["melanie_camping_topical"].score
+    assert (
+        "activity_companion_positive_match"
+        in by_id["melanie_family_camping"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "activity_companion_missing_evidence"
+        in by_id["melanie_camping_topical"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_penalizes_negated_activity_companion_evidence() -> None:
+    query = "Who did Melanie go camping with?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    companion = _item(
+        "melanie_family_camping",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D9:1 Melanie: I went camping with my family and the kids.",
+    )
+    alone = _item(
+        "melanie_camping_alone",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text="D10:4 Melanie: I went camping alone without my family.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (alone, companion),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_family_camping"].score > by_id["melanie_camping_alone"].score
+    assert (
+        "activity_companion_negated_evidence"
+        in by_id["melanie_camping_alone"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_penalizes_weak_activity_source_sibling() -> None:
     query = "What does Melanie do with her family on hikes?"
     plan = build_query_expansion_plan(query)
@@ -659,6 +854,68 @@ def test_deterministic_rerank_penalizes_capped_source_sibling_low_signal() -> No
         in by_id["generic_shelter_sibling"]
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
+
+
+def test_deterministic_rerank_keeps_duration_and_frequency_source_siblings() -> None:
+    duration_query = "How long has Maria volunteered at the shelter?"
+    duration_plan = build_query_expansion_plan(duration_query)
+    duration_intent = build_query_anchor_intent(duration_query)
+    duration_item = _item(
+        "duration_sibling",
+        score=0.95,
+        retrieval_source="keyword_source_sibling_chunks",
+        text=(
+            "D4:6 Maria: I started volunteering at the homeless shelter "
+            "three years ago and I still help at the front desk."
+        ),
+        score_signals={
+            "query_expansion_reason": "decomposition_activity_duration",
+            "source_sibling_score_cap_applied": 0,
+        },
+    )
+
+    duration_reranked = apply_deterministic_rerank_adjustments(
+        (duration_item,),
+        query=duration_query,
+        plan=duration_plan,
+        query_anchor_intent=duration_intent,
+    )[0]
+    duration_reasons = set(
+        duration_reranked.diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+    assert "activity_source_sibling_noise" not in duration_reasons
+    assert "capped_source_sibling_low_signal" not in duration_reasons
+
+    frequency_query = "How often does Maria volunteer at the shelter?"
+    frequency_plan = build_query_expansion_plan(frequency_query)
+    frequency_intent = build_query_anchor_intent(frequency_query)
+    frequency_item = _item(
+        "frequency_sibling",
+        score=0.95,
+        retrieval_source="keyword_source_sibling_chunks",
+        text=(
+            "D9:4 Maria: I volunteer at the homeless shelter every weekend "
+            "and usually help on Friday nights too."
+        ),
+        score_signals={
+            "query_expansion_reason": "decomposition_frequency_recurrence",
+            "source_sibling_score_cap_applied": 0,
+        },
+    )
+
+    frequency_reranked = apply_deterministic_rerank_adjustments(
+        (frequency_item,),
+        query=frequency_query,
+        plan=frequency_plan,
+        query_anchor_intent=frequency_intent,
+    )[0]
+    frequency_reasons = set(
+        frequency_reranked.diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+    assert "activity_source_sibling_noise" not in frequency_reasons
+    assert "capped_source_sibling_low_signal" not in frequency_reasons
 
 
 def test_deterministic_rerank_penalizes_volunteer_career_wrong_person_noise() -> None:
@@ -762,6 +1019,258 @@ def test_deterministic_rerank_prefers_volunteer_career_exact_turn_over_broad_sum
         "volunteer_career_broad_evidence"
         in by_id["broad_summary"]
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_career_fit_evidence_over_topic_noise() -> None:
+    query = "What job might Maria pursue in the future?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    career_fit = _item(
+        "maria_shelter_fit",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D11:10 Maria volunteered at the shelter front desk, found it "
+            "fulfilling, and received compliments from residents."
+        ),
+    )
+    topic_noise = _item(
+        "john_career_fair",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text='D10:15 John saw a career fair sign that said "Always look on the bright side."',
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_noise, career_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["maria_shelter_fit"].score > by_id["john_career_fair"].score
+    assert (
+        "inference_career_fit_evidence"
+        in by_id["maria_shelter_fit"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_career_topic_only_noise"
+        in by_id["john_career_fair"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_animal_career_evidence_over_gaming_noise() -> None:
+    query = "What alternative career might Nate consider after gaming?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    animal_fit = _item(
+        "nate_turtle_care",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Nate keeps pet turtles, cleans their tank, and enjoys feeding them.",
+    )
+    gaming_noise = _item(
+        "nate_gaming_noise",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Nate won another gaming tournament and bought a new console.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (gaming_noise, animal_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["nate_turtle_care"].score > by_id["nate_gaming_noise"].score
+    assert (
+        "inference_animal_career_fit_evidence"
+        in by_id["nate_turtle_care"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_animal_career_topic_only_noise"
+        in by_id["nate_gaming_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_career_field_decision_evidence() -> None:
+    query = "What fields would Caroline be likely to pursue in her educaton?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    field_decision = _item(
+        "caroline_counseling_field",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D1:11 Caroline is keen on counseling and working in mental health, "
+            "and she would love to support people with similar issues."
+        ),
+    )
+    generic_options = _item(
+        "caroline_generic_options",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D1:9 Caroline said she will continue education and check out career "
+            "options, which is pretty exciting."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_options, field_decision),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_counseling_field"].score > by_id["caroline_generic_options"].score
+    assert (
+        "inference_career_field_decision_evidence"
+        in by_id["caroline_counseling_field"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_penalizes_negated_career_decision_noise() -> None:
+    query = "What career path has Caroline decided to persue?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    decided = _item(
+        "caroline_counseling_path",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:13 Caroline decided she wants to pursue a career path in "
+            "counseling and mental health work."
+        ),
+    )
+    negated = _item(
+        "caroline_writing_noise",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D12:2 Caroline wrote a short story about career uncertainty, but "
+            "did not decide to pursue writing as a job."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (negated, decided),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_counseling_path"].score > by_id["caroline_writing_noise"].score
+    assert (
+        "inference_career_field_decision_evidence"
+        in by_id["caroline_counseling_path"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_career_negated_decision_noise"
+        in by_id["caroline_writing_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_friend_team_evidence_over_single_contact() -> None:
+    query = "Is it likely that Nate has friends besides Joanna?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    team_evidence = _item(
+        "nate_team_friends",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Nate plays Valorant with online teammates and gaming friends "
+            "from tournaments."
+        ),
+    )
+    joanna_only = _item(
+        "nate_joanna_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Nate played a video game with Joanna after school.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (joanna_only, team_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["nate_team_friends"].score > by_id["nate_joanna_only"].score
+    assert (
+        "inference_friend_team_evidence"
+        in by_id["nate_team_friends"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_friend_team_single_contact_noise"
+        in by_id["nate_joanna_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_degree_policy_evidence_over_measurement_noise() -> None:
+    query = "What might John's degree be in?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    policy_degree = _item(
+        "john_policy_degree",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="John studied political science and public policy at university.",
+    )
+    measurement_noise = _item(
+        "john_temperature_degree",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="John set the thermostat to 68 degrees before leaving.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (measurement_noise, policy_degree),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["john_policy_degree"].score > by_id["john_temperature_degree"].score
+    assert (
+        "inference_degree_policy_evidence"
+        in by_id["john_policy_degree"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_degree_measurement_noise"
+        in by_id["john_temperature_degree"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
     )
 
 
@@ -1239,6 +1748,42 @@ def test_keyword_chunk_score_boosts_event_sequence_decomposition_policy() -> Non
     assert score >= 0.84
 
 
+def test_deterministic_rerank_prefers_exact_after_conversation_sequence() -> None:
+    query = "What did Alex decide after talking with Sam about Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    exact = _item(
+        "sam_atlas_decision",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "After talking with Sam about Atlas, Alex decided to wait for "
+            "invoice approval before launch."
+        ),
+    )
+    wrong_thread = _item(
+        "priya_stripe_change",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="After talking with Priya about Stripe, Alex changed the billing retry plan.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (wrong_thread, exact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["sam_atlas_decision"].score > by_id["priya_stripe_change"].score
+    assert (
+        "event_sequence_exact_evidence"
+        in by_id["sam_atlas_decision"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_keyword_chunk_score_boosts_inference_support_decomposition_policy() -> None:
     relevance = score_query_relevance(
         query=(
@@ -1280,6 +1825,148 @@ def test_keyword_chunk_score_boosts_support_role_fit_bridge_policy() -> None:
 
     assert query_expansion_reason_priority("support_role_fit_bridge") == 4
     assert score >= 0.84
+
+
+def test_keyword_chunk_score_boosts_support_network_bridge_policy() -> None:
+    plan = build_query_expansion_plan("Who supports Caroline?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline's friends, family and mentors are her rocks. They are there "
+            "for her, motivate her, and give her strength."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "support_network_bridge"
+    assert query_expansion_reason_priority("support_network_bridge") == 4
+    assert score >= 0.84
+
+
+def test_keyword_chunk_score_boosts_support_network_helped_through_family_roles() -> None:
+    plan = build_query_expansion_plan("Who helped Caroline through it?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline's mother Maya and coach Lena were there for her, comforted "
+            "her, and helped her through it."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "support_network_bridge"
+    assert relevance.distinctive_term_hits >= 5
+    assert score >= 0.84
+
+
+def test_support_network_rerank_prefers_exact_social_support_over_technical_support() -> None:
+    query = "Who supports Caroline?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    exact = _item(
+        "exact",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline's friends, family and mentors are her rocks. They are there "
+            "for her and give her strength."
+        ),
+        score_signals={"query_expansion_reason": "support_network_bridge"},
+    )
+    weak = _item(
+        "weak",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline wrote technical notes that support the OpenAI provider "
+            "integration and SDK runtime."
+        ),
+        score_signals={"query_expansion_reason": "support_network_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (exact, weak),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert "support_network_exact_evidence" in reranked[0].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+    assert "support_network_weak_evidence" in reranked[1].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+
+
+def test_support_network_rerank_treats_family_roles_as_exact_social_support() -> None:
+    query = "Who helped Caroline through it?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    family_role = _item(
+        "family-role",
+        score=0.68,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline's mother and coach were always there for her, comforted "
+            "her, and helped her through the hard time."
+        ),
+        score_signals={"query_expansion_reason": "support_network_bridge"},
+    )
+    weak = _item(
+        "weak",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline helped review a backend support checklist for the SDK.",
+        score_signals={"query_expansion_reason": "support_network_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (family_role, weak),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+
+    assert reranked[0].item_id == "family-role"
+    assert "support_network_exact_evidence" in reranked[0].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+    assert "support_network_weak_evidence" in reranked[1].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+
+
+def test_keyword_chunk_score_boosts_multimodal_evidence_bridge_policies() -> None:
+    cases = [
+        (
+            "What OCR text was in the screenshot?",
+            "Screenshot OCR detected text label title: Atlas launch deadline moved.",
+            "visual_text_evidence_bridge",
+        ),
+        (
+            "What did Alex say in the audio?",
+            "Audio transcript: Alex said the Atlas launch deadline moved.",
+            "audio_transcript_evidence_bridge",
+        ),
+        (
+            "What did Alex say in the video?",
+            "Video transcript and keyframe evidence: Alex said the Atlas launch deadline moved.",
+            "video_transcript_evidence_bridge",
+        ),
+    ]
+
+    for query, text, expected_reason in cases:
+        plan = build_query_expansion_plan(query)
+        _, reason, relevance = best_query_relevance(plan, text=text)
+        score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+        assert reason == expected_reason
+        assert query_expansion_reason_priority(reason) == 4
+        assert score >= 0.9
 
 
 def test_keyword_chunk_score_boosts_stale_state_temporal_bridge() -> None:
@@ -1330,6 +2017,76 @@ def test_keyword_chunk_score_boosts_state_transition_bridge() -> None:
     assert reason in {"state_transition_bridge", "decomposition_state_transition"}
     assert relevance.distinctive_term_hits >= 7
     assert score > 0.9
+
+
+def test_deterministic_rerank_prefers_explicit_state_transition_over_topic_note() -> None:
+    query = "What changed after the Atlas call?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_note = _item(
+        "atlas_after_call_topic",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="After the Atlas call, Alex reviewed provider notes for the launch.",
+    )
+    transition = _item(
+        "atlas_provider_transition",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="After the Atlas call, Atlas changed from LocalAI to OpenAI.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_note, transition),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["atlas_provider_transition"].score > by_id["atlas_after_call_topic"].score
+    assert (
+        "state_transition_exact_evidence"
+        in by_id["atlas_provider_transition"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_russian_explicit_state_transition() -> None:
+    query = "Что изменилось после созвона по Атласу?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_note = _item(
+        "atlas_after_call_topic_ru",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="После созвона по Атласу Алекс просмотрел заметки по провайдеру.",
+    )
+    transition = _item(
+        "atlas_provider_transition_ru",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="После созвона по Атласу провайдер сменился с LocalAI на OpenAI.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_note, transition),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["atlas_provider_transition_ru"].score > by_id[
+        "atlas_after_call_topic_ru"
+    ].score
+    assert (
+        "state_transition_exact_evidence"
+        in by_id["atlas_provider_transition_ru"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
 
 
 def test_keyword_chunk_score_boosts_age_birthday_bridge_for_how_old_query() -> None:
@@ -1634,6 +2391,21 @@ def test_keyword_chunk_score_boosts_conversation_transcript_bridge() -> None:
 
     assert reason == "conversation_transcript_evidence_bridge"
     assert score >= 0.89
+
+
+def test_keyword_chunk_score_boosts_covered_call_topic_evidence() -> None:
+    plan = build_query_expansion_plan("What was discussed in the call about Atlas?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Transcript conversation covered Project Atlas migration risks and next steps."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "conversation_transcript_evidence_bridge"
+    assert score >= 0.84
 
 
 def test_query_expansion_reason_priority_promotes_exact_trait_evidence() -> None:
@@ -2023,6 +2795,97 @@ def test_religious_inference_bridge_beats_generic_current_goal_decoys() -> None:
     ) > keyword_chunk_score(
         decoy_relevance,
         query_expansion_reason=decoy_reason,
+    )
+
+
+def test_deterministic_rerank_prefers_children_books_inference_evidence() -> None:
+    query = "Would Caroline likely have Dr. Seuss books on her bookshelf?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    children_books = _item(
+        "children_books",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline has lots of kids' books, classics, stories from different "
+            "cultures, and educational books."
+        ),
+    )
+    generic_bookshelf = _item(
+        "generic_bookshelf",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline's bookshelf includes fantasy novels, Game of Thrones, "
+            "and several long series she finished."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (children_books, generic_bookshelf),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["children_books"].score > by_id["generic_bookshelf"].score
+    assert (
+        "inference_children_books_fit_evidence"
+        in by_id["children_books"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "inference_children_books_topic_only_noise"
+        in by_id["generic_bookshelf"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_religious_inference_evidence() -> None:
+    query = "Would Caroline be considered religious?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    church_evidence = _item(
+        "church_evidence",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D14:19 Caroline: It was made for a local church and shows time "
+            "changing our lives. I made it to show my own journey as a "
+            "transgender woman and how we should accept growth and change."
+        ),
+    )
+    topical_journey = _item(
+        "topical_journey",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D15:4 Caroline described her transgender journey, acceptance, "
+            "growth, and how her life changed after the interview."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (church_evidence, topical_journey),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["church_evidence"].score > by_id["topical_journey"].score
+    assert (
+        "inference_religious_fit_evidence"
+        in by_id["church_evidence"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_religious_topic_only_noise"
+        in by_id["topical_journey"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
     )
 
 
@@ -2567,6 +3430,47 @@ def test_patriotic_service_rerank_penalizes_weak_support_overlap() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_patriotic_service_evidence_over_symbol_topic() -> None:
+    query = "Would John be considered a patriotic person?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    service_evidence = _item(
+        "service_evidence",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D8:18 John retook the aptitude test and felt drawn to serving "
+            "his country."
+        ),
+    )
+    symbol_topic = _item(
+        "symbol_topic",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="The image caption shows a flag and eagle in John's notebook.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (service_evidence, symbol_topic),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["service_evidence"].score > by_id["symbol_topic"].score
+    assert (
+        "inference_patriotic_service_fit_evidence"
+        in by_id["service_evidence"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_patriotic_topic_only_noise"
+        in by_id["symbol_topic"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_running_reason_rerank_penalizes_weak_emotion_overlap() -> None:
     query = "What is Melanie's reason for getting into running?"
     plan = build_query_expansion_plan(query)
@@ -2983,6 +3887,175 @@ def test_context_requirement_boost_prefers_causal_answer_shape_match() -> None:
     ] == ["causal"]
 
 
+def test_deterministic_rerank_prefers_causal_belonging_evidence_over_generic_event() -> None:
+    query = "What gave Caroline a sense of belonging?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "caroline_support_group",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline joined an online support group for general planning advice.",
+    )
+    causal = _item(
+        "caroline_pride_belonging",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "The LGBTQ pride parade made Caroline feel at home in the community "
+            "and gave her a sense of belonging."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, causal),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_pride_belonging"].score > by_id["caroline_support_group"].score
+    assert (
+        "causal_answer_evidence"
+        in by_id["caroline_pride_belonging"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_domain_reason_evidence_over_topical_decoy() -> None:
+    query = "Why did Gina start her own clothing store?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topical = _item(
+        "gina_store_topic",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text="Gina mentioned her clothing store during a planning update.",
+    )
+    reason = _item(
+        "gina_job_loss",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Gina lost her Door Dash job, so she started thinking seriously "
+            "about opening her own clothing store."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topical, reason),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["gina_job_loss"].score > by_id["gina_store_topic"].score
+    assert (
+        "causal_reason_exact_evidence"
+        in by_id["gina_job_loss"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "causal_reason_weak_evidence"
+        in by_id["gina_store_topic"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_current_goal_over_home_country_decoy() -> None:
+    query = "Would Caroline want to move back to her home country soon?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    decoy = _item(
+        "home_country_decoy",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline misses her home country sometimes and talked about moving "
+            "back someday."
+        ),
+    )
+    current_goal = _item(
+        "adoption_goal",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline hopes to build her own family and put a roof over kids who "
+            "have not had that before. Adoption is her current goal."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (decoy, current_goal),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["adoption_goal"].score > by_id["home_country_decoy"].score
+    assert (
+        "current_goal_exact_evidence"
+        in by_id["adoption_goal"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "current_goal_weak_evidence"
+        in by_id["home_country_decoy"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_active_commitment_over_move_back_decoy() -> None:
+    query = "Would Maria move back to Chicago soon?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    decoy = _item(
+        "old_home_decoy",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Maria misses Chicago and talked about moving back someday.",
+    )
+    active_commitment = _item(
+        "austin_commitment",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Maria signed a yearlong lease in Austin, started a local role, "
+            "and plans to stay through spring."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (decoy, active_commitment),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["austin_commitment"].score > by_id["old_home_decoy"].score
+    assert (
+        "current_goal_exact_evidence"
+        in by_id["austin_commitment"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "current_goal_weak_evidence"
+        in by_id["old_home_decoy"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_context_requirement_boost_prefers_location_answer_shape_match() -> None:
     generic = _item(
         "generic_move_note",
@@ -3092,6 +4165,46 @@ def test_context_requirement_boost_prefers_commonality_answer_shape_match() -> N
     ] == ["commonality", "list"]
 
 
+def test_deterministic_rerank_prefers_true_commonality_over_shared_artifact() -> None:
+    query = "What hobbies do Caroline and Melanie have in common?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    shared_artifact = _item(
+        "shared_photo_note",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Caroline shared a photo of a painting with Melanie.",
+    )
+    commonality = _item(
+        "shared_hobbies",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline and Melanie both enjoy painting and weekend camping.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (shared_artifact, commonality),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["shared_hobbies"].score > by_id["shared_photo_note"].score
+    assert (
+        "commonality_exact_evidence"
+        in by_id["shared_hobbies"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "commonality_weak_evidence"
+        in by_id["shared_photo_note"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_context_requirement_boost_prefers_who_else_commonality_match() -> None:
     original_person = _item(
         "caroline_camping",
@@ -3120,6 +4233,52 @@ def test_context_requirement_boost_prefers_who_else_commonality_match() -> None:
     ] == ["commonality"]
 
 
+def test_deterministic_rerank_prefers_who_else_commonality_answer() -> None:
+    query = "Who else likes camping like Caroline?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    original_person = _item(
+        "caroline_camping",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline likes camping on weekends.",
+    )
+    also_person = _item(
+        "maria_also_camping",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Maria also likes camping and hiking on weekends.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (original_person, also_person),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["maria_also_camping"].score > by_id["caroline_camping"].score
+    assert (
+        "commonality_who_else_evidence"
+        in by_id["maria_also_camping"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "query_anchor_conflict_overridden_by_commonality_who_else"
+        in by_id["maria_also_camping"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "commonality_original_person_noise"
+        in by_id["caroline_camping"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_context_requirement_boost_prefers_relationship_answer_shape_match() -> None:
     generic = _item(
         "alex_school_note",
@@ -3146,6 +4305,255 @@ def test_context_requirement_boost_prefers_relationship_answer_shape_match() -> 
     assert boosted[1].diagnostics["provenance"][
         "context_requirement_matched_answer_shapes"
     ] == ["relationship"]
+
+
+def test_deterministic_rerank_prefers_relationship_status_over_social_decoy() -> None:
+    query = "What is Caroline's relationship status?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    social_decoy = _item(
+        "caroline_old_friend",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline's old friend from school is Maria.",
+    )
+    status = _item(
+        "caroline_single_parent",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline is single and described herself as a single parent.",
+    )
+    work_partner = _item(
+        "caroline_project_partner",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline's project partner on Atlas is Maria.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (social_decoy, work_partner, status),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_single_parent"].score > by_id["caroline_old_friend"].score
+    assert by_id["caroline_single_parent"].score > by_id["caroline_project_partner"].score
+    assert (
+        "relationship_status_exact_evidence"
+        in by_id["caroline_single_parent"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "relationship_status_weak_evidence"
+        in by_id["caroline_project_partner"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_relationship_duration_over_generic_relation() -> None:
+    query = "How long has Alex known Maria?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "alex_old_friend",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Alex's old friend from school is Maria.",
+    )
+    duration = _item(
+        "alex_maria_known_for_years",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex and Maria have known each other for seven years.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, duration),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_maria_known_for_years"].score > by_id["alex_old_friend"].score
+    assert (
+        "relationship_duration_exact_evidence"
+        in by_id["alex_maria_known_for_years"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "relationship_duration_weak_evidence"
+        in by_id["alex_old_friend"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_relationship_origin_over_generic_relation() -> None:
+    query = "Where did Alex meet Maria?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "alex_old_friend_school",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Alex's old friend from school is Maria.",
+    )
+    origin = _item(
+        "alex_maria_first_met",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex and Maria first met at college during orientation in 2018.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, origin),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_maria_first_met"].score > by_id["alex_old_friend_school"].score
+    assert (
+        "relationship_origin_exact_evidence"
+        in by_id["alex_maria_first_met"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "relationship_origin_weak_evidence"
+        in by_id["alex_old_friend_school"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_russian_relationship_origin_evidence() -> None:
+    query = "Где Алекс познакомился с Марией?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "alex_maria_old_school_friend",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Алекс и Мария старые друзья из школы.",
+    )
+    origin = _item(
+        "alex_maria_met_college",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Алекс и Мария познакомились в колледже на ориентации.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, origin),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_maria_met_college"].score > by_id[
+        "alex_maria_old_school_friend"
+    ].score
+    assert (
+        "relationship_origin_exact_evidence"
+        in by_id["alex_maria_met_college"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "relationship_origin_weak_evidence"
+        in by_id["alex_maria_old_school_friend"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_age_birth_evidence_over_old_word_noise() -> None:
+    query = "How old is Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    old_word_noise = _item(
+        "alex_old_friend",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Alex's old friend from school is Maria.",
+    )
+    birth_evidence = _item(
+        "alex_birth_year",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex was born in 1992 and his birthday is in June.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (old_word_noise, birth_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_birth_year"].score > by_id["alex_old_friend"].score
+    assert (
+        "age_birthday_exact_evidence"
+        in by_id["alex_birth_year"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "age_birthday_weak_evidence"
+        in by_id["alex_old_friend"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_birthplace_over_birthdate_noise() -> None:
+    query = "Where was Alex born?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    birthdate_noise = _item(
+        "alex_birth_year",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Alex was born in 1992 and his birthday is in June.",
+    )
+    birthplace = _item(
+        "alex_birthplace",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex was born in Sweden, his home country, before moving abroad.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (birthdate_noise, birthplace),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_birthplace"].score > by_id["alex_birth_year"].score
+    assert (
+        "birthplace_exact_evidence"
+        in by_id["alex_birthplace"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "age_birthday_birthplace_query_noise"
+        in by_id["alex_birth_year"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
 
 
 def test_context_requirement_boost_prefers_commitment_answer_shape_match() -> None:
@@ -3278,6 +4686,254 @@ def test_context_requirement_boost_prefers_inference_support_answer_shape() -> N
     assert boosted[1].diagnostics["provenance"][
         "context_requirement_matched_answer_shapes"
     ] == ["inference"]
+
+
+def test_deterministic_rerank_prefers_support_role_fit_evidence_over_generic_support() -> None:
+    query = "Would Caroline be a good mentor for Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "caroline_generic_support_network",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline's friends and family support her and give her strength.",
+    )
+    role_fit = _item(
+        "caroline_role_fit",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline mentored LGBTQ youth, listened patiently, and helped "
+            "people feel safe in the community program."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, role_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_role_fit"].score > by_id["caroline_generic_support_network"].score
+    assert (
+        "inference_support_role_fit_evidence"
+        in by_id["caroline_role_fit"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_generic_support_noise"
+        in by_id["caroline_generic_support_network"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_counterfactual_support_evidence() -> None:
+    query = "Would Caroline support Alex joining the pride group?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "caroline_generic_support_network",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Caroline's friends and family support her and give her strength.",
+    )
+    evidence = _item(
+        "caroline_pride_support_evidence",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline has been supportive and encouraging at pride groups. "
+            "She helped Alex feel welcome and safe in the community."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_pride_support_evidence"].score > by_id[
+        "caroline_generic_support_network"
+    ].score
+    assert (
+        "inference_counterfactual_support_evidence"
+        in by_id["caroline_pride_support_evidence"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_counterfactual_support_noise"
+        in by_id["caroline_generic_support_network"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_preference_fit_evidence_over_negative_noise() -> None:
+    query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    negative_noise = _item(
+        "melanie_podcast_noise",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="Melanie usually listens to podcasts instead.",
+    )
+    preference_fit = _item(
+        "melanie_classical_music",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Melanie is a fan of classical music like Bach and Mozart.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (negative_noise, preference_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_classical_music"].score > by_id["melanie_podcast_noise"].score
+    assert (
+        "inference_preference_fit_evidence"
+        in by_id["melanie_classical_music"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_negative_preference_noise"
+        in by_id["melanie_podcast_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_negative_preference_fit_over_unrelated_instead() -> None:
+    query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    unrelated_instead = _item(
+        "podcast_instead",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Melanie usually listens to podcasts instead.",
+    )
+    negative_fit = _item(
+        "classical_dislike",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Melanie avoids classical music and dislikes orchestra concerts.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (unrelated_instead, negative_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["classical_dislike"].score > by_id["podcast_instead"].score
+    assert (
+        "inference_negative_preference_fit_evidence"
+        in by_id["classical_dislike"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_negative_preference_noise"
+        in by_id["podcast_instead"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_penalizes_classical_music_topic_without_preference() -> None:
+    query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    preference_fit = _item(
+        "melanie_classical_music",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie is a fan of classical music like Bach and Mozart.",
+    )
+    topic_only = _item(
+        "vivaldi_topic_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="The orchestra discussed Vivaldi and classical symphony forms in music class.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (preference_fit, topic_only),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_classical_music"].score > by_id["vivaldi_topic_only"].score
+    assert (
+        "inference_preference_fit_evidence"
+        in by_id["melanie_classical_music"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_classical_music_topic_only_noise"
+        in by_id["vivaldi_topic_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_explicit_preference_over_topical_match() -> None:
+    query = "Which meat does Audrey prefer eating more than others?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topical = _item(
+        "audrey_chicken_recipe",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text="Audrey cooked chicken with lemon for the fundraiser.",
+    )
+    preference = _item(
+        "audrey_roasted_chicken",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Audrey says roasted chicken is one of her favorite comfort meals.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topical, preference),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["audrey_roasted_chicken"].score > by_id["audrey_chicken_recipe"].score
+    assert (
+        "preference_exact_evidence"
+        in by_id["audrey_roasted_chicken"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "preference_weak_evidence"
+        in by_id["audrey_chicken_recipe"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
 
 
 def test_context_requirement_boost_prefers_constraint_answer_shape() -> None:
@@ -3414,8 +5070,66 @@ def test_deterministic_rerank_prefers_conversation_participant_answer_shape() ->
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
     assert (
+        "conversation_counterparty_exact_evidence"
+        in by_id["participant_note"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
         "explicit_answer_shape_missing"
         in by_id["generic_note"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_penalizes_negative_conversation_counterparty_evidence() -> None:
+    query = "Who did Alex talk to about Project Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    relevant = _item(
+        "sam_turn",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex talked with Sam about Project Atlas rollout.",
+    )
+    negative = _item(
+        "negative_note",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Sam said Project Atlas is delayed, but there was no conversation with Alex.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (negative, relevant),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["sam_turn"].score > by_id["negative_note"].score
+    assert (
+        "conversation_counterparty_negative_evidence"
+        in by_id["negative_note"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+    short_query = "Who did Alex call?"
+    (short_negative,) = apply_deterministic_rerank_adjustments(
+        (
+            _item(
+                "short_negative",
+                score=0.72,
+                retrieval_source="keyword_chunks",
+                text="Alex did not call Sam.",
+            ),
+        ),
+        query=short_query,
+        plan=build_query_expansion_plan(short_query),
+        query_anchor_intent=build_query_anchor_intent(short_query),
+    )
+
+    assert (
+        "conversation_counterparty_negative_evidence"
+        in short_negative.diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
 
 
@@ -3450,8 +5164,313 @@ def test_deterministic_rerank_prefers_conversation_topic_answer_shape() -> None:
         in by_id["topic_note"].diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
     assert (
+        "conversation_topic_exact_evidence"
+        in by_id["topic_note"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
         "explicit_answer_shape_missing"
         in by_id["participant_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_conversation_topic_alternate_wording() -> None:
+    query = "What was the conversation with Maria about?"
+    possessive_query = "What was Alex's conversation with Maria about?"
+    plan = build_query_expansion_plan(query)
+    possessive_plan = build_query_expansion_plan(possessive_query)
+    intent = build_query_anchor_intent(query)
+    possessive_intent = build_query_anchor_intent(possessive_query)
+    topic = _item(
+        "topic_note",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex talked with Maria about Project Atlas.",
+    )
+    participant_only = _item(
+        "participant_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex talked with Maria after lunch.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (participant_only, topic),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    possessive_reranked = apply_deterministic_rerank_adjustments(
+        (participant_only, topic),
+        query=possessive_query,
+        plan=possessive_plan,
+        query_anchor_intent=possessive_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+    possessive_by_id = {item.item_id: item for item in possessive_reranked}
+
+    assert by_id["topic_note"].score > by_id["participant_only"].score
+    assert possessive_by_id["topic_note"].score > possessive_by_id["participant_only"].score
+    assert (
+        "explicit_answer_shape_covered"
+        in by_id["topic_note"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "explicit_answer_shape_covered"
+        in possessive_by_id["topic_note"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_covered_call_topic_wording() -> None:
+    query = "What was Alex's call with Maria about?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic = _item(
+        "covered_call",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex's call with Maria covered Project Atlas migration risks.",
+    )
+    call_only = _item(
+        "call_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex had a call with Maria after lunch.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (call_only, topic),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["covered_call"].score > by_id["call_only"].score
+    assert (
+        "conversation_topic_exact_evidence"
+        in by_id["covered_call"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_penalizes_negative_conversation_topic_evidence() -> None:
+    query = "What did Alex and Maria talk about?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    relevant = _item(
+        "topic_note",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex and Maria talked about Project Atlas and invoice approval.",
+    )
+    negative = _item(
+        "negative_topic",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex and Maria did not talk about Project Atlas during lunch.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (negative, relevant),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["topic_note"].score > by_id["negative_topic"].score
+    assert (
+        "conversation_topic_negative_evidence"
+        in by_id["negative_topic"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_latest_conversation_event_shape() -> None:
+    query = "What was my latest call with Alex about?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    event_note = _item(
+        "latest_call",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Yesterday's call with Alex covered Project Atlas migration risks.",
+    )
+    generic_note = _item(
+        "generic_alex",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex owns the Project Atlas renewal follow-up.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_note, event_note),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["latest_call"].score > by_id["generic_alex"].score
+    assert (
+        "conversation_recency_temporal_evidence"
+        in by_id["latest_call"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "conversation_recency_missing_event_evidence"
+        in by_id["generic_alex"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_relative_time_conversation_event_shape() -> None:
+    query = "What did I discuss with Alex two hours ago?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    event_note = _item(
+        "recent_discussion",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Two hours ago I discussed Project Atlas migration risks with Alex.",
+    )
+    generic_note = _item(
+        "generic_alex",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex owns the Project Atlas renewal follow-up.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_note, event_note),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["recent_discussion"].score > by_id["generic_alex"].score
+    assert (
+        "conversation_recency_temporal_evidence"
+        in by_id["recent_discussion"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "conversation_recency_missing_event_evidence"
+        in by_id["generic_alex"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_uses_temporal_hint_for_latest_conversation() -> None:
+    query = "What was the latest conversation with Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    current_event = _item(
+        "current_event",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        event_temporal_hint_code="today",
+        text="Call with Alex covered invoice background.",
+    )
+    undated_event = _item(
+        "undated_event",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="Call with Alex covered invoice background.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (undated_event, current_event),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["current_event"].score > by_id["undated_event"].score
+    assert (
+        "conversation_recency_temporal_hint_evidence"
+        in by_id["current_event"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "conversation_recency_missing_temporal_evidence"
+        in by_id["undated_event"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_uses_temporal_hint_alias_for_latest_conversation() -> None:
+    query = "Что было на последнем созвоне с Алексом?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    current_event = _item(
+        "current_event",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        temporal_hint_code="today",
+        text="Созвон с Алексом был про invoice background.",
+    )
+    undated_event = _item(
+        "undated_event",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="Созвон с Алексом был про invoice background.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (undated_event, current_event),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["current_event"].score > by_id["undated_event"].score
+    assert (
+        "conversation_recency_temporal_hint_evidence"
+        in by_id["current_event"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_dated_latest_conversation_over_undated() -> None:
+    query = "What was the latest conversation with Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    dated_event = _item(
+        "dated_event",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        event_temporal_hint_code="last_week",
+        text="Call with Alex covered invoice background.",
+    )
+    undated_event = _item(
+        "undated_event",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="Call with Alex covered invoice background.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (undated_event, dated_event),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["dated_event"].score > by_id["undated_event"].score
+    assert (
+        "conversation_recency_dated_temporal_hint_evidence"
+        in by_id["dated_event"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
     )
@@ -3564,6 +5583,41 @@ def test_deterministic_rerank_prefers_current_active_memory_over_superseded() ->
     assert (
         "temporal_query_current_superseded_conflict"
         in by_id["superseded_provider"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_demotes_plain_text_stale_state_for_current_query() -> None:
+    query = "Which Atlas provider is still valid?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    active = _item(
+        "active_provider",
+        score=0.7,
+        retrieval_source="postgres_facts",
+        fact_status="active",
+        text="Atlas provider remains valid and active: OpenAI.",
+    )
+    stale_text = _item(
+        "stale_text_provider",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="LocalAI is no longer valid for Atlas after the provider switch.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (active, stale_text),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["active_provider"].score > by_id["stale_text_provider"].score
+    assert (
+        "temporal_query_current_stale_text_conflict"
+        in by_id["stale_text_provider"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
     )
 
 
@@ -3927,6 +5981,49 @@ def test_deterministic_rerank_does_not_penalize_exact_source_sibling_speaker_bri
     )
 
 
+def test_deterministic_rerank_prefers_willingness_evidence_over_relocation_decoy() -> None:
+    query = "Would John be open to moving to another country?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topical_decoy = _item(
+        "john_relocation_history",
+        score=0.75,
+        retrieval_source="keyword_chunks",
+        text="John moved from another country as a child and misses his old hometown.",
+    )
+    willingness = _item(
+        "john_military_willingness",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "John said he would be open to moving abroad for an international "
+            "service mission."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topical_decoy, willingness),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["john_military_willingness"].score > by_id["john_relocation_history"].score
+    assert (
+        "inference_willingness_fit_evidence"
+        in by_id["john_military_willingness"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_willingness_topic_only_noise"
+        in by_id["john_relocation_history"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_penalizes_single_hit_long_query_overlap() -> None:
     query = "unrelated yakutsk cooking recipe quantum aquarium warranty"
     plan = build_query_expansion_plan(query)
@@ -4031,6 +6128,198 @@ def test_deterministic_rerank_prefers_activity_owned_by_query_speaker() -> None:
         "activity_owner_speaker_mismatch"
         in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
+
+
+def test_deterministic_rerank_prefers_friend_place_owned_by_query_speaker() -> None:
+    query = "Where has Maria made friends?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    maria_gym = _item(
+        "maria_gym",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D19:1 Maria: I joined a gym last week and the people there are supportive."
+        ),
+        score_signals={"query_expansion_reason": "friend_place_inventory_bridge"},
+    )
+    john_support_group = _item(
+        "john_support_group",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D27:1 John: Hey Maria, I asked family and friends to join my virtual "
+            "support group."
+        ),
+        score_signals={"query_expansion_reason": "friend_place_inventory_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (maria_gym, john_support_group),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > maria_gym.score
+    assert reranked[1].score < john_support_group.score
+    assert (
+        "activity_owner_speaker_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "activity_owner_speaker_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_inventory_exact_place_over_generic_noise() -> None:
+    query = "Where has Maria made friends?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    exact_place = _item(
+        "maria_shelter_friend",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D4:1 Maria: I made friends with fellow volunteers at the homeless shelter.",
+        score_signals={"query_expansion_reason": "friend_place_inventory_bridge"},
+    )
+    generic_group = _item(
+        "generic_support_group",
+        score=0.755,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D27:1 Maria asked family and friends to join a virtual support group "
+            "for a community project."
+        ),
+        score_signals={"query_expansion_reason": "friend_place_inventory_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_group, exact_place),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["maria_shelter_friend"].score > by_id["generic_support_group"].score
+    assert (
+        "inventory_list_exact_evidence"
+        in by_id["maria_shelter_friend"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "inventory_list_weak_evidence"
+        in by_id["generic_support_group"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_keeps_inventory_slots_query_specific() -> None:
+    query = "What types of pottery have Melanie and her kids made?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    pottery = _item(
+        "pottery_bowl",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D8:4 Melanie and the kids made clay bowls and a small cup.",
+        score_signals={"query_expansion_reason": "decomposition_inventory_list"},
+    )
+    country_noise = _item(
+        "country_noise",
+        score=0.755,
+        retrieval_source="keyword_chunks",
+        text="D15:2 Melanie visited Spain and talked about countries abroad.",
+        score_signals={"query_expansion_reason": "decomposition_inventory_list"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (country_noise, pottery),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["pottery_bowl"].score > by_id["country_noise"].score
+    assert (
+        "inventory_list_exact_evidence"
+        in by_id["pottery_bowl"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "inventory_list_exact_evidence"
+        not in by_id["country_noise"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_requires_specific_country_inventory_evidence() -> None:
+    query = "What European countries has Maria been to?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    specific_country = _item(
+        "visited_spain",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D13:24 Maria visited Spain during a school trip.",
+        score_signals={"query_expansion_reason": "travel_country_inventory_bridge"},
+    )
+    generic_country = _item(
+        "generic_country",
+        score=0.755,
+        retrieval_source="keyword_chunks",
+        text="D13:20 Maria visited countries abroad and talked about travel plans.",
+        score_signals={"query_expansion_reason": "travel_country_inventory_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic_country, specific_country),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["visited_spain"].score > by_id["generic_country"].score
+    assert (
+        "inventory_list_exact_evidence"
+        in by_id["visited_spain"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "inventory_list_exact_evidence"
+        not in by_id["generic_country"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_does_not_treat_volunteering_people_query_as_shelter_slot() -> None:
+    query = "What people has Maria met and helped while volunteering?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    shelter_context = _item(
+        "shelter_context",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D2:1 Maria volunteered at the homeless shelter every weekend.",
+        score_signals={"query_expansion_reason": "decomposition_inventory_list"},
+    )
+
+    (reranked,) = apply_deterministic_rerank_adjustments(
+        (shelter_context,),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    reasons = reranked.diagnostics.get("provenance", {}).get(
+        "deterministic_rerank_reasons",
+        [],
+    )
+    assert "inventory_list_exact_evidence" not in reasons
 
 
 def test_deterministic_rerank_prefers_attributed_speaker_over_subject_self_report() -> None:
@@ -4214,6 +6503,76 @@ def test_deterministic_rerank_supports_lowercase_action_role_query() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_direct_recipient_action_evidence() -> None:
+    query = "Who did Alex tell about the Atlas delay?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "alex_told_maria",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="D3:4 Alex told Maria about the Atlas delay after the call.",
+    )
+    reversed_roles = _item(
+        "maria_told_alex",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D3:4 Maria told Alex about the Atlas delay after the call.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_actor_to_recipient_evidence"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_actor_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_penalizes_requested_recipient_wrong_context() -> None:
+    query = "Who did Alex ask to send the Atlas invoice?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "alex_asked_dana_invoice",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="D3:4 Alex asked Dana to send the Atlas invoice after the call.",
+    )
+    wrong_context = _item(
+        "alex_asked_maria_lunch",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D3:4 Alex asked Maria to book lunch after the call.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, wrong_context),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_actor_to_recipient_evidence"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_requested_context_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_penalizes_wrong_decision_owner() -> None:
     query = "What did Caroline decide about adoption after the interview?"
     plan = build_query_expansion_plan(query)
@@ -4369,6 +6728,332 @@ def test_deterministic_rerank_uses_recommendation_recipient_role() -> None:
         score=0.72,
         retrieval_source="keyword_chunks",
         text="Melanie recommended Becoming Nicole to Caroline.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_recipient_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_recipient_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_preserves_introduced_object_target_order() -> None:
+    query = "Who introduced Maria to Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_introduced_maria_to_alex",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline introduced Maria to Alex at the Atlas meetup.",
+    )
+    reversed_roles = _item(
+        "caroline_introduced_alex_to_maria",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline introduced Alex to Maria at the Atlas meetup.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_recipient_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_recipient_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_information_source_role() -> None:
+    query = "Who did John hear inspiring stories from?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "john_heard_from_samuel",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="John heard inspiring stories from an elderly veteran named Samuel.",
+    )
+    reversed_roles = _item(
+        "samuel_heard_from_john",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Samuel heard inspiring stories from John.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_information_source_evidence"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_information_source_reversed"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_support_recipient_role() -> None:
+    query = "Who helped Maria with the Atlas migration?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_helped_maria",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline helped Maria with the Atlas migration after the workshop.",
+    )
+    reversed_roles = _item(
+        "maria_helped_caroline",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Maria helped Caroline with the Atlas migration after the workshop.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_recipient_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_recipient_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_lent_recipient_role() -> None:
+    query = "Who lent Alex the camera?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "maria_lent_alex",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Maria lent Alex the camera after the workshop.",
+    )
+    reversed_roles = _item(
+        "alex_lent_maria",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex lent Maria the camera after the workshop.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_recipient_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_recipient_mismatch"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_borrow_source_role() -> None:
+    query = "Who did Alex borrow the camera from?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "maria_lent_alex",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Maria lent Alex the camera after the workshop.",
+    )
+    reversed_roles = _item(
+        "alex_lent_maria",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex lent Maria the camera after the workshop.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, reversed_roles),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_transfer_source_evidence"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_transfer_source_reversed"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_possession_gift_source_evidence() -> None:
+    query = "Who gave Caroline the necklace?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    gift_source = _item(
+        "caroline_necklace_gift_source",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and it reminds me of my roots."
+        ),
+    )
+    topical_necklace = _item(
+        "caroline_necklace_symbols",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D8:2 Caroline shared a pendant necklace with a transgender symbol, "
+            "a cross, and a heart."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (gift_source, topical_necklace),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_necklace_gift_source"].score > by_id["caroline_necklace_symbols"].score
+    assert (
+        "possession_source_evidence"
+        in by_id["caroline_necklace_gift_source"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "possession_source_missing"
+        in by_id["caroline_necklace_symbols"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_got_from_possession_source_evidence() -> None:
+    query = "Where did Caroline's necklace come from?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    origin = _item(
+        "caroline_necklace_origin",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline got a necklace from her grandma in her home country, "
+            "Sweden, and it reminds her of her roots."
+        ),
+    )
+    home_decoy = _item(
+        "caroline_home_decoy",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Caroline wants to create a safe and loving home for kids, with "
+            "acceptance for everyone."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (origin, home_decoy),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].item_id == "caroline_necklace_origin"
+    assert (
+        "possession_source_evidence"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_penalizes_negated_action_role_evidence() -> None:
+    query = "Who helped Maria with the Atlas migration?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "caroline_helped_maria",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Caroline helped Maria with the Atlas migration after the workshop.",
+    )
+    negated = _item(
+        "negated_help",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline did not help Maria with the Atlas migration after the workshop.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (correct, negated),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].score > reranked[1].score
+    assert (
+        "action_role_recipient_match"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "action_role_negated_evidence"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
+def test_deterministic_rerank_prefers_support_presence_role() -> None:
+    query = "Who was there for Caroline after the interview?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    correct = _item(
+        "melanie_there_for_caroline",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Melanie was there for Caroline after the agency interview.",
+    )
+    reversed_roles = _item(
+        "caroline_there_for_melanie",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline was there for Melanie after the agency interview.",
     )
 
     reranked = apply_deterministic_rerank_adjustments(
@@ -4663,6 +7348,8 @@ def _item(
     text: str | None = None,
     score_signals: dict[str, object] | None = None,
     fact_status: str | None = None,
+    event_temporal_hint_code: str | None = None,
+    temporal_hint_code: str | None = None,
     review_only: bool = False,
 ) -> ContextItem:
     listed_sources = retrieval_sources or (retrieval_source,)
@@ -4672,6 +7359,10 @@ def _item(
     provenance: dict[str, object] = {"retrieval_sources": list(listed_sources)}
     if fact_status:
         provenance["fact_status"] = fact_status
+    if event_temporal_hint_code:
+        provenance["event_temporal_hint_code"] = event_temporal_hint_code
+    if temporal_hint_code:
+        provenance["temporal_hint_code"] = temporal_hint_code
     diagnostics: dict[str, object] = {
         "retrieval_source": retrieval_source,
         "retrieval_sources": list(listed_sources),

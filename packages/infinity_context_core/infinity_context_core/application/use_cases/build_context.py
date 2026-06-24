@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime
 from time import perf_counter
 
@@ -69,9 +69,6 @@ from infinity_context_core.application.context_ranking import (
 from infinity_context_core.application.context_ranking_reason_policy import (
     ACTIVITY_OBSERVATION_SOURCE_REASONS as _ACTIVITY_OBSERVATION_SOURCE_REASONS,
 )
-from infinity_context_core.application.context_ranking_reason_policy import (
-    PRECISE_TURN_SOURCE_SIBLING_REASONS,
-)
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     has_project_identity_mismatch,
@@ -93,6 +90,27 @@ from infinity_context_core.application.context_snippets import (
     query_snippet_diagnostics,
     query_snippet_score_signals,
     source_refs_with_query_snippet,
+)
+from infinity_context_core.application.context_source_siblings import (
+    _SourceSiblingRank,
+    is_dialogue_visual_reference_source_sibling as _is_dialogue_visual_reference_source_sibling,
+    is_pottery_type_observation_companion as _is_pottery_type_observation_companion,
+    is_precise_source_sibling_turn as _is_precise_source_sibling_turn,
+    is_same_document_answer_companion as _is_same_document_answer_companion,
+    is_visual_continuation_source_sibling as _is_visual_continuation_source_sibling,
+    source_group_seed_turns as _source_group_seed_turns,
+    source_sibling_candidate_rank_key as _source_sibling_candidate_rank_key,
+    source_sibling_companion_extra_item_limit as _source_sibling_companion_extra_item_limit,
+    source_sibling_companion_extra_slot as _source_sibling_companion_extra_slot,
+    source_sibling_group_limit as _source_sibling_group_limit,
+    source_sibling_item_limit as _source_sibling_item_limit,
+    source_sibling_marker_coverage_count as _source_sibling_marker_coverage_count,
+    source_sibling_rank as _source_sibling_rank,
+    source_sibling_relevance_allowed as _source_sibling_relevance_allowed,
+    source_sibling_score as _source_sibling_score,
+    source_sibling_score_cap as _source_sibling_score_cap,
+    source_turn_marker as _source_turn_marker,
+    with_source_sibling_score_signals as _with_source_sibling_score_signals,
 )
 from infinity_context_core.application.context_temporal_query import (
     apply_temporal_query_intent_boosts,
@@ -126,111 +144,7 @@ from infinity_context_core.ports.ids import IdGeneratorPort
 from infinity_context_core.ports.unit_of_work import UnitOfWorkFactoryPort
 
 _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS = (1, -1, 2, -2, 3, -3)
-_SOURCE_GROUP_SIBLING_SCORES = {
-    1: 0.955,
-    2: 0.948,
-    3: 0.935,
-    4: 0.922,
-    5: 0.914,
-}
-_SOURCE_GROUP_PRIMARY_SEED_SCORE = 0.968
-_MAX_SOURCE_GROUPS = 32
-_MAX_SOURCE_SIBLING_GROUPS = 12
-_MAX_SOURCE_GROUP_SIBLING_ITEMS = 32
-_MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS = 6
-_VISUAL_REFERENT_SIBLING_RE = re.compile(
-    r"\b("
-    r"look at this|take a look|here'?s|here is|photo|picture|pic|image|"
-    r"did you see that|see that (?:band|photo|picture|pic|image|show|stage|crowd|"
-    r"painting|drawing)|what'?s the band|what is the band|"
-    r"посмотри|смотри|фото|картинк|изображен"
-    r")\b",
-    re.IGNORECASE,
-)
-_DIALOGUE_VISUAL_REFERENCE_RE = re.compile(
-    r"\b("
-    r"did you see that|see that (?:band|photo|picture|pic|image|show|stage|crowd|"
-    r"painting|drawing)|what'?s the band|what is the band"
-    r")\b",
-    re.IGNORECASE,
-)
-_VISUAL_SOURCE_SIBLING_QUERY_RE = re.compile(
-    r"\b("
-    r"look at|take a look|did you see|see that|photo|picture|pic|image|visual|"
-    r"what'?s the band|what is the band|crowd|stage|concert"
-    r")\b",
-    re.IGNORECASE,
-)
-_VISUAL_SOURCE_SIBLING_REASONS = frozenset(
-    {
-        "decomposition_artifact_evidence",
-        "source_evidence_bridge",
-        "visual_text_evidence_bridge",
-    }
-)
-_EVENT_VISUAL_SOURCE_SIBLING_REASONS = frozenset(
-    {
-        "event_participation_bridge",
-        "lgbtq_pride_event_bridge",
-        "lgbtq_school_event_bridge",
-        "lgbtq_support_group_event_bridge",
-        "transgender_conference_event_bridge",
-        "transgender_poetry_event_bridge",
-        "transgender_youth_center_event_bridge",
-    }
-)
-_PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.976
-_PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS = 6
-_POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.965
-_POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE = re.compile(
-    r"\b("
-    r"pottery|clay|ceramic|bowl|bowls|cup|cups|mug|mugs|pot|pots|"
-    r"sculpture|sculptures|dog\s+face"
-    r")\b",
-    re.IGNORECASE,
-)
-_POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE = re.compile(
-    r"\b("
-    r"kids?|children|workshop|class|made|make|finished|project|hands\s+dirty|"
-    r"creativity|imagination"
-    r")\b",
-    re.IGNORECASE,
-)
-_VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE = re.compile(
-    r"\b(volunteer(?:ed|ing|s)?|shelter|homeless)\b",
-    re.IGNORECASE,
-)
-_VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE = re.compile(
-    r"\b("
-    r"front\s+desk|talks?|compliments?|residents?|bed|food|"
-    r"counsel(?:or|ing)?|coordinator|started\s+volunteering|"
-    r"make\s+a\s+difference|brighten|aunt\s+believed|fulfilling"
-    r")\b",
-    re.IGNORECASE,
-)
-_POST_EVENT_ACTIVITY_SOURCE_SIBLING_RE = re.compile(
-    r"\b(?:road\s*trip|roadtrip)\b(?=.{0,180}\b(?:yesterday|recent|"
-    r"just\s+did|after\s+the\s+(?:road\s*trip|drive)|relax))|"
-    r"\b(?:yesterday|just\s+did|recent|relax)\b(?=.{0,180}\b(?:road\s*trip|roadtrip))|"
-    r"\b(?:hikes?|hiking|trail|mountains?)\b(?=.{0,120}\b(?:picture|pic|"
-    r"photo|kids?|family|recent|yesterday))",
-    re.IGNORECASE | re.DOTALL,
-)
-_RUNNING_REASON_SOURCE_SIBLING_RE = re.compile(
-    r"\b("
-    r"(?:running|run|runs|ran)\b(?=.{0,120}\b(?:destress|de-stress|"
-    r"clear\s+my\s+mind|headspace|farther|longer|mood|boost))|"
-    r"(?:destress|de-stress|clear\s+my\s+mind|headspace|farther|longer)\b"
-    r"(?=.{0,120}\b(?:running|run|runs|ran))|"
-    r"walking\s+or\s+running|got\s+you\s+into\s+running|purple\s+running\s+shoe"
-    r")\b",
-    re.IGNORECASE | re.DOTALL,
-)
 _MAX_AGGREGATION_KEYWORD_ITEMS = 20
-_TURN_SOURCE_ID_RE = re.compile(
-    r"^(?P<group>.+):(?P<dialogue>D\d+):(?P<turn>\d+):turn$",
-    re.IGNORECASE,
-)
 _STRICT_QUERY_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 _DIALOGUE_MARKER_RE = re.compile(r"\bD\d+:\d+\b")
 _COUNT_AGGREGATION_QUERY_RE = re.compile(
@@ -240,42 +154,62 @@ _COUNT_AGGREGATION_QUERY_RE = re.compile(
 _LIST_AGGREGATION_QUERY_RE = re.compile(
     r"\b(?:what|which)\s+"
     r"(?:[\w+.-]+\s+){0,4}"
-    r"(?:items?|events?|activities?|hobbies|instruments?|traits?|places?|books?|"
-    r"songs?|artists?|bands?|foods?|pets?|projects?|tasks?|types?|kinds?)\b|"
+    r"(?:areas?|causes?|cities|countries|events?|activities?|hobbies|"
+    r"instruments?|items?|martial\s+arts|people|places?|shelters?|states?|"
+    r"traits?|books?|songs?|artists?|bands?|foods?|pets?|projects?|tasks?|"
+    r"types?|kinds?)\b|"
     r"\b(?:has|have|did|does)\s+\w{2,40}\s+"
     r"(?:bought|attended|joined|visited|played|shared|mentioned|done|used)\b|"
     r"\b(?:какие|какие\s+именно|что\s+за)\s+"
     r"(?:вещи|события|активности|занятия|инструменты|черты|места|книги|задачи)\b",
     re.IGNORECASE,
 )
+_WHERE_LIST_AGGREGATION_QUERY_RE = re.compile(
+    r"\bwhere\b(?=.{0,100}\b(?:been|friend|friends|go|gone|made|meet|met|"
+    r"vacation(?:ed)?|visited|went)\b)|"
+    r"\bгде\b(?=.{0,100}\b(?:друз|ездил|ездила|ездили|посещал|посещала|"
+    r"посещали|познакомил|познакомила|познакомили)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _AGGREGATION_DIALOGUE_WINDOW_AFTER = 5
 _MAX_AGGREGATION_DIALOGUE_WINDOWS = 4
 _MAX_AGGREGATION_EVIDENCE_TEXT_CHARS = 2400
 _MAX_AGGREGATION_MARKER_COVERAGE_IDS = 24
 _MAX_EXTRA_ACTIVITY_PROMPT_KEYWORD_ITEMS = 80
+_MAX_EXTRA_INVENTORY_PROMPT_KEYWORD_ITEMS = 16
 _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS = 8
+_MIN_CHUNK_LIMIT_FOR_EXTRA_INVENTORY_PROMPT_ITEMS = 8
+_MIN_EXTRA_INVENTORY_PROMPT_DISTINCTIVE_HITS = 4
+_EXTRA_INVENTORY_PROMPT_REASONS = frozenset(
+    {
+        "decomposition_inventory_list",
+        "friend_place_inventory_bridge",
+        "friend_place_shelter_inventory_bridge",
+        "friend_place_gym_inventory_bridge",
+        "friend_place_church_inventory_bridge",
+        "travel_country_inventory_bridge",
+        "cause_education_infrastructure_inventory_bridge",
+        "cause_veterans_inventory_bridge",
+    }
+)
 _ScoredKeywordPromptItem = tuple[int, int, int, float, float, int, str, ContextItem]
 _SOURCE_GROUP_SUFFIXES = frozenset({"events", "observation", "summary"})
 _LOW_SIGNAL_COUNT_AGGREGATION_TERMS = frozenset(
     {"many", "time", "times", "gone", "go", "going", "went"}
 )
-
-
-@dataclass(frozen=True)
-class _SourceGroupSeed:
-    priority: int
-    primary_turn: int
-    turns: frozenset[int]
-    group_level: bool = False
-
-
-@dataclass(frozen=True)
-class _SourceSiblingRank:
-    score: float
-    group_priority: int
-    turn_distance: int
-    turn_delta: int
-    group_level_seed: bool = False
+_LOW_SIGNAL_INVENTORY_AGGREGATION_TERMS = frozenset(
+    {
+        "answer",
+        "evidence",
+        "inventory",
+        "list",
+        "mention",
+        "mentioned",
+        "observed",
+        "option",
+        "options",
+    }
+)
 
 
 class BuildContextUseCase:
@@ -460,6 +394,13 @@ class BuildContextUseCase:
         diagnostics.update(query_expansion_plan.diagnostics())
         diagnostics.update(temporal_query_intent.diagnostics())
         for fact in canonical.facts:
+            if not is_context_fact_visible(
+                fact,
+                query=query,
+                memory_scope_ids=memory_scope_ids,
+                now=now,
+            ):
+                continue
             items.append(_fact_context_item(fact, now=now, query_text=query.query))
         anchors_used = 0
         anchors_used_by_query_intent = 0
@@ -611,6 +552,7 @@ class BuildContextUseCase:
         _record_stage_timing(diagnostics, "keyword_aggregation", stage_started_at)
         diagnostics.update(aggregation_diagnostics)
         items.extend(aggregation_items)
+        aggregation_source_groups = _context_item_aggregation_source_groups(aggregation_items)
         stage_started_at = perf_counter()
         neighbor_items, neighbor_diagnostics = await self._keyword_neighbor_chunk_items(
             query=query,
@@ -622,18 +564,18 @@ class BuildContextUseCase:
         _record_stage_timing(diagnostics, "keyword_neighbors", stage_started_at)
         diagnostics.update(neighbor_diagnostics)
         items.extend(neighbor_items)
-        sibling_seed_chunks = tuple(
+        ranked_keyword_chunks = tuple(
             chunk
-            for _, _, _, _, _, _, chunk in sorted(
-                scored_keyword_chunks,
-                key=lambda item: (
-                    -item[0],
-                    -item[1],
-                    -item[2],
-                    -item[3],
-                    -item[4],
-                    item[5],
+            for _, _, _, _, _, _, chunk in _ranked_keyword_chunk_scores(scored_keyword_chunks)
+        )
+        sibling_seed_chunks = _dedupe_chunks_by_id(
+            (
+                *_prioritized_chunks_for_source_groups(
+                    tuple(used_keyword_chunks),
+                    source_groups=aggregation_source_groups,
                 ),
+                *used_keyword_chunks,
+                *ranked_keyword_chunks,
             )
         )
         stage_started_at = perf_counter()
@@ -950,7 +892,7 @@ class BuildContextUseCase:
                             bool(answer_companion_slot)
                             and answer_companion_slot not in answer_companion_slots
                             and answer_companion_extra_used
-                            < _MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS
+                            < _source_sibling_companion_extra_item_limit()
                         )
                         if len(items) >= max_neighbor_items and not use_answer_companion_extra:
                             skipped += 1
@@ -1010,9 +952,9 @@ class BuildContextUseCase:
         source_groups = _source_group_seed_turns(seed_chunks)
         if not source_groups:
             return (), empty_diagnostics
-        source_groups = dict(tuple(source_groups.items())[:_MAX_SOURCE_SIBLING_GROUPS])
+        source_groups = dict(tuple(source_groups.items())[:_source_sibling_group_limit()])
         max_items = min(
-            _MAX_SOURCE_GROUP_SIBLING_ITEMS,
+            _source_sibling_item_limit(),
             max(8, query.max_chunks * 2),
         )
         candidate_limit = min(
@@ -1113,23 +1055,22 @@ class BuildContextUseCase:
                 chunk=chunk,
                 expansion_reason=expansion_reason,
             )
+            marker_coverage = _source_sibling_marker_coverage_count(
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
             ranked_candidates.append(
                 (
-                    (
-                        0 if precise_turn else 1,
-                        0 if dialogue_visual_reference else 1,
-                        0 if visual_continuation else 1,
-                        0 if observation_companion else 1,
-                        -relevance.distinctive_term_hits,
-                        -relevance.unique_term_hits,
-                        -relevance.hit_ratio,
-                        -score,
-                        rank.group_priority,
-                        rank.turn_distance,
-                        0 if rank.turn_delta > 0 else 1,
-                        chunk.source_external_id,
-                        chunk.sequence,
-                        str(chunk.id),
+                    _source_sibling_candidate_rank_key(
+                        precise_turn=precise_turn,
+                        dialogue_visual_reference=dialogue_visual_reference,
+                        visual_continuation=visual_continuation,
+                        observation_companion=observation_companion,
+                        marker_coverage=marker_coverage,
+                        relevance=relevance,
+                        score=score,
+                        rank=rank,
+                        chunk=chunk,
                     ),
                     str(chunk.id),
                     rank,
@@ -1175,7 +1116,7 @@ class BuildContextUseCase:
                 use_companion_extra_slot = (
                     bool(companion_slot)
                     and companion_slot not in companion_extra_slots
-                    and companion_extra_used < _MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS
+                    and companion_extra_used < _source_sibling_companion_extra_item_limit()
                 )
                 if not use_companion_extra_slot:
                     continue
@@ -1560,318 +1501,6 @@ def _annotate_temporal_relation(
     )
 
 
-def _source_sibling_score(
-    *,
-    rank: _SourceSiblingRank,
-    relevance: QueryRelevance,
-    expansion_query: str,
-    expansion_reason: str,
-    text: str,
-) -> float:
-    relevance_specific = is_chunk_candidate_relevance_sufficient(
-        query=expansion_query,
-        text=text,
-        relevance=relevance,
-    )
-    visual_referent = _is_visual_referent_source_sibling(
-        rank=rank,
-        relevance=relevance,
-        expansion_query=expansion_query,
-        expansion_reason=expansion_reason,
-        text=text,
-    )
-    if not relevance_specific and not visual_referent:
-        return rank.score
-    relevance_boost = min(
-        0.04,
-        relevance.score_boost * 0.16 + relevance.distinctive_term_hits * 0.004,
-    )
-    visual_boost = 0.018 if visual_referent else 0.0
-    score_floor = 0.966 if relevance_specific else 0.958
-    if _is_pottery_type_observation_companion_text(
-        expansion_reason=expansion_reason,
-        text=text,
-    ):
-        score_floor = max(score_floor, 0.982)
-    score = min(0.99, round(max(rank.score, score_floor) + relevance_boost + visual_boost, 4))
-    score_cap = _source_sibling_score_cap(
-        expansion_reason=expansion_reason,
-        relevance=relevance,
-        text=text,
-    )
-    return min(score, score_cap) if score_cap is not None else score
-
-
-def _source_sibling_score_cap(
-    *,
-    expansion_reason: str,
-    relevance: QueryRelevance,
-    text: str,
-) -> float | None:
-    if (
-        expansion_reason in PRECISE_TURN_SOURCE_SIBLING_REASONS
-        and relevance.distinctive_term_hits < _PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS
-    ):
-        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    if (
-        expansion_reason == "pottery_type_bridge"
-        and not _is_pottery_type_source_sibling_strong(text)
-    ):
-        return _POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    if (
-        expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
-        and not _is_running_reason_source_sibling_strong(text)
-    ):
-        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    if (
-        expansion_reason == "volunteer_career_inference_bridge"
-        and not _is_volunteer_career_source_sibling_strong(text)
-    ):
-        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    if (
-        expansion_reason == "post_event_activity_timing_bridge"
-        and not _is_post_event_activity_source_sibling_strong(text)
-    ):
-        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    return None
-
-
-def _is_pottery_type_source_sibling_strong(text: str) -> bool:
-    return (
-        _POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE.search(text) is not None
-        and _POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE.search(text) is not None
-    )
-
-
-def _is_pottery_type_observation_companion(
-    *,
-    chunk: MemoryChunk,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    if not str(chunk.source_external_id).endswith(":observation"):
-        return False
-    return _is_pottery_type_observation_companion_text(
-        expansion_reason=expansion_reason,
-        text=text,
-    )
-
-
-def _is_pottery_type_observation_companion_text(
-    *,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    if expansion_reason != "pottery_type_bridge":
-        return False
-    return _is_pottery_type_source_sibling_strong(text) and "related turns:" in text.lower()
-
-
-def _is_same_document_answer_companion(
-    *,
-    chunk: MemoryChunk,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    return _is_pottery_type_observation_companion(
-        chunk=chunk,
-        expansion_reason=expansion_reason,
-        text=text,
-    )
-
-
-def _source_sibling_companion_extra_slot(*, chunk: MemoryChunk, text: str) -> str:
-    if not str(chunk.source_external_id).endswith(":observation"):
-        return ""
-    markers = tuple(dict.fromkeys(match.group(0) for match in _DIALOGUE_MARKER_RE.finditer(text)))
-    if len(markers) < 2:
-        return ""
-    return f"{chunk.source_external_id}:{markers[0]}:{markers[-1]}"
-
-
-def _is_running_reason_source_sibling_strong(text: str) -> bool:
-    return _RUNNING_REASON_SOURCE_SIBLING_RE.search(text) is not None
-
-
-def _is_volunteer_career_source_sibling_strong(text: str) -> bool:
-    return (
-        _VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE.search(text) is not None
-        and _VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE.search(text) is not None
-    )
-
-
-def _is_post_event_activity_source_sibling_strong(text: str) -> bool:
-    return _POST_EVENT_ACTIVITY_SOURCE_SIBLING_RE.search(text) is not None
-
-
-def _source_sibling_relevance_allowed(
-    *,
-    rank: _SourceSiblingRank,
-    relevance: QueryRelevance,
-    expansion_query: str,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    if expansion_reason == "pottery_type_bridge" and not _is_pottery_type_source_sibling_strong(
-        text
-    ):
-        return False
-    if (
-        expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
-        and not _is_running_reason_source_sibling_strong(text)
-    ):
-        return False
-    if (
-        expansion_reason == "post_event_activity_timing_bridge"
-        and not _is_post_event_activity_source_sibling_strong(text)
-    ):
-        return False
-    return is_chunk_candidate_relevance_sufficient(
-        query=expansion_query,
-        text=text,
-        relevance=relevance,
-    ) or _is_visual_referent_source_sibling(
-        rank=rank,
-        relevance=relevance,
-        expansion_query=expansion_query,
-        expansion_reason=expansion_reason,
-        text=text,
-    )
-
-
-def _is_visual_referent_source_sibling(
-    *,
-    rank: _SourceSiblingRank,
-    relevance: QueryRelevance,
-    expansion_query: str,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    if not _visual_source_sibling_priority_allowed(
-        expansion_query=expansion_query,
-        expansion_reason=expansion_reason,
-    ):
-        return False
-    if rank.turn_distance > 2:
-        return False
-    if relevance.unique_term_hits <= 0 and relevance.distinctive_term_hits <= 0:
-        return False
-    return _VISUAL_REFERENT_SIBLING_RE.search(text) is not None
-
-
-def _is_visual_continuation_source_sibling(
-    *,
-    rank: _SourceSiblingRank,
-    relevance: QueryRelevance,
-    expansion_query: str,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    return (
-        rank.group_level_seed
-        and rank.turn_delta > 0
-        and rank.turn_distance <= 1
-        and _is_visual_referent_source_sibling(
-            rank=rank,
-            relevance=relevance,
-            expansion_query=expansion_query,
-            expansion_reason=expansion_reason,
-            text=text,
-        )
-    )
-
-
-def _is_dialogue_visual_reference_source_sibling(
-    *,
-    rank: _SourceSiblingRank,
-    relevance: QueryRelevance,
-    expansion_query: str,
-    expansion_reason: str,
-    text: str,
-) -> bool:
-    if not _visual_source_sibling_priority_allowed(
-        expansion_query=expansion_query,
-        expansion_reason=expansion_reason,
-    ):
-        return False
-    if not rank.group_level_seed:
-        return False
-    if relevance.unique_term_hits <= 0 and relevance.distinctive_term_hits <= 0:
-        return False
-    return _DIALOGUE_VISUAL_REFERENCE_RE.search(text) is not None
-
-
-def _visual_source_sibling_priority_allowed(
-    *,
-    expansion_query: str,
-    expansion_reason: str,
-) -> bool:
-    return (
-        expansion_reason in _VISUAL_SOURCE_SIBLING_REASONS
-        or expansion_reason in _EVENT_VISUAL_SOURCE_SIBLING_REASONS
-        or _VISUAL_SOURCE_SIBLING_QUERY_RE.search(expansion_query) is not None
-    )
-
-
-def _is_precise_source_sibling_turn(
-    *,
-    chunk: MemoryChunk,
-    expansion_reason: str,
-) -> bool:
-    return (
-        expansion_reason in PRECISE_TURN_SOURCE_SIBLING_REASONS
-        and _source_turn_marker(chunk.source_external_id) is not None
-    )
-
-
-def _with_source_sibling_score_signals(
-    item: ContextItem,
-    *,
-    rank: _SourceSiblingRank,
-    score_cap: float | None = None,
-    dialogue_visual_reference: bool = False,
-    visual_continuation: bool = False,
-) -> ContextItem:
-    after_seed_boost = 0.05 if rank.turn_delta > 0 else 0.0
-    diagnostics = dict(item.diagnostics or {})
-    diagnostics["score_signals"] = {
-        **_score_signals(diagnostics),
-        "source_sibling_after_seed_boost": after_seed_boost,
-        "source_sibling_score_cap": score_cap,
-        "source_sibling_score_cap_applied": 1 if score_cap is not None else 0,
-        "source_sibling_dialogue_visual_reference": 1 if dialogue_visual_reference else 0,
-        "source_sibling_visual_continuation": 1 if visual_continuation else 0,
-        "source_sibling_group_level_seed": 1 if rank.group_level_seed else 0,
-        "source_sibling_group_boost": max(0, _MAX_SOURCE_GROUPS - rank.group_priority),
-        "source_sibling_after_seed": 1 if rank.turn_delta > 0 else 0,
-        "source_sibling_closeness": max(0, 4 - rank.turn_distance),
-        "source_sibling_turn_distance": rank.turn_distance,
-        "source_sibling_group_priority": rank.group_priority,
-    }
-    diagnostics["provenance"] = {
-        **_provenance(diagnostics),
-        "source_sibling_turn_delta": rank.turn_delta,
-        "source_sibling_turn_distance": rank.turn_distance,
-        "source_sibling_group_priority": rank.group_priority,
-        "source_sibling_group_level_seed": rank.group_level_seed,
-        "source_sibling_score_cap_applied": score_cap is not None,
-        "source_sibling_dialogue_visual_reference": dialogue_visual_reference,
-        "source_sibling_visual_continuation": visual_continuation,
-    }
-    return replace(
-        item,
-        score=_apply_source_sibling_score_cap(
-            score=min(0.99, round(item.score + after_seed_boost, 4)),
-            score_cap=score_cap,
-        ),
-        diagnostics=diagnostics,
-    )
-
-
-def _apply_source_sibling_score_cap(*, score: float, score_cap: float | None) -> float:
-    return min(score, score_cap) if score_cap is not None else score
-
-
 def _with_keyword_aggregation_score_signals(
     item: ContextItem,
     *,
@@ -1987,6 +1616,69 @@ def _is_neighbor_chunk_visible(
     return chunk.thread_id is None or str(chunk.thread_id) == str(query.thread_id)
 
 
+def _ranked_keyword_chunk_scores(
+    scored_keyword_chunks: list[tuple[int, int, int, float, float, int, MemoryChunk]],
+) -> tuple[tuple[int, int, int, float, float, int, MemoryChunk], ...]:
+    return tuple(
+        sorted(
+            scored_keyword_chunks,
+            key=lambda item: (
+                -item[0],
+                -item[1],
+                -item[2],
+                -item[3],
+                -item[4],
+                item[5],
+            ),
+        )
+    )
+
+
+def _context_item_aggregation_source_groups(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
+    groups: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        diagnostics = item.diagnostics or {}
+        provenance = diagnostics.get("provenance")
+        raw_group = (
+            provenance.get("keyword_aggregation_source_group")
+            if isinstance(provenance, dict)
+            else None
+        )
+        group = str(raw_group or "").strip()
+        if group and group not in seen:
+            seen.add(group)
+            groups.append(group)
+    return tuple(groups)
+
+
+def _prioritized_chunks_for_source_groups(
+    chunks: tuple[MemoryChunk, ...],
+    *,
+    source_groups: tuple[str, ...],
+) -> tuple[MemoryChunk, ...]:
+    if not chunks or not source_groups:
+        return ()
+    source_group_set = set(source_groups)
+    return tuple(
+        chunk
+        for chunk in chunks
+        if _aggregation_source_group(chunk) in source_group_set
+    )
+
+
+def _dedupe_chunks_by_id(chunks: tuple[MemoryChunk, ...]) -> tuple[MemoryChunk, ...]:
+    selected: list[MemoryChunk] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        chunk_id = str(chunk.id)
+        if chunk_id in seen:
+            continue
+        seen.add(chunk_id)
+        selected.append(chunk)
+    return tuple(selected)
+
+
 def _strict_query_term_hits(*, query: str, text: str) -> int:
     terms = query_terms(query)
     if not terms:
@@ -2027,6 +1719,29 @@ def _selected_keyword_prompt_items(
         item = scored_item[7]
         selected.append(item)
         selected_keys.add((item.item_type, item.item_id))
+    if (
+        limit < _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS
+        and limit < _MIN_CHUNK_LIMIT_FOR_EXTRA_INVENTORY_PROMPT_ITEMS
+    ):
+        return tuple(selected)
+    if limit >= _MIN_CHUNK_LIMIT_FOR_EXTRA_INVENTORY_PROMPT_ITEMS:
+        inventory_extra_count = 0
+        inventory_extra_limit = min(limit, _MAX_EXTRA_INVENTORY_PROMPT_KEYWORD_ITEMS)
+        for scored_item in ordered[limit:]:
+            reason = scored_item[6]
+            if reason not in _EXTRA_INVENTORY_PROMPT_REASONS:
+                continue
+            if scored_item[1] < _MIN_EXTRA_INVENTORY_PROMPT_DISTINCTIVE_HITS:
+                continue
+            item = scored_item[7]
+            key = (item.item_type, item.item_id)
+            if key in selected_keys:
+                continue
+            selected.append(item)
+            selected_keys.add(key)
+            inventory_extra_count += 1
+            if inventory_extra_count >= inventory_extra_limit:
+                break
     if limit < _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS:
         return tuple(selected)
     extra_count = 0
@@ -2088,6 +1803,7 @@ def _keyword_aggregation_chunk_items(
     if query.max_chunks <= 0 or not seed_chunks or not aggregation_kind:
         return (), diagnostics
 
+    query_identity_terms = _aggregation_identity_terms(query.query)
     max_items = min(
         _MAX_AGGREGATION_KEYWORD_ITEMS,
         max(4, query.max_chunks // 2),
@@ -2119,7 +1835,10 @@ def _keyword_aggregation_chunk_items(
             text=chunk_text,
             query_relevance_cache=query_relevance_cache,
         )
-        weighted_query_terms = _weighted_aggregation_query_variant_sets(aggregation_query)
+        weighted_query_terms = _weighted_aggregation_query_variant_sets(
+            aggregation_query,
+            identity_terms=query_identity_terms,
+        )
         weighted_hits, _ = _strict_query_window_match_counts(
             text=chunk_text,
             query_variant_sets=weighted_query_terms,
@@ -2183,7 +1902,11 @@ def _keyword_aggregation_chunk_items(
         group_counts[group] = group_counts.get(group, 0) + 1
         item = _chunk_context_item(
             chunk=chunk,
-            text=_aggregation_evidence_text(query=aggregation_query, text=chunk_text),
+            text=_aggregation_evidence_text(
+                query=aggregation_query,
+                text=chunk_text,
+                identity_terms=query_identity_terms,
+            ),
             retrieval_source="keyword_aggregation_chunks",
             base_score=0.78,
             score=0.985,
@@ -2208,9 +1931,19 @@ def _keyword_aggregation_chunk_items(
 def _keyword_aggregation_query_kind(query: str) -> str:
     if _COUNT_AGGREGATION_QUERY_RE.search(query):
         return "count"
-    if _LIST_AGGREGATION_QUERY_RE.search(query):
+    if _LIST_AGGREGATION_QUERY_RE.search(query) or _WHERE_LIST_AGGREGATION_QUERY_RE.search(query):
         return "list"
     return ""
+
+
+def _aggregation_identity_terms(query: str) -> frozenset[str]:
+    intent = build_query_anchor_intent(query)
+    terms: set[str] = set()
+    for hint in intent.hints:
+        if hint.kind.value != "person":
+            continue
+        terms.update(term for term in hint.canonical_key.split() if term)
+    return frozenset(terms)
 
 
 def _aggregation_query_relevance(
@@ -2292,7 +2025,12 @@ def _aggregation_source_kind_rank(chunk: MemoryChunk) -> int:
     return 2
 
 
-def _aggregation_evidence_text(*, query: str, text: str) -> str:
+def _aggregation_evidence_text(
+    *,
+    query: str,
+    text: str,
+    identity_terms: frozenset[str] = frozenset(),
+) -> str:
     markers = tuple(_DIALOGUE_MARKER_RE.finditer(text))
     if not markers:
         return text
@@ -2300,10 +2038,16 @@ def _aggregation_evidence_text(*, query: str, text: str) -> str:
         query=query,
         text=text,
         markers=markers,
+        identity_terms=identity_terms,
     )
     if multi_window_text:
         return _with_aggregation_marker_coverage(rendered=multi_window_text, full_text=text)
-    bounds = _best_aggregation_dialogue_window(query=query, text=text, markers=markers)
+    bounds = _best_aggregation_dialogue_window(
+        query=query,
+        text=text,
+        markers=markers,
+        identity_terms=identity_terms,
+    )
     if bounds is None:
         match_start = _first_strict_query_match_start(query=query, text=text)
         if match_start is None:
@@ -2357,8 +2101,14 @@ def _multi_window_aggregation_evidence_text(
     query: str,
     text: str,
     markers: tuple[re.Match[str], ...],
+    identity_terms: frozenset[str],
 ) -> str:
-    bounds = _aggregation_dialogue_windows(query=query, text=text, markers=markers)
+    bounds = _aggregation_dialogue_windows(
+        query=query,
+        text=text,
+        markers=markers,
+        identity_terms=identity_terms,
+    )
     if len(bounds) <= 1:
         return ""
     rendered = _render_aggregation_windows(text=text, bounds=bounds)
@@ -2370,8 +2120,12 @@ def _aggregation_dialogue_windows(
     query: str,
     text: str,
     markers: tuple[re.Match[str], ...],
+    identity_terms: frozenset[str],
 ) -> tuple[tuple[int, int], ...]:
-    query_variant_sets = _weighted_aggregation_query_variant_sets(query)
+    query_variant_sets = _weighted_aggregation_query_variant_sets(
+        query,
+        identity_terms=identity_terms,
+    )
     if not query_variant_sets:
         return ()
 
@@ -2455,8 +2209,12 @@ def _best_aggregation_dialogue_window(
     query: str,
     text: str,
     markers: tuple[re.Match[str], ...],
+    identity_terms: frozenset[str],
 ) -> tuple[int, int] | None:
-    query_variant_sets = _weighted_aggregation_query_variant_sets(query)
+    query_variant_sets = _weighted_aggregation_query_variant_sets(
+        query,
+        identity_terms=identity_terms,
+    )
     if not query_variant_sets:
         return None
 
@@ -2509,12 +2267,14 @@ def _first_positive_aggregation_marker_start(
 
 def _weighted_aggregation_query_variant_sets(
     query: str,
+    *,
+    identity_terms: frozenset[str] = frozenset(),
 ) -> tuple[tuple[set[str], float], ...]:
     identity_terms = {
         match.group(0).casefold()
         for match in _STRICT_QUERY_TOKEN_RE.finditer(query)
         if match.group(0)[:1].isupper() and not match.group(0).isupper()
-    }
+    }.union(identity_terms)
     weighted: list[tuple[set[str], float]] = []
     for term in query_terms(query):
         variants = set(_strict_token_variants(term.raw))
@@ -2522,8 +2282,9 @@ def _weighted_aggregation_query_variant_sets(
             continue
         if (
             term.raw.isdigit()
-            or term.raw in identity_terms
+            or term.raw.casefold() in identity_terms
             or variants.intersection(_LOW_SIGNAL_COUNT_AGGREGATION_TERMS)
+            or variants.intersection(_LOW_SIGNAL_INVENTORY_AGGREGATION_TERMS)
         ):
             weight = 0.0
         else:
@@ -2569,144 +2330,6 @@ def _first_strict_query_match_start(*, query: str, text: str) -> int | None:
             if token_variants.intersection(variants):
                 return match.start()
     return None
-
-
-def _source_group_seed_turns(
-    seed_chunks: tuple[MemoryChunk, ...],
-) -> dict[str, _SourceGroupSeed]:
-    groups: dict[str, tuple[int, int, set[int], bool]] = {}
-    for chunk in seed_chunks:
-        marker = _source_turn_marker(chunk.source_external_id)
-        if marker is None:
-            group = _source_session_group(chunk.source_external_id)
-            if group is None:
-                continue
-            if group not in groups:
-                groups[group] = (len(groups), 0, set(), True)
-            else:
-                priority, primary_turn, turns, _ = groups[group]
-                groups[group] = (priority, primary_turn, turns, True)
-            if len(groups) >= _MAX_SOURCE_GROUPS:
-                break
-            continue
-        group, turn = marker
-        if group not in groups:
-            groups[group] = (len(groups), turn, set(), False)
-        priority, primary_turn, turns, group_level = groups[group]
-        turns.add(turn)
-        groups[group] = (priority, primary_turn or turn, turns, group_level)
-        if len(groups) >= _MAX_SOURCE_GROUPS:
-            break
-    return {
-        group: _SourceGroupSeed(
-            priority=priority,
-            primary_turn=primary_turn,
-            turns=frozenset(turns),
-            group_level=group_level,
-        )
-        for group, (priority, primary_turn, turns, group_level) in groups.items()
-    }
-
-
-def _source_session_group(source_external_id: str) -> str | None:
-    source_id = " ".join(str(source_external_id).split())
-    if not source_id:
-        return None
-    parts = source_id.split(":")
-    if len(parts) >= 4 and parts[-1].casefold() in _SOURCE_GROUP_SUFFIXES:
-        group = ":".join(parts[:-1])
-        return group if _source_group_has_session_tail(group) else None
-    return source_id if _source_group_has_session_tail(source_id) else None
-
-
-def _source_group_has_session_tail(source_id: str) -> bool:
-    parts = source_id.split(":")
-    return bool(parts and re.fullmatch(r"session_\d+", parts[-1], re.IGNORECASE))
-
-
-def _source_turn_marker(source_external_id: str) -> tuple[str, int] | None:
-    source_id = " ".join(str(source_external_id).split())
-    if not source_id:
-        return None
-    match = _TURN_SOURCE_ID_RE.match(source_id)
-    if match is None:
-        return None
-    group = match.group("group").strip()
-    if not group or len(group.split(":")) < 3:
-        return None
-    try:
-        turn = int(match.group("turn"))
-    except ValueError:
-        return None
-    return group, turn
-
-
-def _source_sibling_rank(
-    chunk: MemoryChunk,
-    *,
-    source_groups: dict[str, _SourceGroupSeed],
-) -> _SourceSiblingRank | None:
-    marker = _source_turn_marker(chunk.source_external_id)
-    if marker is None:
-        group = _source_session_group(chunk.source_external_id)
-        if group is None:
-            return None
-        seed = source_groups.get(group)
-        if seed is None:
-            return None
-        return _SourceSiblingRank(
-            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE
-            if seed.group_level
-            else _SOURCE_GROUP_SIBLING_SCORES[1],
-            group_priority=seed.priority,
-            turn_distance=0,
-            turn_delta=0,
-            group_level_seed=seed.group_level,
-        )
-    group, turn = marker
-    seed = source_groups.get(group)
-    if seed is None or not seed.turns:
-        if seed is not None and seed.group_level:
-            return _SourceSiblingRank(
-                score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
-                group_priority=seed.priority,
-                turn_distance=0,
-                turn_delta=0,
-                group_level_seed=True,
-            )
-        return None
-    if seed.group_level:
-        return _SourceSiblingRank(
-            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
-            group_priority=seed.priority,
-            turn_distance=0,
-            turn_delta=0,
-            group_level_seed=True,
-        )
-    if turn == seed.primary_turn:
-        return _SourceSiblingRank(
-            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
-            group_priority=seed.priority,
-            turn_distance=0,
-            turn_delta=0,
-        )
-    seed_turns = tuple(seed_turn for seed_turn in seed.turns if seed_turn != turn)
-    if not seed_turns:
-        return None
-    turn_delta = min(
-        (turn - seed_turn for seed_turn in seed_turns),
-        key=lambda delta: (abs(delta), delta < 0),
-    )
-    min_distance = abs(turn_delta)
-    score = _SOURCE_GROUP_SIBLING_SCORES.get(min_distance)
-    if score is None:
-        return None
-    return _SourceSiblingRank(
-        score=score,
-        group_priority=seed.priority,
-        turn_distance=min_distance,
-        turn_delta=turn_delta,
-    )
 
 
 def _score_signals(diagnostics: dict[str, object]) -> dict[str, object]:

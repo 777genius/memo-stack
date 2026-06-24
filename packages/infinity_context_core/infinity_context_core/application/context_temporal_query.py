@@ -15,7 +15,11 @@ from infinity_context_core.application.context_lexical import date_tokens, query
 from infinity_context_core.application.context_query_state_transition import (
     state_transition_query_variants,
 )
+from infinity_context_core.application.context_state_evidence import state_evidence_markers
 from infinity_context_core.application.context_temporal_hints import temporal_hint_codes
+from infinity_context_core.application.context_temporal_metadata import (
+    temporal_hint_code_from_metadata,
+)
 from infinity_context_core.application.dto import ContextItem
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
@@ -34,9 +38,27 @@ _OLD_SOCIAL_RELATION_RE = re.compile(
     r"teammate|teammates)\b",
     re.IGNORECASE,
 )
+_OLD_PREVIOUS_STATE_QUERY_RE = re.compile(
+    r"\b(?:what|which)\s+(?:was|were|is|are)\s+(?:the\s+)?old\b",
+    re.IGNORECASE,
+)
+_PREVIOUS_RELATIVE_TIME_RE = re.compile(
+    r"\b(?:previous|prior)\s+"
+    r"(?:day|night|morning|afternoon|evening|week|weekend|month|quarter|year|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    re.IGNORECASE,
+)
 _CURRENT_PHRASE_RE = re.compile(
     r"\b(?:right\s+now|as\s+of\s+now|at\s+the\s+moment|for\s+now)\b|"
     r"\b(?:прямо\s+сейчас|на\s+данный\s+момент|в\s+данный\s+момент)\b",
+    re.IGNORECASE,
+)
+_RECENT_EVENT_REQUEST_RE = re.compile(
+    r"\b(?:latest|newest|recent|most\s+recent)\s+"
+    r"(?:conversation|call|meeting|chat|dm|message|discussion|sync)\b|"
+    r"\b(?:последн\w*|недавн\w*|свеж\w*)\s+"
+    r"(?:разговор\w*|созвон\w*|встреч\w*|переписк\w*|чат\w*|"
+    r"обсуждени\w*)\b",
     re.IGNORECASE,
 )
 _CURRENT_RECOMMENDATION_RE = re.compile(
@@ -172,15 +194,85 @@ _EVENT_SEQUENCE_CONTEXT_TERMS = frozenset(
         "interviews",
         "meeting",
         "message",
+        "messaged",
+        "messaging",
+        "meetup",
         "review",
+        "roadtrip",
+        "speak",
+        "speaking",
+        "spoke",
         "sync",
+        "trip",
+        "talk",
+        "talked",
+        "talking",
+        "texted",
+        "texting",
+        "workshop",
         "встреча",
         "демо",
         "интервью",
+        "митап",
+        "переписк",
         "переписка",
+        "поездка",
+        "разговор",
+        "разговора",
+        "разговоре",
+        "разговором",
         "ревью",
+        "роудтрип",
         "созвон",
         "чат",
+    }
+)
+_EVENT_SEQUENCE_ANCHOR_STOP_VARIANTS = frozenset(
+    {
+        *_AFTER_TERMS,
+        *_BEFORE_TERMS,
+        *_CHANGE_TERMS,
+        *_CURRENT_TERMS,
+        *_EVENT_SEQUENCE_CONTEXT_TERMS,
+        *_PREVIOUS_TERMS,
+        "about",
+        "and",
+        "did",
+        "does",
+        "during",
+        "for",
+        "from",
+        "happen",
+        "happened",
+        "has",
+        "have",
+        "into",
+        "over",
+        "that",
+        "the",
+        "then",
+        "this",
+        "what",
+        "when",
+        "which",
+        "with",
+        "без",
+        "было",
+        "был",
+        "была",
+        "были",
+        "для",
+        "как",
+        "какой",
+        "какую",
+        "какие",
+        "котор",
+        "момент",
+        "над",
+        "после",
+        "при",
+        "про",
+        "что",
     }
 )
 _SINCE_EVENT_RE = re.compile(
@@ -191,6 +283,15 @@ _SINCE_EVENT_RE = re.compile(
 _UNTIL_EVENT_RE = re.compile(
     r"\b(?:until|up\s+to|right\s+before|immediately\s+before|shortly\s+before)\b|"
     r"\b(?:вплоть\s+до|сразу\s+до|прямо\s+перед)\b",
+    re.IGNORECASE,
+)
+_EVENT_SEQUENCE_ANCHOR_RE = re.compile(
+    r"\b(?:right\s+after|immediately\s+after|shortly\s+after|after|following|since|"
+    r"right\s+before|immediately\s+before|shortly\s+before|before|prior\s+to|until|"
+    r"up\s+to)\b\s+(?P<tail>[^?.!,;:\n]{0,96})|"
+    r"\b(?:с\s+момента|сразу\s+после|прямо\s+после|после|позже|затем|"
+    r"вплоть\s+до|сразу\s+до|прямо\s+перед|перед|раньше|до)\b"
+    r"\s+(?P<ru_tail>[^?.!,;:\n]{0,96})",
     re.IGNORECASE,
 )
 _LAST_WEEK_CHILD_HINTS = frozenset(
@@ -272,6 +373,7 @@ class TemporalQueryIntent:
     before_event: bool
     excludes_stale: bool
     relative_time_hints: tuple[str, ...] = ()
+    event_sequence_terms: tuple[str, ...] = ()
 
     @property
     def include_superseded_review(self) -> bool:
@@ -288,6 +390,7 @@ class TemporalQueryIntent:
                 self.before_event,
                 self.excludes_stale,
                 self.relative_time_hints,
+                self.event_sequence_terms,
             )
         )
 
@@ -317,6 +420,7 @@ class TemporalQueryIntent:
             "temporal_query_excludes_stale": self.excludes_stale,
             "temporal_query_include_superseded_review": (self.include_superseded_review),
             "temporal_query_relative_time_hints": list(self.relative_time_hints),
+            "temporal_query_event_sequence_terms": list(self.event_sequence_terms),
             "temporal_query_intent_reasons": reasons,
         }
 
@@ -343,7 +447,13 @@ def build_temporal_query_intent(query: str) -> TemporalQueryIntent:
         variants.intersection(_CHANGE_TERMS) or "state_transition_request" in variants
     )
     previous_terms = variants.intersection(_PREVIOUS_TERMS)
-    if _AGE_QUERY_RE.search(query) or _OLD_SOCIAL_RELATION_RE.search(query):
+    if _PREVIOUS_RELATIVE_TIME_RE.search(query):
+        previous_terms = previous_terms.difference({"previous", "prior"})
+    if (
+        _AGE_QUERY_RE.search(query)
+        or _OLD_SOCIAL_RELATION_RE.search(query)
+        or not _OLD_PREVIOUS_STATE_QUERY_RE.search(query)
+    ):
         previous_terms = previous_terms.difference({"old"})
     requests_previous = (bool(previous_terms) or no_longer_current_state) and not excludes_stale
     prefers_current = (
@@ -351,17 +461,19 @@ def build_temporal_query_intent(query: str) -> TemporalQueryIntent:
         or still_current_state
         or bool(variants.intersection(_CURRENT_TERMS))
         or bool(_CURRENT_PHRASE_RE.search(query))
+        or bool(_RECENT_EVENT_REQUEST_RE.search(query))
         or bool(_CURRENT_RECOMMENDATION_RE.search(query))
         or (requests_change and not requests_previous)
     ) and not no_longer_current_state
-    after_event = bool(variants.intersection(_AFTER_TERMS)) or _has_since_event_context(
+    after_event = _has_after_event_context(
         query,
         variants,
     )
-    before_event = bool(variants.intersection(_BEFORE_TERMS)) or _has_until_event_context(
+    before_event = _has_before_event_context(
         query,
         variants,
     )
+    event_sequence_terms = _event_sequence_anchor_terms(query) if after_event or before_event else ()
     current_decision = (
         bool(_CURRENT_DECISION_RE.search(query))
         or bool(_CURRENT_DECISION_PROMPT_RE.search(query))
@@ -380,6 +492,7 @@ def build_temporal_query_intent(query: str) -> TemporalQueryIntent:
         before_event=before_event,
         excludes_stale=excludes_stale,
         relative_time_hints=relative_time_hints,
+        event_sequence_terms=event_sequence_terms,
     )
 
 
@@ -409,14 +522,21 @@ def temporal_query_boost_signal(
     if intent.empty:
         return TemporalQueryBoostSignal()
     diagnostics = normalize_context_diagnostics(item.diagnostics)
+    state_markers = state_evidence_markers(item)
     retrieval_source = str(diagnostics.get("retrieval_source") or "")
     provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
     fact_status = str(provenance.get("fact_status") or diagnostics.get("fact_status") or "")
-    is_review_only = diagnostics.get("review_only") is True
-    is_superseded = retrieval_source == "superseded_review" or fact_status == "superseded"
+    is_review_only = state_markers.review_only
+    is_superseded = (
+        retrieval_source == "superseded_review"
+        or fact_status == "superseded"
+        or state_markers.metadata_stale
+    )
     has_temporal_relation = bool(diagnostics.get("temporal_relations"))
     temporal_hint_code = _temporal_hint_code(diagnostics, provenance)
-    if intent.excludes_stale and (is_review_only or is_superseded):
+    if intent.excludes_stale and (
+        is_review_only or is_superseded or state_markers.stale_only
+    ):
         return TemporalQueryBoostSignal(
             boost=-0.12,
             reason="query excludes stale memory",
@@ -455,6 +575,12 @@ def temporal_query_boost_signal(
             reason="query asks what changed and item has temporal relation",
             code="change_temporal_relation",
         )
+    if intent.requests_change and state_markers.text_transition:
+        return TemporalQueryBoostSignal(
+            boost=0.04,
+            reason="query asks what changed and item has state transition text",
+            code="change_state_transition_text",
+        )
     if intent.requests_change and is_superseded:
         return TemporalQueryBoostSignal(
             boost=0.035,
@@ -476,11 +602,23 @@ def temporal_query_boost_signal(
             reason="query asks for previous state evidence",
             code="previous_state_evidence",
         )
+    if intent.requests_previous and state_markers.has_previous_state:
+        return TemporalQueryBoostSignal(
+            boost=0.042,
+            reason="query asks for previous state evidence",
+            code="previous_state_text_evidence",
+        )
     if intent.prefers_current and (is_review_only or is_superseded):
         return TemporalQueryBoostSignal(
             boost=-0.024,
             reason="query prefers current active memory and item is superseded",
             code="current_superseded_conflict",
+        )
+    if intent.prefers_current and state_markers.stale_only:
+        return TemporalQueryBoostSignal(
+            boost=-0.028,
+            reason="query prefers current active memory and item has stale state markers",
+            code="current_stale_text_conflict",
         )
     if intent.prefers_current and not is_review_only and not is_superseded:
         return TemporalQueryBoostSignal(
@@ -544,15 +682,16 @@ def _event_sequence_direction_boost(*, intent: TemporalQueryIntent, text: str) -
         text,
         variants,
     )
+    has_same_event = _event_sequence_terms_match(text, intent.event_sequence_terms)
     if intent.after_event:
-        if has_after:
+        if has_after and has_same_event:
             return 0.026
-        if has_before and not intent.requests_change:
+        if has_before and has_same_event and not intent.requests_change:
             return -0.024
     if intent.before_event:
-        if has_before:
+        if has_before and has_same_event:
             return 0.026
-        if has_after and not intent.requests_change:
+        if has_after and has_same_event and not intent.requests_change:
             return -0.024
     return 0.0
 
@@ -579,6 +718,49 @@ def _query_variant_set(query: str) -> frozenset[str]:
         if len(token) >= 2:
             variants.add(token)
     return frozenset(variants)
+
+
+def _event_sequence_anchor_terms(query: str) -> tuple[str, ...]:
+    seen: dict[str, None] = {}
+    for match in _EVENT_SEQUENCE_ANCHOR_RE.finditer(query):
+        tail = (match.group("tail") or match.group("ru_tail") or "").strip()
+        if not tail:
+            continue
+        for term in query_terms(tail, min_chars=3, max_terms=8):
+            if set(term.variants).intersection(_EVENT_SEQUENCE_ANCHOR_STOP_VARIANTS):
+                continue
+            seen.setdefault(term.raw, None)
+            if len(seen) >= 5:
+                return tuple(seen)
+    return tuple(seen)
+
+
+def _event_sequence_terms_match(text: str, event_terms: tuple[str, ...]) -> bool:
+    if not event_terms:
+        return True
+    variants = _query_variant_set(text)
+    if not variants:
+        return False
+    for term in query_terms(" ".join(event_terms), min_chars=3, max_terms=8):
+        if not variants.intersection(term.variants):
+            return False
+    return True
+
+
+def _has_after_event_context(text: str, variants: frozenset[str]) -> bool:
+    if _has_since_event_context(text, variants):
+        return True
+    return bool(variants.intersection(_AFTER_TERMS)) and bool(
+        variants.intersection(_EVENT_SEQUENCE_CONTEXT_TERMS)
+    )
+
+
+def _has_before_event_context(text: str, variants: frozenset[str]) -> bool:
+    if _has_until_event_context(text, variants):
+        return True
+    return bool(variants.intersection(_BEFORE_TERMS)) and bool(
+        variants.intersection(_EVENT_SEQUENCE_CONTEXT_TERMS)
+    )
 
 
 def _has_since_event_context(text: str, variants: frozenset[str]) -> bool:
@@ -660,8 +842,4 @@ def _temporal_hint_code(
     diagnostics: Mapping[str, object],
     provenance: Mapping[str, object],
 ) -> str:
-    for source in (diagnostics, provenance):
-        value = source.get("event_temporal_hint_code")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    return temporal_hint_code_from_metadata(diagnostics, provenance)

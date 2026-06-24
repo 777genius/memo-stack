@@ -2,6 +2,7 @@ from infinity_context_core.application.anchor_extraction import (
     extract_observed_anchors,
     structured_anchor_metadata_for_label,
 )
+from infinity_context_core.application.context_query_intent import build_query_anchor_intent
 from infinity_context_core.domain.entities import MemoryAnchorKind
 
 
@@ -92,6 +93,17 @@ def test_anchor_extraction_ignores_command_verbs_as_people() -> None:
     assert "open" not in person_keys
 
 
+def test_anchor_extraction_ignores_geographic_adjectives_as_people() -> None:
+    anchors = extract_observed_anchors("What European countries has Maria been to?")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    assert "maria" in person_keys
+    assert "european" not in person_keys
+
+    intent = build_query_anchor_intent("What European countries has Maria been to?")
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == frozenset({"maria"})
+
+
 def test_anchor_extraction_strips_question_modal_prefix_from_person() -> None:
     anchors = extract_observed_anchors("Would Melanie be considered an ally?")
 
@@ -173,6 +185,80 @@ def test_anchor_extraction_structures_activity_life_events() -> None:
         "joined",
         "caroline",
         "last_weekend:1:weekend",
+    ]
+
+
+def test_anchor_extraction_structures_activity_duration_event_metadata() -> None:
+    anchors = extract_observed_anchors(
+        "Maria has volunteered at the homeless shelter for three years. "
+        "Alex has lived in Sweden since 2021."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "maria" in person_keys
+    assert "alex" in person_keys
+    assert "sweden" not in person_keys
+
+    volunteered = events["volunteered with maria for three years"]
+    assert volunteered["event_participant_canonical_key"] == "maria"
+    assert volunteered["event_duration_phrase"] == "for three years"
+    assert volunteered["event_duration_hint_code"] == "duration_for"
+    assert volunteered["event_duration_quantity"] == 3
+    assert volunteered["event_duration_unit"] == "year"
+    assert volunteered["event_identity_terms"] == [
+        "volunteered",
+        "maria",
+        "duration_for:3:year",
+    ]
+
+    lived = events["lived with alex since 2021"]
+    assert lived["event_participant_canonical_key"] == "aleks"
+    assert lived["event_duration_phrase"] == "since 2021"
+    assert lived["event_duration_hint_code"] == "duration_since_year"
+    assert lived["event_duration_quantity"] == 2021
+    assert lived["event_duration_unit"] == "year"
+    assert lived["event_identity_terms"] == [
+        "lived",
+        "aleks",
+        "duration_since_year:2021:year",
+    ]
+
+
+def test_anchor_extraction_structures_activity_recurrence_event_metadata() -> None:
+    anchors = extract_observed_anchors(
+        "Maria volunteers at the shelter every weekend. "
+        "Алекс работает в Atlas два раза в неделю."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    volunteers = events["volunteers with maria every weekend"]
+    assert volunteers["event_recurrence_phrase"] == "every weekend"
+    assert volunteers["event_recurrence_hint_code"] == "recurrence_every"
+    assert volunteers["event_recurrence_quantity"] == 1
+    assert volunteers["event_recurrence_unit"] == "weekend"
+    assert volunteers["event_identity_terms"] == [
+        "volunteers",
+        "maria",
+        "recurrence_every:1:weekend",
+    ]
+
+    works = events["работает с алекс два раза в неделю"]
+    assert works["event_participant_canonical_key"] == "aleks"
+    assert works["event_recurrence_phrase"] == "два раза в неделю"
+    assert works["event_recurrence_hint_code"] == "recurrence_per"
+    assert works["event_recurrence_quantity"] == 2
+    assert works["event_recurrence_unit"] == "week"
+    assert works["event_identity_terms"] == [
+        "rabotaet",
+        "aleks",
+        "recurrence_per:2:week",
     ]
 
 

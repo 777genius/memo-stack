@@ -43,9 +43,24 @@ def test_query_expansion_separates_relocation_destination_from_origin() -> None:
 
 def test_query_expansion_covers_relocation_willingness_inference() -> None:
     plan = build_query_expansion_plan("Would John be open to moving to another country?")
+    willing = build_query_expansion_plan("Would John be willing to relocate abroad?")
+    consider = build_query_expansion_plan("Would John consider relocating abroad?")
+    ready = build_query_expansion_plan("Would John be ready to move internationally?")
 
     assert "military veteran service public office politics" in _expansion_query(
         plan,
+        "relocation_willingness_inference_bridge",
+    )
+    assert "military veteran service public office politics" in _expansion_query(
+        willing,
+        "relocation_willingness_inference_bridge",
+    )
+    assert "military veteran service public office politics" in _expansion_query(
+        consider,
+        "relocation_willingness_inference_bridge",
+    )
+    assert "military veteran service public office politics" in _expansion_query(
+        ready,
         "relocation_willingness_inference_bridge",
     )
     assert "running office again campaign run excited" in _expansion_query(
@@ -54,6 +69,14 @@ def test_query_expansion_covers_relocation_willingness_inference() -> None:
     )
     assert "join military veteran hospital stories" in _expansion_query(
         plan,
+        "military_service_willingness_bridge",
+    )
+    assert "join military veteran hospital stories" in _expansion_query(
+        willing,
+        "military_service_willingness_bridge",
+    )
+    assert "join military veteran hospital stories" in _expansion_query(
+        consider,
         "military_service_willingness_bridge",
     )
 
@@ -72,6 +95,11 @@ def test_query_expansion_covers_patriotic_service_inference() -> None:
 def test_query_expansion_covers_future_conference_and_duration_answers() -> None:
     conference = build_query_expansion_plan("When is Caroline going to the transgender conference?")
     duration = build_query_expansion_plan("How long have Mel and her husband been married?")
+    known_each_other = build_query_expansion_plan("How long has Alex known Maria?")
+    where_met = build_query_expansion_plan("Where did Alex meet Maria?")
+    how_met = build_query_expansion_plan("How did Alex and Maria meet?")
+    russian_where_met = build_query_expansion_plan("Где Алекс познакомился с Марией?")
+    russian_when_met = build_query_expansion_plan("Когда Алекс впервые встретил Марию?")
 
     assert "conference this month going upcoming" in _expansion_query(
         conference,
@@ -80,6 +108,26 @@ def test_query_expansion_covers_future_conference_and_duration_answers() -> None
     assert "years already time flies" in _expansion_query(
         duration,
         "relationship_duration_bridge",
+    )
+    assert "known each other friends relationship since years" in _expansion_query(
+        known_each_other,
+        "relationship_duration_bridge",
+    )
+    assert "relationship origin first met" in _expansion_query(
+        where_met,
+        "relationship_origin_bridge",
+    )
+    assert "introduced known since" in _expansion_query(
+        how_met,
+        "relationship_origin_bridge",
+    )
+    assert "впервые познакомились встретились" in _expansion_query(
+        russian_where_met,
+        "relationship_origin_bridge",
+    )
+    assert "relationship origin first met" in _expansion_query(
+        russian_when_met,
+        "relationship_origin_bridge",
     )
 
 
@@ -179,6 +227,23 @@ def test_query_expansion_covers_support_role_fit_bridge() -> None:
     )
 
 
+def test_query_expansion_covers_trust_support_role_bridge() -> None:
+    plan = build_query_expansion_plan("Would Alex trust Caroline with sensitive issues?")
+
+    assert _expansion_query(plan, "support_role_fit_bridge").startswith("Alex Caroline ")
+    assert "confide confided open opened opening private" in _expansion_query(
+        plan,
+        "support_role_fit_bridge",
+    )
+    assert "sensitive personal anxiety struggles" in _expansion_query(
+        plan,
+        "support_role_fit_bridge",
+    )
+    assert "decomposition_support_role_fit" in {
+        item.reason for item in plan.decompositions
+    }
+
+
 def test_query_expansion_support_role_fit_guard_keeps_career_queries_specific() -> None:
     plan = build_query_expansion_plan("Would Caroline pursue writing as a career option?")
 
@@ -205,6 +270,56 @@ def test_query_expansion_covers_negative_experience_support_bridge() -> None:
     )
 
 
+def test_query_expansion_covers_social_support_network_questions() -> None:
+    support = build_query_expansion_plan("Who supports Caroline?")
+    there_for = build_query_expansion_plan("Who is there for Caroline when things get hard?")
+    helped = build_query_expansion_plan("Who helped Caroline through it?")
+    russian = build_query_expansion_plan("Кто поддерживает Каролину?")
+    russian_past_support = build_query_expansion_plan("Кто поддержал Каролину?")
+    russian_helped = build_query_expansion_plan("Кто помог Каролине?")
+    technical = build_query_expansion_plan("Who supports the OpenAI provider integration?")
+
+    assert _expansion_query(support, "support_network_bridge").startswith("Caroline ")
+    assert "friends family mentors mother father parents coach" in _expansion_query(
+        support,
+        "support_network_bridge",
+    )
+    assert "rocks there for" in _expansion_query(support, "support_network_bridge")
+    assert _expansion_query(there_for, "support_network_bridge").startswith("Caroline ")
+    assert "support system people around" in _expansion_query(
+        there_for,
+        "support_network_bridge",
+    )
+    assert _expansion_query(helped, "support_network_bridge").startswith("Caroline ")
+    assert "helped through hard time" in _expansion_query(
+        helped,
+        "support_network_bridge",
+    )
+    assert _expansion_query(russian, "support_network_bridge").startswith("Каролину ")
+    assert "поддерживает поддержка рядом" in _expansion_query(
+        russian,
+        "support_network_bridge",
+    )
+    assert "мама отец родители тренер" in _expansion_query(
+        russian,
+        "support_network_bridge",
+    )
+    assert _expansion_query(
+        russian_past_support,
+        "support_network_bridge",
+    ).startswith("Каролину ")
+    assert "поддержал поддержала поддержали" in _expansion_query(
+        russian_past_support,
+        "support_network_bridge",
+    )
+    assert _expansion_query(russian_helped, "support_network_bridge").startswith("Каролине ")
+    assert "помог помогла помогли" in _expansion_query(
+        russian_helped,
+        "support_network_bridge",
+    )
+    assert "support_network_bridge" not in {item.reason for item in technical.expansions}
+
+
 def test_query_expansion_covers_adoption_current_goal_bridge() -> None:
     plan = build_query_expansion_plan("Would Caroline want to move back to her home country soon?")
 
@@ -216,6 +331,19 @@ def test_query_expansion_covers_adoption_current_goal_bridge() -> None:
     assert "roof kids children giving back goal" in bridge
     assert milestone_bridge.startswith("Caroline ")
     assert "passed adoption agency interviews" in milestone_bridge
+
+
+def test_query_decomposition_covers_active_commitment_current_goal_evidence() -> None:
+    plan = build_query_expansion_plan("Would Maria move back to Chicago soon?")
+    decompositions = {
+        item.reason: item.query
+        for item in plan.decompositions
+    }
+
+    assert "decomposition_current_preference_or_goal" in decompositions
+    current_goal_query = decompositions["decomposition_current_preference_or_goal"]
+    assert "lease contract signed stay local job role" in current_goal_query
+    assert "school program semester deadline" in current_goal_query
 
 
 def test_query_expansion_covers_visual_symbol_evidence_terms() -> None:
@@ -884,6 +1012,16 @@ def test_query_expansion_skips_camping_detail_for_broad_activity_query() -> None
     assert "camping_detail_bridge" not in {item.reason for item in plan.expansions}
 
 
+def test_query_expansion_skips_event_temporal_bridge_for_generic_after_phrases() -> None:
+    after_work = build_query_expansion_plan("How does Melanie unwind after work?")
+    after_gaming = build_query_expansion_plan(
+        "What alternative career might Nate consider after gaming?"
+    )
+
+    assert "after_event_temporal_bridge" not in {item.reason for item in after_work.expansions}
+    assert "after_event_temporal_bridge" not in {item.reason for item in after_gaming.expansions}
+
+
 def test_query_expansion_splits_broad_attribute_questions_into_facets() -> None:
     plan = build_query_expansion_plan("What attributes describe John?")
     reasons = {item.reason for item in plan.expansions}
@@ -1208,6 +1346,8 @@ def test_query_expansion_covers_conversational_transcript_wording() -> None:
         "Что Мария решила когда переписывалась с Сергеем про Атлас?"
     )
     russian_talk = build_query_expansion_plan("С кем Алекс говорил про Atlas?")
+    russian_meeting = build_query_expansion_plan("Что обсуждали на недавней встрече с Алексом?")
+    russian_chat = build_query_expansion_plan("Что было в последнем чате про Atlas?")
 
     assert "transcript conversation chat message" in _expansion_query(
         spoke,
@@ -1229,6 +1369,10 @@ def test_query_expansion_covers_conversational_transcript_wording() -> None:
         dm,
         "conversation_transcript_evidence_bridge",
     )
+    assert "covered centered topic agenda" in _expansion_query(
+        dm,
+        "conversation_transcript_evidence_bridge",
+    )
     assert (
         dm.diagnostics()["query_expansion_reasons"].count("conversation_transcript_evidence_bridge")
         == 1
@@ -1239,6 +1383,18 @@ def test_query_expansion_covers_conversational_transcript_wording() -> None:
     )
     assert "транскрипт разговор переписка созвон" in _expansion_query(
         russian_talk,
+        "conversation_transcript_evidence_bridge",
+    )
+    assert "покрыли тема повестка" in _expansion_query(
+        russian_talk,
+        "conversation_transcript_evidence_bridge",
+    )
+    assert "транскрипт разговор встреча созвон" in _expansion_query(
+        russian_meeting,
+        "conversation_transcript_evidence_bridge",
+    )
+    assert "транскрипт разговор переписка созвон" in _expansion_query(
+        russian_chat,
         "conversation_transcript_evidence_bridge",
     )
 
@@ -1260,15 +1416,45 @@ def test_query_expansion_covers_source_evidence_bridge() -> None:
 
 def test_query_expansion_covers_russian_multimodal_evidence_bridges() -> None:
     video = build_query_expansion_plan("Что Алекс сказал в видео про запуск?")
+    clip = build_query_expansion_plan("Что Алекс сказал в ролике про Atlas?")
+    video_recording = build_query_expansion_plan("Что на видеозаписи про Atlas?")
+    voice = build_query_expansion_plan("Что Алекс сказал в голосовом про Atlas?")
+    audio_recording = build_query_expansion_plan("Расшифруй аудиозапись про Atlas")
     screenshot = build_query_expansion_plan("Что написано на скриншоте?")
+    picture = build_query_expansion_plan("Прочитай текст на картинке Atlas")
+    short_screen = build_query_expansion_plan("Что на скрине про Atlas?")
 
     assert "транскрипт сказал сказала" in _expansion_query(
         video,
         "video_transcript_evidence_bridge",
     )
+    assert "транскрипт сказал сказала" in _expansion_query(
+        clip,
+        "video_transcript_evidence_bridge",
+    )
+    assert "транскрипт сказал сказала" in _expansion_query(
+        video_recording,
+        "video_transcript_evidence_bridge",
+    )
+    assert "транскрипт речь голос" in _expansion_query(
+        voice,
+        "audio_transcript_evidence_bridge",
+    )
+    assert "транскрипт речь голос" in _expansion_query(
+        audio_recording,
+        "audio_transcript_evidence_bridge",
+    )
     screenshot_expansion = _expansion_query(screenshot, "visual_text_evidence_bridge")
     assert "ocr" in screenshot_expansion
     assert "текст написано" in screenshot_expansion
+    assert "текст написано" in _expansion_query(
+        picture,
+        "visual_text_evidence_bridge",
+    )
+    assert "текст написано" in _expansion_query(
+        short_screen,
+        "visual_text_evidence_bridge",
+    )
 
 
 def test_query_expansion_covers_generic_ally_inference_bridge() -> None:
@@ -1393,10 +1579,10 @@ def test_query_expansion_covers_russian_temporal_change_bridges() -> None:
         still_current,
         "current_state_temporal_bridge",
     )
-    assert "изменилось изменили стало" in _expansion_query(
-        changed,
-        "change_over_time_bridge",
-    )
+    change_query = _expansion_query(changed, "change_over_time_bridge")
+    assert "изменилось изменили" in change_query
+    assert "сменился сменили заменили" in change_query
+    assert "стало раньше сейчас" in change_query
     assert "после позже затем" in _expansion_query(
         changed,
         "after_event_temporal_bridge",
@@ -1757,6 +1943,171 @@ def test_best_query_relevance_uses_activity_participation_for_partake_query() ->
     assert pottery.distinctive_term_hits >= 6
 
 
+def test_best_query_relevance_uses_inventory_list_for_travel_places() -> None:
+    plan = build_query_expansion_plan("What European countries has Maria been to?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D13:24 Maria visited Spain on a school trip. "
+            "D8:15 Maria went to England and loved traveling abroad."
+        ),
+    )
+
+    assert reason == "travel_country_inventory_bridge"
+    assert relevance.distinctive_term_hits >= 6
+
+
+def test_best_query_relevance_uses_travel_country_inventory_bridge() -> None:
+    plan = build_query_expansion_plan("What European countries has Maria been to?")
+
+    expansion = _expansion_query(plan, "travel_country_inventory_bridge")
+    assert expansion.startswith("Maria ")
+    assert "European Maria" not in expansion
+    assert "England Spain abroad solo trip travel visited went" in expansion
+
+    _, spain_reason, spain_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D13:24 Maria: Last year I took a solo trip and took this pic in Spain."
+        ),
+    )
+    _, england_reason, england_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D8:15 Maria: I got the idea from that trip to England a few years ago."
+        ),
+    )
+
+    assert spain_reason == "travel_country_inventory_bridge"
+    assert spain_relevance.distinctive_term_hits >= 4
+    assert england_reason == "travel_country_inventory_bridge"
+    assert england_relevance.distinctive_term_hits >= 3
+
+
+def test_best_query_relevance_uses_inventory_list_for_shelters_and_causes() -> None:
+    shelter_plan = build_query_expansion_plan("What shelters does Maria volunteer at?")
+    cause_plan = build_query_expansion_plan(
+        "What causes does John feel passionate about supporting?"
+    )
+
+    _, shelter_reason, shelter_relevance = best_query_relevance(
+        shelter_plan,
+        text=(
+            "D2:1 Maria volunteers at the homeless shelter. "
+            "D11:10 She also started at the dog shelter."
+        ),
+    )
+    _, cause_reason, cause_relevance = best_query_relevance(
+        cause_plan,
+        text=(
+            "D15:3 John feels passionate about supporting veterans, schools, "
+            "and infrastructure in his community."
+        ),
+    )
+
+    assert shelter_reason == "decomposition_inventory_list"
+    assert shelter_relevance.distinctive_term_hits >= 7
+    assert cause_reason == "cause_veterans_inventory_bridge"
+    assert cause_relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_cause_inventory_bridges() -> None:
+    plan = build_query_expansion_plan(
+        "What causes does John feel passionate about supporting?"
+    )
+
+    assert "education reform infrastructure development" in _expansion_query(
+        plan,
+        "cause_education_infrastructure_inventory_bridge",
+    )
+    assert "veterans rights passionate support" in _expansion_query(
+        plan,
+        "cause_veterans_inventory_bridge",
+    )
+
+    _, education_reason, education_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D9:8 John: Improving education and infrastructure is particularly "
+            "interesting to me. Related turns: D9:10 D9:12."
+        ),
+    )
+    _, reform_reason, reform_relevance = best_query_relevance(
+        plan,
+        text="D12:5 John focused on education reform and infrastructure development.",
+    )
+    _, veterans_reason, veterans_relevance = best_query_relevance(
+        plan,
+        text="D15:3 John feels passionate about supporting veterans and their rights.",
+    )
+
+    assert education_reason == "cause_education_infrastructure_inventory_bridge"
+    assert education_relevance.distinctive_term_hits >= 7
+    assert reform_reason == "cause_education_infrastructure_inventory_bridge"
+    assert reform_relevance.distinctive_term_hits >= 5
+    assert veterans_reason == "cause_veterans_inventory_bridge"
+    assert veterans_relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_inventory_list_for_where_place_lists() -> None:
+    plan = build_query_expansion_plan("Where has Maria made friends?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D2:1 Maria made friends at the homeless shelter. "
+            "D14:10 Maria met more friends at church and the gym."
+        ),
+    )
+
+    assert reason in {
+        "friend_place_inventory_bridge",
+        "friend_place_shelter_inventory_bridge",
+        "friend_place_gym_inventory_bridge",
+        "friend_place_church_inventory_bridge",
+    }
+    assert relevance.distinctive_term_hits >= 6
+
+
+def test_best_query_relevance_uses_friend_place_inventory_bridge() -> None:
+    plan = build_query_expansion_plan("Where has Maria made friends?")
+
+    expansion_reasons = {item.reason for item in plan.expansions}
+    assert {
+        "friend_place_inventory_bridge",
+        "friend_place_shelter_inventory_bridge",
+        "friend_place_gym_inventory_bridge",
+        "friend_place_church_inventory_bridge",
+    }.issubset(expansion_reasons)
+
+    _, gym_reason, gym_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D19:1 Maria joined a gym last week. It has been super positive "
+            "with supportive people and a welcoming atmosphere."
+        ),
+    )
+    _, church_reason, church_relevance = best_query_relevance(
+        plan,
+        text="D14:10 Maria joined a nearby church to feel closer to a community and faith.",
+    )
+    _, shelter_reason, shelter_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D2:1 Maria donated her old car to a homeless shelter where she volunteers "
+            "and met fellow volunteers."
+        ),
+    )
+
+    assert gym_reason == "friend_place_gym_inventory_bridge"
+    assert gym_relevance.distinctive_term_hits >= 5
+    assert church_reason == "friend_place_church_inventory_bridge"
+    assert church_relevance.distinctive_term_hits >= 4
+    assert shelter_reason == "friend_place_shelter_inventory_bridge"
+    assert shelter_relevance.distinctive_term_hits >= 5
+
+
 def test_best_query_relevance_uses_activity_visual_selfcare_bridge() -> None:
     plan = build_query_expansion_plan("What activities does Melanie partake in?")
 
@@ -1817,6 +2168,20 @@ def test_best_query_relevance_bridges_classical_music_preferences() -> None:
             "D15:28 Melanie: I'm a fan of both classical like Bach and Mozart, "
             "as well as modern music like Ed Sheeran's Perfect."
         ),
+    )
+
+    assert reason == "classical_music_preference_bridge"
+    assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_bridges_negative_classical_music_preferences() -> None:
+    plan = build_query_expansion_plan(
+        'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    )
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="Melanie avoids classical music and dislikes orchestra concerts.",
     )
 
     assert reason == "classical_music_preference_bridge"

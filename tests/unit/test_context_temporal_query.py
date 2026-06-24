@@ -39,6 +39,24 @@ def test_temporal_query_intent_detects_current_and_stale_exclusion() -> None:
     ]
 
 
+def test_temporal_query_intent_detects_latest_event_queries() -> None:
+    english_latest = build_temporal_query_intent("What was the latest conversation with Alex?")
+    english_recent = build_temporal_query_intent("What happened in the recent sync?")
+    russian_last_call = build_temporal_query_intent("Что было на последнем созвоне с Алексом?")
+    russian_recent_meeting = build_temporal_query_intent(
+        "Что обсуждали на недавней встрече с Алексом?"
+    )
+    russian_fresh_chat = build_temporal_query_intent("Что было в свежем чате по Атласу?")
+
+    assert english_latest.prefers_current is True
+    assert english_recent.prefers_current is True
+    assert russian_last_call.prefers_current is True
+    assert russian_recent_meeting.prefers_current is True
+    assert russian_fresh_chat.prefers_current is True
+    assert russian_last_call.relative_time_hints == ()
+    assert russian_recent_meeting.relative_time_hints == ()
+
+
 def test_temporal_query_intent_detects_still_and_no_longer_update_language() -> None:
     still_valid = build_temporal_query_intent("Which Atlas provider is still valid?")
     still_recommended = build_temporal_query_intent("What option remains recommended?")
@@ -94,6 +112,7 @@ def test_temporal_query_intent_detects_current_recommendation_queries() -> None:
 def test_temporal_query_intent_detects_change_and_previous_state() -> None:
     changed = build_temporal_query_intent("What changed after the meeting with Alex?")
     previous = build_temporal_query_intent("What was the previous Atlas plan before the call?")
+    prior_plan = build_temporal_query_intent("What was the prior Atlas plan before the call?")
     old_plan = build_temporal_query_intent("What was the old Atlas plan?")
     stale = build_temporal_query_intent("Which memory is stale for Atlas?")
     outdated = build_temporal_query_intent("Which Atlas note is outdated?")
@@ -106,6 +125,7 @@ def test_temporal_query_intent_detects_change_and_previous_state() -> None:
     switch_setting = build_temporal_query_intent("Which switch setting did Alex mention?")
     age = build_temporal_query_intent("How old is Alex?")
     old_friend = build_temporal_query_intent("Who is Alex's old friend from school?")
+    old_endpoint = build_temporal_query_intent("CONTEXT_SUPERSEDED_REVIEW_MARKER old endpoint")
 
     assert changed.requests_change is True
     assert changed.after_event is True
@@ -113,6 +133,9 @@ def test_temporal_query_intent_detects_change_and_previous_state() -> None:
     assert previous.requests_previous is True
     assert previous.before_event is True
     assert previous.include_superseded_review is True
+    assert prior_plan.requests_previous is True
+    assert prior_plan.before_event is True
+    assert prior_plan.include_superseded_review is True
     assert old_plan.requests_previous is True
     assert old_plan.include_superseded_review is True
     assert stale.requests_previous is True
@@ -137,28 +160,61 @@ def test_temporal_query_intent_detects_change_and_previous_state() -> None:
     assert age.include_superseded_review is False
     assert old_friend.requests_previous is False
     assert old_friend.include_superseded_review is False
+    assert old_endpoint.requests_previous is False
+    assert old_endpoint.include_superseded_review is False
 
 
 def test_temporal_query_intent_detects_since_and_until_event_sequences() -> None:
     since_call = build_temporal_query_intent("What changed since the Atlas call?")
     until_review = build_temporal_query_intent("What did Alex decide until the review?")
+    after_roadtrip = build_temporal_query_intent("What happened after the roadtrip?")
+    after_work = build_temporal_query_intent("How does Melanie unwind after work?")
+    after_gaming = build_temporal_query_intent(
+        "What alternative career might Nate consider after gaming?"
+    )
     russian_since = build_temporal_query_intent("Что изменилось с момента созвона по Атласу?")
     russian_until = build_temporal_query_intent("Что было вплоть до ревью?")
+    russian_after_work = build_temporal_query_intent("Как Мелани расслабляется после работы?")
     causal_since = build_temporal_query_intent("Since Alex is busy, what is current?")
+    after_talking = build_temporal_query_intent(
+        "What did Alex decide after talking with Sam about Atlas?"
+    )
+    after_speaking = build_temporal_query_intent(
+        "What did Alex decide after speaking with Sam about Atlas?"
+    )
+    after_messaging = build_temporal_query_intent(
+        "What did Alex decide after messaging Sam about Atlas?"
+    )
+    russian_after_talk = build_temporal_query_intent(
+        "Что Алекс решил после разговора с Сергеем по Атласу?"
+    )
 
     assert since_call.after_event is True
     assert since_call.requests_change is True
+    assert after_roadtrip.after_event is True
+    assert after_work.after_event is False
+    assert after_gaming.after_event is False
     assert russian_since.after_event is True
     assert russian_since.requests_change is True
     assert until_review.before_event is True
     assert russian_until.before_event is True
+    assert russian_after_work.after_event is False
     assert causal_since.after_event is False
     assert causal_since.before_event is False
+    assert after_talking.after_event is True
+    assert after_talking.event_sequence_terms == ("sam", "atlas")
+    assert after_speaking.after_event is True
+    assert after_speaking.event_sequence_terms == ("sam", "atlas")
+    assert after_messaging.after_event is True
+    assert after_messaging.event_sequence_terms == ("sam", "atlas")
+    assert russian_after_talk.after_event is True
+    assert russian_after_talk.event_sequence_terms == ("сергеем", "атласу")
 
 
 def test_temporal_query_intent_detects_relative_time_hints() -> None:
     last_week = build_temporal_query_intent("What did Alex say last week?")
     previous_week = build_temporal_query_intent("What did Alex say previous week?")
+    prior_week = build_temporal_query_intent("What did Alex say prior week?")
     hours_ago = build_temporal_query_intent("What did Alex say 2 hours ago?")
     word_hours_ago = build_temporal_query_intent("What did Alex say two hours ago?")
     word_weeks_ago = build_temporal_query_intent("What did Alex say two weeks ago?")
@@ -197,6 +253,11 @@ def test_temporal_query_intent_detects_relative_time_hints() -> None:
 
     assert last_week.relative_time_hints == ("last_week",)
     assert previous_week.relative_time_hints == ("last_week",)
+    assert previous_week.requests_previous is False
+    assert previous_week.include_superseded_review is False
+    assert prior_week.relative_time_hints == ("last_week",)
+    assert prior_week.requests_previous is False
+    assert prior_week.include_superseded_review is False
     assert hours_ago.relative_time_hints == ("hours_ago",)
     assert word_hours_ago.relative_time_hints == ("hours_ago",)
     assert word_weeks_ago.relative_time_hints == ("weeks_ago",)
@@ -319,6 +380,24 @@ def test_temporal_query_boosts_matching_event_temporal_hint() -> None:
     assert boosted[1].score == 0.674
     assert boosted[1].diagnostics["temporal_query_intent_reason"] == (
         "query relative time conflicts with item event window"
+    )
+
+
+def test_temporal_query_boosts_matching_temporal_hint_alias() -> None:
+    intent = build_temporal_query_intent("What did Alex say last week?")
+    matched = _item(
+        "matched",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        temporal_hint_code="last_week",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((matched,), intent=intent)
+
+    assert boosted[0].score == 0.732
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query relative time matches item event window"
     )
 
 
@@ -627,6 +706,61 @@ def test_temporal_query_boosts_matching_after_event_direction() -> None:
     )
 
 
+def test_temporal_query_requires_same_event_identity_for_direction_boost() -> None:
+    intent = build_temporal_query_intent("What did Alex decide after the Atlas call?")
+    atlas = _item(
+        "atlas",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="After the Atlas call, Alex decided to wait for invoice approval.",
+    )
+    stripe = _item(
+        "stripe",
+        score=0.72,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="After the Stripe call, Alex decided to change billing retries.",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((atlas, stripe), intent=intent)
+
+    assert intent.event_sequence_terms == ("atlas",)
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query asks for after-event sequence and item matches direction"
+    )
+    assert "temporal_query_intent_reason" not in boosted[1].diagnostics
+    assert boosted[0].score == 0.726
+    assert boosted[1].score == 0.72
+
+
+def test_temporal_query_only_conflicts_same_event_identity() -> None:
+    intent = build_temporal_query_intent("What did Alex decide after the Atlas call?")
+    atlas_before = _item(
+        "atlas_before",
+        score=0.72,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="Before the Atlas call, Alex was still considering launch options.",
+    )
+    stripe_before = _item(
+        "stripe_before",
+        score=0.72,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="Before the Stripe call, Alex was still considering billing options.",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((atlas_before, stripe_before), intent=intent)
+
+    assert boosted[0].score == 0.696
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query asks for after-event sequence and item conflicts with direction"
+    )
+    assert boosted[1].score == 0.72
+    assert "temporal_query_intent_reason" not in boosted[1].diagnostics
+
+
 def test_temporal_query_boosts_matching_since_event_direction() -> None:
     intent = build_temporal_query_intent("What changed since the Atlas call?")
     after_item = _item(
@@ -650,6 +784,69 @@ def test_temporal_query_boosts_matching_since_event_direction() -> None:
     assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
         "query asks for after-event sequence and item matches direction"
     )
+
+
+def test_temporal_query_matches_conversational_after_event_identity() -> None:
+    intent = build_temporal_query_intent(
+        "What did Alex decide after talking with Sam about Atlas?"
+    )
+    matched = _item(
+        "matched",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text=(
+            "After talking with Sam about Atlas, Alex decided to wait for "
+            "invoice approval."
+        ),
+    )
+    distractor = _item(
+        "distractor",
+        score=0.72,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text=(
+            "After talking with Priya about Stripe, Alex changed billing retries."
+        ),
+    )
+
+    boosted = apply_temporal_query_intent_boosts((matched, distractor), intent=intent)
+
+    assert intent.event_sequence_terms == ("sam", "atlas")
+    assert boosted[0].score == 0.726
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query asks for after-event sequence and item matches direction"
+    )
+    assert boosted[1].score == 0.72
+    assert "temporal_query_intent_reason" not in boosted[1].diagnostics
+
+
+def test_temporal_query_matches_russian_event_identity_for_direction_boost() -> None:
+    intent = build_temporal_query_intent("Что Алекс решил после созвона по Атласу?")
+    atlas = _item(
+        "atlas",
+        score=0.7,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="После созвона по Атласу Алекс выбрал новый план.",
+    )
+    beta = _item(
+        "beta",
+        score=0.72,
+        retrieval_source="canonical_anchors",
+        fact_status="active",
+        text="После созвона по Бете Алекс изменил таймлайн.",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((atlas, beta), intent=intent)
+
+    assert intent.event_sequence_terms == ("атласу",)
+    assert boosted[0].score == 0.726
+    assert boosted[0].diagnostics["temporal_query_intent_reason"] == (
+        "query asks for after-event sequence and item matches direction"
+    )
+    assert boosted[1].score == 0.72
+    assert "temporal_query_intent_reason" not in boosted[1].diagnostics
 
 
 def test_temporal_query_boosts_matching_russian_before_event_direction() -> None:
@@ -720,6 +917,64 @@ def test_temporal_query_boost_signal_exposes_reusable_reason_code() -> None:
     assert signal.code == "previous_state_evidence"
 
 
+def test_temporal_query_uses_plain_text_stale_state_without_metadata() -> None:
+    intent = build_temporal_query_intent("Which Atlas provider is no longer valid?")
+    active = _item(
+        "active_provider",
+        score=0.72,
+        retrieval_source="postgres_facts",
+        fact_status="active",
+        text="Atlas provider remains valid and active: OpenAI.",
+    )
+    stale_text = _item(
+        "stale_text_provider",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        fact_status="",
+        text="LocalAI is no longer valid for Atlas after the provider switch.",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((active, stale_text), intent=intent)
+    boosted_stale = next(item for item in boosted if item.item_id == "stale_text_provider")
+    boosted_active = next(item for item in boosted if item.item_id == "active_provider")
+
+    assert boosted_stale.score > boosted_active.score
+    assert boosted_stale.diagnostics["temporal_query_intent_reason"] == (
+        "query asks for previous state evidence"
+    )
+    assert (
+        boosted_stale.diagnostics["score_signals"]["temporal_query_intent_boost"]
+        == 0.042
+    )
+
+
+def test_temporal_query_demotes_plain_text_stale_state_for_current_query() -> None:
+    intent = build_temporal_query_intent("Which Atlas provider is still valid?")
+    active = _item(
+        "active_provider",
+        score=0.7,
+        retrieval_source="postgres_facts",
+        fact_status="active",
+        text="Atlas provider remains valid and active: OpenAI.",
+    )
+    stale_text = _item(
+        "stale_text_provider",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        fact_status="",
+        text="LocalAI is no longer valid for Atlas after the provider switch.",
+    )
+
+    boosted = apply_temporal_query_intent_boosts((active, stale_text), intent=intent)
+    boosted_stale = next(item for item in boosted if item.item_id == "stale_text_provider")
+    boosted_active = next(item for item in boosted if item.item_id == "active_provider")
+
+    assert boosted_active.score > boosted_stale.score
+    assert boosted_stale.diagnostics["temporal_query_intent_reason"] == (
+        "query prefers current active memory and item has stale state markers"
+    )
+
+
 def test_temporal_query_prefers_active_for_current_decision_query() -> None:
     intent = build_temporal_query_intent("What did I decide to use?")
     active = _item(
@@ -755,11 +1010,14 @@ def _item(
     fact_status: str,
     review_only: bool = False,
     event_temporal_hint_code: str | None = None,
+    temporal_hint_code: str | None = None,
     text: str | None = None,
 ) -> ContextItem:
     provenance = {"fact_status": fact_status}
     if event_temporal_hint_code:
         provenance["event_temporal_hint_code"] = event_temporal_hint_code
+    if temporal_hint_code:
+        provenance["temporal_hint_code"] = temporal_hint_code
     return ContextItem(
         item_id=item_id,
         item_type="fact",

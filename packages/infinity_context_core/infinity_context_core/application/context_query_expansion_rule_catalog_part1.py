@@ -1,0 +1,612 @@
+"""Static query expansion rule catalog part 1."""
+
+from __future__ import annotations
+
+from infinity_context_core.application import context_query_expansion_rule_terms as _terms
+from infinity_context_core.application.context_query_personal_fact_expansions import (
+    PERSONAL_FACT_EXPANSION_RULES,
+)
+
+EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
+    *PERSONAL_FACT_EXPANSION_RULES,
+    (
+            frozenset({"identity"}),
+            (
+                "identity transgender trans woman transition gender identity true self "
+                "pride flag mural support group stories accepted embrace myself"
+            ),
+            "identity_bridge",
+        ),
+    (
+            frozenset({"relationship", "status"}),
+            (
+                "relationship status single parent breakup partner married husband wife "
+                "spouse friends family mentors rocks support system known friends home "
+                "country tough breakup relationship love kids children challenge make "
+                "family thrilled"
+            ),
+            "relationship_status_bridge",
+        ),
+    (
+            frozenset({"where", "meet"}),
+            (
+                "relationship origin first met meet meeting introduced known since "
+                "where when how at in during through school college work event place"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"when", "meet"}),
+            (
+                "relationship origin first met meet meeting introduced known since "
+                "where when how at in during through school college work event date"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"how", "meet"}),
+            (
+                "relationship origin first met meet meeting introduced known since "
+                "where when how at in during through school college work event friend"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"first", "met"}),
+            (
+                "relationship origin first met meet meeting introduced known since "
+                "where when how at in during through school college work event date"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"где", "познакомились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие место relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"когда", "познакомились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие дата relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"где", "встретились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие место relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"когда", "встретились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие дата relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"как", "встретились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие место relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"как", "познакомились"}),
+            (
+                "где когда как впервые познакомились встретились знакомы с школа "
+                "университет колледж работа событие место relationship origin first met"
+            ),
+            "relationship_origin_bridge",
+        ),
+    (
+            frozenset({"why"}),
+            (
+                "why reason because motivation motivated made difference realized "
+                "indicates showed explains supporting evidence journey support care "
+                "help decided chose want wants passionate"
+            ),
+            "motivation_reason_bridge",
+        ),
+    (
+            frozenset({"почему"}),
+            (
+                "почему причина потому что мотивация объясняет показывает доказательство "
+                "поддержка решил решила хочет why reason because evidence"
+            ),
+            "motivation_reason_bridge",
+        ),
+    (
+            frozenset({"start", "store"}),
+            (
+                "started business own store online clothing store job loss lost job "
+                "Door Dash doordash banker fashion trends unique pieces blend dance "
+                "fashion creative dream passionate"
+            ),
+            "business_start_reason_bridge",
+        ),
+    (
+            frozenset({"clothing", "store"}),
+            (
+                "started business own store online clothing store job loss lost job "
+                "Door Dash doordash banker fashion trends unique pieces blend dance "
+                "fashion creative dream passionate"
+            ),
+            "business_start_reason_bridge",
+        ),
+    (
+            frozenset({"business", "start"}),
+            (
+                "started business own store online clothing store job loss lost job "
+                "Door Dash doordash banker fashion trends unique pieces blend dance "
+                "fashion creative dream passionate"
+            ),
+            "business_start_reason_bridge",
+        ),
+    (
+            frozenset({"shelter", "girl"}),
+            (
+                "shelter little girl sitting alone sad no other family comfort "
+                "listening ear laughed talk volunteer event help"
+            ),
+            "shelter_comfort_reason_bridge",
+        ),
+    (
+            frozenset({"charity", "organization"}),
+            (
+                "charity organization sponsorship brand Nike Gatorade Under Armour "
+                "basketball shoe gear deal work with prominent make difference away "
+                "from court give back inspire people youth sports disadvantaged kids"
+            ),
+            "charity_brand_sponsorship_bridge",
+        ),
+    (
+            frozenset({"charity", "why"}),
+            (
+                "charity organization sponsorship brand Nike Gatorade Under Armour "
+                "basketball shoe gear deal work with prominent make difference away "
+                "from court give back inspire people youth sports disadvantaged kids"
+            ),
+            "charity_brand_sponsorship_bridge",
+        ),
+    (
+            frozenset({"yoga", "why"}),
+            (
+                "yoga put off delay postponed planned play console partner video games "
+                "Walking Dead next Saturday old games gaming instead"
+            ),
+            "yoga_delay_gaming_bridge",
+        ),
+    (
+            frozenset({"yoga", "off"}),
+            (
+                "yoga put off delay postponed planned play console partner video games "
+                "Walking Dead next Saturday old games gaming instead"
+            ),
+            "yoga_delay_gaming_bridge",
+        ),
+    (
+            frozenset({"pursue", "career"}),
+            (
+                "current career option pursue looking into counseling counselor mental "
+                "health jobs education options next steps figure out work goal decided"
+            ),
+            "career_intent_bridge",
+        ),
+    (
+            frozenset({"career", "option"}),
+            (
+                "current career option pursue looking into counseling counselor mental "
+                "health jobs education options next steps figure out work goal decided"
+            ),
+            "career_intent_bridge",
+        ),
+    (
+            frozenset({"career", "path"}),
+            (
+                "career path decided pursue persue education options counseling "
+                "mental health jobs work looking considering goal"
+            ),
+            "career_path_bridge",
+        ),
+    (
+            frozenset({"field", "pursue"}),
+            (
+                "education edu career options fields jobs counseling counselor mental "
+                "health psychology support similar issues pursue work"
+            ),
+            "education_career_field_bridge",
+        ),
+    (
+            frozenset({"support", "career"}),
+            (
+                "motivation motivated mattered made difference support got counseling "
+                "support groups improved life mental health help people safe inviting grow"
+            ),
+            "support_career_motivation_bridge",
+        ),
+    (
+            frozenset({"support_role_fit"}),
+            (
+                "support role fit mentor mentoring guidance advice coach volunteer "
+                "counseling counselor listened listening comfort empathy patient "
+                "helped accepted supportive safe trust similar issues reliable "
+                "responsible care confide confided open opened opening private "
+                "sensitive personal anxiety struggles"
+            ),
+            "support_role_fit_bridge",
+        ),
+    (
+            frozenset({"support", "growing"}),
+            "journey love support acceptance community hope",
+            "support_counterfactual_bridge",
+        ),
+    (
+            frozenset({"support", "growing"}),
+            "blessed love support journey supportive community hope",
+            "support_origin_bridge",
+        ),
+    (
+            frozenset({"support", "negative"}),
+            (
+                "friends family mentors rocks support accept accepted people around "
+                "motivate strength push on not so great experience upset hike"
+            ),
+            "negative_experience_support_bridge",
+        ),
+    (
+            frozenset({"support", "experience"}),
+            (
+                "friends family mentors rocks support accept accepted people around "
+                "motivate strength push on not so great experience upset hike"
+            ),
+            "negative_experience_support_bridge",
+        ),
+    (
+            frozenset({"who", "support"}),
+            _terms._SUPPORT_NETWORK_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"who", "there"}),
+            _terms._SUPPORT_NETWORK_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"who", "help"}),
+            _terms._SUPPORT_NETWORK_HELP_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"кто", "поддерживает"}),
+            _terms._RU_SUPPORT_NETWORK_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"кто", "поддержал"}),
+            _terms._RU_SUPPORT_NETWORK_PAST_SUPPORT_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"кто", "помог"}),
+            _terms._RU_SUPPORT_NETWORK_HELP_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"кто", "рядом"}),
+            _terms._RU_SUPPORT_NETWORK_EXPANSION,
+            "support_network_bridge",
+        ),
+    (
+            frozenset({"move", "from"}),
+            (
+                "moved from home country origin roots previous country former country "
+                "native country hometown came from grandma sweden"
+            ),
+            "relocation_origin_bridge",
+        ),
+    (
+            frozenset({"open", "moving", "country"}),
+            (
+                "open moving another country relocate relocation abroad willingness "
+                "military veteran service public office politics running office "
+                "community country international mission future hope positive change "
+                "join wanted hospital stories resilience inspiring excited wild ride"
+            ),
+            "relocation_willingness_inference_bridge",
+        ),
+    (
+            frozenset({"willing", "relocate", "abroad"}),
+            (
+                "open moving another country relocate relocation abroad willingness "
+                "military veteran service public office politics running office "
+                "community country international mission future hope positive change "
+                "join wanted hospital stories resilience inspiring excited wild ride"
+            ),
+            "relocation_willingness_inference_bridge",
+        ),
+    (
+            frozenset({"consider", "relocate", "abroad"}),
+            (
+                "open moving another country relocate relocation abroad willingness "
+                "military veteran service public office politics running office "
+                "community country international mission future hope positive change "
+                "join wanted hospital stories resilience inspiring excited wild ride"
+            ),
+            "relocation_willingness_inference_bridge",
+        ),
+    (
+            frozenset({"consider", "relocating", "abroad"}),
+            (
+                "open moving another country relocate relocation abroad willingness "
+                "military veteran service public office politics running office "
+                "community country international mission future hope positive change "
+                "join wanted hospital stories resilience inspiring excited wild ride"
+            ),
+            "relocation_willingness_inference_bridge",
+        ),
+    (
+            frozenset({"ready", "move", "internationally"}),
+            (
+                "open moving another country relocate relocation abroad willingness "
+                "military veteran service public office politics running office "
+                "community country international mission future hope positive change "
+                "join wanted hospital stories resilience inspiring excited wild ride"
+            ),
+            "relocation_willingness_inference_bridge",
+        ),
+    (
+            frozenset({"open", "moving", "country"}),
+            (
+                "running office again campaign run excited enthusiasm zeal wild ride "
+                "first run politics public office"
+            ),
+            "public_office_service_bridge",
+        ),
+    (
+            frozenset({"open", "moving", "country"}),
+            (
+                "join military veteran hospital stories resilience hope inspiring "
+                "served service mission wanted"
+            ),
+            "military_service_willingness_bridge",
+        ),
+    (
+            frozenset({"willing", "relocate", "abroad"}),
+            (
+                "join military veteran hospital stories resilience hope inspiring "
+                "served service mission wanted"
+            ),
+            "military_service_willingness_bridge",
+        ),
+    (
+            frozenset({"consider", "relocate", "abroad"}),
+            (
+                "join military veteran hospital stories resilience hope inspiring "
+                "served service mission wanted"
+            ),
+            "military_service_willingness_bridge",
+        ),
+    (
+            frozenset({"consider", "relocating", "abroad"}),
+            (
+                "join military veteran hospital stories resilience hope inspiring "
+                "served service mission wanted"
+            ),
+            "military_service_willingness_bridge",
+        ),
+    (
+            frozenset({"patriotic"}),
+            (
+                "patriotic patriotism serving country serve my country service "
+                "aptitude test military drawn to serving flag eagle national civic "
+                "duty homeland positive results family friends supportive volunteer "
+                "proud opportunity"
+            ),
+            "patriotic_service_inference_bridge",
+        ),
+    (
+            frozenset({"patriotism"}),
+            (
+                "patriotic patriotism serving country serve my country service "
+                "aptitude test military drawn to serving flag eagle national civic "
+                "duty homeland positive results family friends supportive volunteer "
+                "proud opportunity"
+            ),
+            "patriotic_service_inference_bridge",
+        ),
+    (
+            frozenset({"transgender", "conference"}),
+            (
+                "transgender conference this month going upcoming meet people community "
+                "advocacy learn event"
+            ),
+            "transgender_conference_event_bridge",
+        ),
+    (
+            frozenset({"how", "long", "married"}),
+            (
+                "married husband wife spouse wedding anniversary years already time flies "
+                "dress put this dress on"
+            ),
+            "relationship_duration_bridge",
+        ),
+    (
+            frozenset({"how", "long", "known"}),
+            (
+                "known each other friends relationship since years months duration met "
+                "school college together anniversary time flies"
+            ),
+            "relationship_duration_bridge",
+        ),
+    (
+            frozenset({"when", "adoption", "meeting"}),
+            (
+                "last Friday council meeting for adoption inspiring emotional loving "
+                "homes children need determined adopt"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "pride", "parade"}),
+            (
+                "last week LGBTQ pride parade happy belonged community grown summer "
+                "went attended"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "pride", "festival"}),
+            (
+                "last year Pride fest festival blast supportive friends together "
+                "worth it went attended"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "camping"}),
+            (
+                "camping camped went last week week before June 27 session date "
+                "family nature hike roasted marshmallows campfire mountains outdoors"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "activist", "group"}),
+            (
+                "joined new LGBTQ activist group last Tues Tuesday rights community "
+                "support voice difference fulfilling"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "volunteering", "shelter"}),
+            (
+                "started volunteering shelter about a year ago homeless family "
+                "struggling streets reached out volunteers fulfilling"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "internship"}),
+            (
+                "interview design internship yesterday interview portfolio fashion "
+                "cool project"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "hoodie"}),
+            (
+                "limited edition line hoodie collection last week own collection "
+                "style creativity made designed"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "rocky"}),
+            (
+                "Rocky Mountains trip last year nature clearing mind calming soul "
+                "mountains fresh air stunning"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "support", "group"}),
+            (
+                "joined service-focused online group last week emotional ride "
+                "inspiring stories connection purpose support group"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "local", "artist"}),
+            (
+                "teamed up local artist cool designs online store working hard "
+                "designs check them out"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"item", "bought"}),
+            "bought purchased got new shoes figurines items belongings sneakers",
+            "item_purchase_bridge",
+        ),
+    (
+            frozenset({"instrument", "play"}),
+            (
+                "instrument instruments play played playing clarinet violin guitar piano "
+                "music started young expression relax refresh present"
+            ),
+            "instrument_play_bridge",
+        ),
+    (
+            frozenset({"hobby"}),
+            (
+                "hobbies interests writing reading watching movies exploring nature "
+                "hanging friends video games desserts recipes baking"
+            ),
+            "hobby_interest_bridge",
+        ),
+    (
+            frozenset({"interest", "share"}),
+            (
+                "hobbies interests writing reading watching movies exploring nature "
+                "hanging friends video games desserts recipes baking shared both similar"
+            ),
+            "hobby_interest_bridge",
+        ),
+    (
+            frozenset({"common", "hobby"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"common", "interests"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"both", "enjoy"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"both", "like"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"shared", "interests"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"who", "else", "like"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"who", "share", "interest"}),
+            _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"where", "friends"}),
+            _terms._FRIEND_PLACE_INVENTORY_EXPANSION,
+            "friend_place_inventory_bridge",
+        ),
+    (
+            frozenset({"where", "friends"}),
+            _terms._FRIEND_PLACE_SHELTER_INVENTORY_EXPANSION,
+            "friend_place_shelter_inventory_bridge",
+        ),
+)

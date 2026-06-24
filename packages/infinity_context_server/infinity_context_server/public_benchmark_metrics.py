@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -120,6 +121,68 @@ def bounded_progress_fields(fields: Mapping[str, object]) -> dict[str, object]:
                 if isinstance(map_value, str | bool | int | float)
             }
     return bounded
+
+
+def progress_timing_fields(
+    *,
+    processed_case_count: int,
+    total_case_count: int,
+    started: float,
+) -> dict[str, float]:
+    if processed_case_count <= 0 or total_case_count <= 0:
+        return {
+            "cases_per_second": 0.0,
+            "estimated_remaining_ms": 0.0,
+        }
+    elapsed_seconds = max(0.001, time.perf_counter() - started)
+    cases_per_second = processed_case_count / elapsed_seconds
+    remaining_case_count = max(0, total_case_count - processed_case_count)
+    estimated_remaining_ms = (
+        remaining_case_count / cases_per_second * 1000 if cases_per_second > 0 else 0.0
+    )
+    return {
+        "cases_per_second": round(cases_per_second, 4),
+        "estimated_remaining_ms": round(estimated_remaining_ms, 2),
+    }
+
+
+def progress_case_outcome_fields(
+    *,
+    processed_case_count: int,
+    run_results: Sequence[CaseRunResult],
+    failures: Sequence[Mapping[str, object]],
+    total_case_count: int,
+) -> dict[str, object]:
+    bounded_processed_case_count = max(0, min(processed_case_count, total_case_count))
+    succeeded_case_count = sum(1 for item in run_results if item.ok)
+    failed_case_count = sum(1 for item in run_results if not item.ok)
+    remaining_case_count = max(0, total_case_count - bounded_processed_case_count)
+    result: dict[str, object] = {
+        "remaining_case_count": remaining_case_count,
+        "succeeded_case_count": succeeded_case_count,
+        "failed_case_count": failed_case_count,
+        "resume_pending_case_count": remaining_case_count + failed_case_count,
+        "failure_count": len(failures),
+        "failure_report_count": len(failures),
+        "failure_case_ratio": _ratio(failed_case_count, bounded_processed_case_count),
+        "recent_failed_case_ids": [
+            item.case_id for item in run_results if not item.ok
+        ][-10:],
+    }
+    if run_results:
+        last = run_results[-1]
+        result.update(
+            {
+                "last_case_benchmark": last.benchmark,
+                "last_case_id": last.case_id,
+                "last_case_status": "ok" if last.ok else "failed",
+                "last_case_capability": last.capability,
+                "last_case_latency_ms": round(last.latency_ms, 2),
+            }
+        )
+        if last.question_preview:
+            result["last_question_preview"] = last.question_preview[:240]
+    return result
 
 
 def dataset_source_metadata(

@@ -87,6 +87,24 @@ _RELOCATION_ORIGIN_EVIDENCE_RE = re.compile(
     r"\b(?:родн(?:ая|ой|ую)\s+стран|страна\s+происхождения|корни|переехал[аи]?\s+из)\b",
     re.IGNORECASE,
 )
+_ACTIVITY_STATE_QUERY_RE = re.compile(
+    r"\b("
+    r"how\s+long|how\s+often|duration|frequency|cadence|"
+    r"как\s+долго|как\s+часто|сколько|частота"
+    r")\b",
+    re.IGNORECASE,
+)
+_ACTIVITY_STATE_EVENT_TYPE_RE = re.compile(
+    r"\b("
+    r"volunteer(?:s|ed|ing)?|work(?:s|ed|ing)?|live(?:s|d|ing)?|"
+    r"play(?:s|ed|ing)?|run(?:s|ning)?|practice(?:s|d|ing)?|"
+    r"train(?:s|ed|ing)?|"
+    r"волонтерит|волонт[её]р(?:ит|ил|ила|или|ство)|работает|работал|работала|"
+    r"жив[её]т|жил|жила|жили|играет|играл|играла|занимается|"
+    r"тренируется|участвует"
+    r")\b",
+    re.IGNORECASE,
+)
 _LOWER_PERSON_HINT_RE = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     r"(?P<label>@?[a-zа-яё][a-zа-яё0-9._-]{2,39})\b",
@@ -276,9 +294,41 @@ _EVENT_TYPE_GROUPS: Mapping[str, frozenset[str]] = {
             "hiking",
             "join",
             "joined",
+            "live",
+            "lived",
+            "lives",
+            "living",
             "participate",
             "participated",
+            "play",
+            "played",
+            "playing",
+            "practice",
+            "practiced",
+            "practicing",
+            "rabotaet",
+            "rabotal",
+            "rabotala",
+            "run",
+            "running",
+            "runs",
+            "train",
+            "trained",
+            "training",
+            "uchastvuet",
+            "volunteer",
+            "volunteered",
+            "volunteering",
+            "volunteers",
+            "work",
+            "worked",
+            "working",
+            "works",
             "went",
+            "zhila",
+            "zhili",
+            "zhil",
+            "zhivet",
         }
     ),
     "message": frozenset(
@@ -367,6 +417,10 @@ _EVENT_TYPE_GROUPS: Mapping[str, frozenset[str]] = {
 _EVENT_TYPE_TO_GROUP = {
     value: group for group, values in _EVENT_TYPE_GROUPS.items() for value in values
 }
+_BROAD_CONVERSATION_EVENT_TYPES = frozenset({"conversation"})
+_CONVERSATIONAL_EVENT_GROUP_KEYS = frozenset(
+    {"group:call", "group:meeting", "group:message", "group:sync"}
+)
 
 
 @dataclass(frozen=True)
@@ -448,6 +502,7 @@ def build_query_anchor_intent(query: str) -> QueryAnchorIntent:
     seen: set[tuple[str, str]] = set()
     for observed in extract_observed_anchors(query):
         _append_observed_hint(hints, seen, observed)
+    _append_activity_state_event_type_hints(hints, seen, query)
     if _is_eventish_query(query):
         _append_lowercase_event_hints(hints, seen, query)
         if not _event_temporal_keys(hints):
@@ -671,6 +726,38 @@ def _append_temporal_event_hints(
                 "extractor": "context-query-intent-v1",
                 **metadata,
             },
+        )
+
+
+def _append_activity_state_event_type_hints(
+    hints: list[QueryAnchorHint],
+    seen: set[tuple[str, str]],
+    query: str,
+) -> None:
+    if not _ACTIVITY_STATE_QUERY_RE.search(query):
+        return
+    for match in _ACTIVITY_STATE_EVENT_TYPE_RE.finditer(query):
+        label = match.group(1)
+        canonical_key = canonical_anchor_key_for_kind(MemoryAnchorKind.EVENT, label)
+        if not canonical_key:
+            continue
+        metadata = {
+            "extraction_reason": "activity state event query hint",
+            "extractor": "context-query-intent-v1",
+            "canonical_key": canonical_key,
+            "anchor_family": "event",
+            "event_type": label.casefold(),
+            "event_type_canonical": canonical_key,
+            "event_identity_terms": [canonical_key],
+        }
+        _append_hint(
+            hints,
+            seen,
+            kind=MemoryAnchorKind.EVENT,
+            canonical_key=canonical_key,
+            label=label,
+            reason="activity state event query hint",
+            metadata=metadata,
         )
 
 
@@ -1059,7 +1146,22 @@ def _event_type_keys_conflict(
     query_groups = {key for key in query_event_type_keys if key.startswith("group:")}
     anchor_groups = {key for key in anchor_event_type_keys if key.startswith("group:")}
     if query_groups and anchor_groups:
+        if _event_type_groups_are_compatible(
+            query_event_type_keys=query_event_type_keys,
+            anchor_groups=frozenset(anchor_groups),
+        ):
+            return False
         return not query_groups.intersection(anchor_groups)
+    return False
+
+
+def _event_type_groups_are_compatible(
+    *,
+    query_event_type_keys: frozenset[str],
+    anchor_groups: frozenset[str],
+) -> bool:
+    if query_event_type_keys.intersection(_BROAD_CONVERSATION_EVENT_TYPES):
+        return bool(anchor_groups.intersection(_CONVERSATIONAL_EVENT_GROUP_KEYS))
     return False
 
 
@@ -1083,11 +1185,46 @@ def _storage_lookup_key_variants(
 
 
 def _temporal_identity_keys(metadata: Mapping[str, object]) -> frozenset[str]:
-    hint_code = _metadata_text(metadata.get("event_temporal_hint_code"))
+    keys: set[str] = set()
+    keys.update(
+        _event_time_identity_keys(
+            metadata,
+            hint_key="event_temporal_hint_code",
+            quantity_key="event_temporal_quantity",
+            unit_key="event_temporal_unit",
+        )
+    )
+    keys.update(
+        _event_time_identity_keys(
+            metadata,
+            hint_key="event_duration_hint_code",
+            quantity_key="event_duration_quantity",
+            unit_key="event_duration_unit",
+        )
+    )
+    keys.update(
+        _event_time_identity_keys(
+            metadata,
+            hint_key="event_recurrence_hint_code",
+            quantity_key="event_recurrence_quantity",
+            unit_key="event_recurrence_unit",
+        )
+    )
+    return frozenset(keys)
+
+
+def _event_time_identity_keys(
+    metadata: Mapping[str, object],
+    *,
+    hint_key: str,
+    quantity_key: str,
+    unit_key: str,
+) -> frozenset[str]:
+    hint_code = _metadata_text(metadata.get(hint_key))
     if not hint_code:
         return frozenset()
-    quantity = _metadata_text(metadata.get("event_temporal_quantity"))
-    unit = _metadata_text(metadata.get("event_temporal_unit"))
+    quantity = _metadata_text(metadata.get(quantity_key))
+    unit = _metadata_text(metadata.get(unit_key))
     keys = {hint_code}
     if quantity and unit:
         keys.add(f"{hint_code}:{quantity}:{unit}")
@@ -1117,7 +1254,37 @@ def _temporal_keys_conflict(
         return False
     if "relative_recent" in anchor_temporal_keys:
         return False
+    if _exact_cadence_or_duration_mismatch(query_temporal_keys, anchor_temporal_keys):
+        return True
     return not anchor_temporal_keys.intersection(query_temporal_keys)
+
+
+def _exact_cadence_or_duration_mismatch(
+    query_temporal_keys: frozenset[str],
+    anchor_temporal_keys: frozenset[str],
+) -> bool:
+    query_exact = _exact_cadence_or_duration_keys(query_temporal_keys)
+    anchor_exact = _exact_cadence_or_duration_keys(anchor_temporal_keys)
+    if not query_exact or not anchor_exact:
+        return False
+    for code in {key.split(":", 1)[0] for key in query_exact}.intersection(
+        key.split(":", 1)[0] for key in anchor_exact
+    ):
+        query_for_code = {key for key in query_exact if key.startswith(f"{code}:")}
+        anchor_for_code = {key for key in anchor_exact if key.startswith(f"{code}:")}
+        if query_for_code and anchor_for_code and not query_for_code.intersection(anchor_for_code):
+            return True
+    return False
+
+
+def _exact_cadence_or_duration_keys(keys: frozenset[str]) -> frozenset[str]:
+    prefixes = (
+        "duration_for:",
+        "duration_since_year:",
+        "recurrence_every:",
+        "recurrence_per:",
+    )
+    return frozenset(key for key in keys if key.startswith(prefixes))
 
 
 def _metadata_identity_terms(value: object) -> tuple[str, ...]:

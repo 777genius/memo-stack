@@ -7,6 +7,18 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from infinity_context_core.application.context_lexical import query_terms
+from infinity_context_core.application.context_conversation_counterparty import (
+    requests_conversation_recency,
+    requests_conversation_topic,
+)
+from infinity_context_core.application.context_query_frequency import (
+    frequency_recurrence_tail,
+    requests_frequency_recurrence_context,
+)
+from infinity_context_core.application.context_query_duration import (
+    activity_duration_tail,
+    requests_activity_duration_context,
+)
 from infinity_context_core.application.context_query_intent import (
     QueryAnchorIntent,
     build_query_anchor_intent,
@@ -258,6 +270,53 @@ _SOURCE_TERMS = frozenset(
         "файл",
     }
 )
+_EMOTION_CAUSE_PROMPT_TERMS = frozenset(
+    {
+        "gave",
+        "made",
+        "why",
+        "what",
+        "как",
+        "почему",
+        "что",
+    }
+)
+_EMOTION_CAUSE_STATE_TERMS = frozenset(
+    {
+        "accept",
+        "accepted",
+        "acceptance",
+        "belong",
+        "belonged",
+        "belonging",
+        "comfort",
+        "comforted",
+        "empower",
+        "empowered",
+        "empowering",
+        "feel",
+        "feeling",
+        "felt",
+        "home",
+        "powerful",
+        "pride",
+        "proud",
+        "sad",
+        "sense",
+        "upset",
+        "welcome",
+        "welcomed",
+        "принят",
+        "принята",
+        "принятой",
+        "почувствовал",
+        "почувствовала",
+        "почувствовали",
+        "рядом",
+        "своей",
+        "свой",
+    }
+)
 _INFERENCE_TERMS = frozenset(
     {
         "considered",
@@ -355,6 +414,149 @@ _ATTRIBUTE_AGGREGATION_TERMS = frozenset(
         "share",
         "shared",
         "traits",
+    }
+)
+_INVENTORY_LIST_SLOT_TERMS = frozenset(
+    {
+        "areas",
+        "artists",
+        "bands",
+        "books",
+        "causes",
+        "cities",
+        "countries",
+        "country",
+        "hobbies",
+        "instruments",
+        "items",
+        "kinds",
+        "people",
+        "places",
+        "projects",
+        "shelter",
+        "shelters",
+        "states",
+        "tasks",
+        "things",
+        "types",
+        "volunteering",
+        "виды",
+        "вещи",
+        "города",
+        "места",
+        "страна",
+        "страны",
+        "типы",
+    }
+)
+_INVENTORY_LIST_ACTION_TERMS = frozenset(
+    {
+        "attend",
+        "attended",
+        "been",
+        "bought",
+        "buy",
+        "done",
+        "feel",
+        "go",
+        "gone",
+        "helped",
+        "having",
+        "joined",
+        "made",
+        "mention",
+        "mentioned",
+        "met",
+        "participated",
+        "planning",
+        "played",
+        "read",
+        "seen",
+        "support",
+        "supporting",
+        "taken",
+        "visited",
+        "volunteer",
+        "volunteered",
+        "went",
+        "ездил",
+        "ездила",
+        "ездили",
+        "посещал",
+        "посещала",
+        "посещали",
+        "посетил",
+        "посетила",
+        "посетили",
+        "сделал",
+        "сделала",
+        "сделали",
+    }
+)
+_INVENTORY_LIST_PROMPT_TERMS = frozenset(
+    {
+        "what",
+        "where",
+        "which",
+        "где",
+        "какие",
+        "какой",
+        "какую",
+        "какое",
+        "что",
+    }
+)
+_PEOPLE_INVENTORY_PROMPT_TERMS = frozenset(
+    {
+        "who",
+        "whom",
+        "кого",
+        "кому",
+        "кто",
+    }
+)
+_PEOPLE_INVENTORY_ACTION_TERMS = frozenset(
+    {
+        "help",
+        "helped",
+        "helping",
+        "meet",
+        "met",
+        "support",
+        "supported",
+        "supporting",
+        "volunteer",
+        "volunteered",
+        "volunteering",
+        "work",
+        "worked",
+        "working",
+        "помог",
+        "помогал",
+        "помогала",
+        "помогали",
+        "поддержал",
+        "поддержала",
+        "поддержали",
+        "работал",
+        "работала",
+        "работали",
+    }
+)
+_PLACE_INVENTORY_ACTION_TERMS = frozenset(
+    {
+        "been",
+        "friend",
+        "friends",
+        "go",
+        "gone",
+        "made",
+        "meet",
+        "met",
+        "vacation",
+        "vacationed",
+        "visited",
+        "went",
     }
 )
 _COMMONALITY_TERMS = frozenset(
@@ -553,11 +755,28 @@ _ACTION_ROLE_TERMS = frozenset(
         "asked",
         "assign",
         "assigned",
+        "call",
+        "called",
         "decide",
         "decided",
         "decision",
         "give",
         "gave",
+        "hear",
+        "heard",
+        "help",
+        "helped",
+        "assist",
+        "assisted",
+        "support",
+        "supported",
+        "introduce",
+        "introduced",
+        "introducing",
+        "learn",
+        "learned",
+        "message",
+        "messaged",
         "promise",
         "promised",
         "recommendation",
@@ -567,13 +786,21 @@ _ACTION_ROLE_TERMS = frozenset(
         "sent",
         "suggestion",
         "tell",
+        "text",
+        "texted",
         "told",
         "назначил",
         "назначила",
         "одобрил",
         "одобрила",
+        "познакомил",
+        "познакомила",
+        "познакомили",
         "пообещал",
         "пообещала",
+        "представил",
+        "представила",
+        "представили",
         "рекомендовал",
         "рекомендовала",
         "решил",
@@ -582,6 +809,121 @@ _ACTION_ROLE_TERMS = frozenset(
         "сказала",
         "спросил",
         "спросила",
+        "помог",
+        "помогла",
+        "помогли",
+        "поддержал",
+        "поддержала",
+        "поддержали",
+        "узнал",
+        "узнала",
+        "узнали",
+        "услышал",
+        "услышала",
+        "услышали",
+    }
+)
+_CONVERSATION_COUNTERPARTY_PROMPT_TERMS = frozenset(
+    {
+        "who",
+        "whom",
+        "кем",
+        "кого",
+        "кому",
+        "кто",
+    }
+)
+_CONVERSATION_COUNTERPARTY_ACTION_TERMS = frozenset(
+    {
+        "call",
+        "called",
+        "chat",
+        "chatted",
+        "conversation",
+        "discuss",
+        "discussed",
+        "dm",
+        "meet",
+        "meeting",
+        "met",
+        "message",
+        "messaged",
+        "speak",
+        "speaking",
+        "spoke",
+        "talk",
+        "talked",
+        "text",
+        "texted",
+        "общался",
+        "общалась",
+        "общались",
+        "говорил",
+        "говорила",
+        "говорили",
+        "переписка",
+        "переписывался",
+        "переписывалась",
+        "переписывались",
+        "разговаривал",
+        "разговаривала",
+        "разговаривали",
+        "созвон",
+    }
+)
+_RECOMMENDATION_SOURCE_TERMS = frozenset(
+    {
+        "advice",
+        "advise",
+        "advised",
+        "recommend",
+        "recommendation",
+        "recommended",
+        "suggest",
+        "suggested",
+        "suggestion",
+        "совет",
+        "совета",
+        "советом",
+        "совету",
+        "посоветовал",
+        "посоветовала",
+        "посоветовали",
+        "посоветовать",
+        "порекомендовал",
+        "порекомендовала",
+        "порекомендовали",
+        "порекомендовать",
+        "рекомендация",
+        "рекомендации",
+    }
+)
+_RECOMMENDATION_PROVENANCE_TERMS = frozenset(
+    {
+        "because",
+        "follow",
+        "followed",
+        "from",
+        "read",
+        "recipient",
+        "source",
+        "to",
+        "tried",
+        "use",
+        "used",
+        "watched",
+        "who",
+        "whom",
+        "whose",
+        "из-за",
+        "кому",
+        "кто",
+        "по",
+        "прочитал",
+        "прочитала",
+        "прочитали",
+        "чей",
+        "чьему",
     }
 )
 _DEADLINE_TERMS = frozenset(
@@ -986,6 +1328,20 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_source_evidence",
         )
+    if _requests_emotion_cause(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "feeling emotion felt feel accepted acceptance belonged belonging "
+                    "sense of belonging at home community welcomed pride parade "
+                    "support group powerful proud empowering school speech talk "
+                    "journey upset sad comfort reason because event experience"
+                ),
+            ),
+            reason="decomposition_emotion_cause",
+        )
     if _requests_evidence_reason(query):
         _append_candidate(
             candidates,
@@ -1062,6 +1418,58 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_action_role",
         )
+    if _requests_conversation_counterparty(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "conversation counterparty participant with to from talked spoke "
+                    "met called messaged texted chatted discussed dm meeting call "
+                    "speaker recipient person name about project topic"
+                ),
+            ),
+            reason="decomposition_conversation_counterparty",
+        )
+    if requests_conversation_recency(query):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "latest recent newest current conversation call meeting chat dm "
+                    "message talked spoke discussed transcript turn topic subject "
+                    "agenda outcome today yesterday hours ago temporal event"
+                ),
+            ),
+            reason="decomposition_conversation_recency",
+        )
+    if requests_conversation_topic(query):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "conversation topic subject about discussed talked spoke chatted "
+                    "agenda context project decision plan issue question outcome "
+                    "speaker turn transcript"
+                ),
+            ),
+            reason="decomposition_conversation_topic",
+        )
+    if _requests_recommendation_source_context(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "recommendation suggestion advice recommended suggested advised "
+                    "source actor recipient to from because of followed read watched "
+                    "tried used provenance who whom whose"
+                ),
+            ),
+            reason="decomposition_recommendation_source",
+        )
     if variants.intersection(_DEADLINE_TERMS):
         _append_candidate(
             candidates,
@@ -1111,7 +1519,8 @@ def build_query_decomposition_plan(
                     "support role fit mentor mentoring guidance advice coach "
                     "volunteer counseling counselor listened comfort empathy "
                     "patient helped accepted safe trust similar issues reliable "
-                    "responsible care"
+                    "responsible care confide confided open opened opening private "
+                    "sensitive personal anxiety struggles"
                 ),
             ),
             reason="decomposition_support_role_fit",
@@ -1138,11 +1547,12 @@ def build_query_decomposition_plan(
                 query=_compose_query(
                     (*identities, *salient_terms),
                     (
-                        "current goal future plan career option counseling counselor "
-                        "mental health jobs next steps figure out wants preference "
-                        "likes dislikes interested recently now decided committed "
+                        "current goal future plan next steps figure out wants decided "
+                        "committed lease contract signed stay local job role school "
+                        "program semester deadline career option counseling counselor "
+                        "mental health jobs preference interested recently now "
                         "adoption family children kids home roof agency interview "
-                        "build career activity service country office military"
+                        "build career activity service country office military move back soon"
                     ),
                 ),
                 reason="decomposition_current_preference_or_goal",
@@ -1186,6 +1596,15 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_activity_participation",
         )
+    if _requests_inventory_list_context(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                _inventory_list_tail(variants),
+            ),
+            reason="decomposition_inventory_list",
+        )
     if _requests_commonality_context(identities=identities, variants=variants):
         _append_candidate(
             candidates,
@@ -1198,6 +1617,15 @@ def build_query_decomposition_plan(
                 ),
             ),
             reason="decomposition_commonality",
+        )
+    if requests_activity_duration_context(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                activity_duration_tail(variants),
+            ),
+            reason="decomposition_activity_duration",
         )
     if variants.intersection(_QUANTITY_COUNT_TERMS):
         _append_candidate(
@@ -1212,7 +1640,18 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_quantity_count",
         )
-    if variants.intersection(_ATTRIBUTE_AGGREGATION_TERMS):
+    if requests_frequency_recurrence_context(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                frequency_recurrence_tail(variants),
+            ),
+            reason="decomposition_frequency_recurrence",
+        )
+    if variants.intersection(_ATTRIBUTE_AGGREGATION_TERMS) and not variants.intersection(
+        _QUANTITY_COUNT_TERMS
+    ):
         _append_candidate(
             candidates,
             query=_compose_query(
@@ -1266,7 +1705,7 @@ def _append_candidate(
         return
     candidates.append(
         QueryDecomposition(
-            query=normalized_query[:_MAX_QUERY_CHARS].strip(),
+            query=_truncate_query(normalized_query),
             reason=reason,
         )
     )
@@ -1351,6 +1790,84 @@ def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
     return _normalize_query(" ".join(tails))
 
 
+def _inventory_list_tail(variants: frozenset[str]) -> str:
+    tails: list[str] = []
+    if variants.intersection({"countries", "country", "страна", "страны"}):
+        tails.append(
+            "country countries europe european england spain france italy germany "
+            "portugal ireland sweden abroad solo trip travel visited went"
+        )
+    elif variants.intersection({"where", "где"}) and variants.intersection(
+        _PLACE_INVENTORY_ACTION_TERMS
+    ):
+        tails.append(
+            "place friends shelter church gym community welcoming people fellow "
+            "volunteers joined made met"
+        )
+    elif variants.intersection(
+        {
+            "areas",
+            "cities",
+            "places",
+            "states",
+            "города",
+            "места",
+        }
+    ):
+        tails.append(
+            "place area country state city coast destination visited went travel "
+            "trip vacation planning go abroad"
+        )
+    if variants.intersection({"shelter", "shelters", "volunteering", "volunteer"}):
+        tails.append(
+            "volunteer volunteered volunteering shelter homeless dog church gym helped "
+            "met people residents names donated local pup old car"
+        )
+    if variants.intersection({"causes", "support", "supporting"}):
+        tails.append(
+            "cause causes passionate support supporting veterans schools infrastructure "
+            "education reform infrastructure development rights charity community "
+            "campaign project appreciation"
+        )
+    if variants.intersection({"events", "события"}):
+        tails.append(
+            "event events attended participated joined went planning fundraiser tournament "
+            "fair networking conference parade speech support group"
+        )
+    if variants.intersection({"types", "kinds", "projects", "виды", "типы"}):
+        tails.append(
+            "type kind made finished created project item object piece visual image "
+            "caption query cup bowl pot plate painting"
+        )
+    if variants.intersection({"people"}):
+        tails.append("people person names met helped worked with friend customer resident")
+    elif variants.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS) and variants.intersection(
+        _PEOPLE_INVENTORY_ACTION_TERMS
+    ):
+        tails.append("people person names met helped worked with friend customer resident")
+    if variants.intersection({"artists", "bands"}):
+        tails.append("artist artists band bands music concert live saw seen performance")
+    if variants.intersection({"items", "things"}):
+        tails.append("item thing bought got had having owned mentioned object gift possession")
+    tails.append("inventory list evidence observed mentioned answer options")
+    return _normalize_query(" ".join(tails))
+
+
+def _requests_emotion_cause(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not raw_tokens.intersection(_EMOTION_CAUSE_STATE_TERMS):
+        return False
+    if raw_tokens.intersection(_EMOTION_CAUSE_PROMPT_TERMS):
+        return True
+    return bool(
+        variants.intersection({"feel", "felt", "feeling", "почувствовал", "почувствовала"})
+        and variants.intersection({"because", "reason", "причин", "почему"})
+    )
+
+
 def _requests_non_inference_career_goal(
     *,
     raw_tokens: frozenset[str],
@@ -1396,20 +1913,23 @@ def _requests_counterfactual_evidence(
 
 
 def _event_sequence_tail(intent: TemporalQueryIntent) -> str:
+    event_prefix = " ".join(intent.event_sequence_terms)
     if intent.after_event and not intent.before_event:
-        return (
+        tail = (
             "after following later next timeline outcome follow up decision "
             "result happened then response meeting call chat message conversation event"
         )
-    if intent.before_event and not intent.after_event:
-        return (
+    elif intent.before_event and not intent.after_event:
+        tail = (
             "before earlier prior previous timeline context lead up reason "
             "setup happened meeting call chat message conversation event"
         )
-    return (
-        "before after timeline sequence earlier later prior next meeting call chat message "
-        "conversation event outcome context"
-    )
+    else:
+        tail = (
+            "before after timeline sequence earlier later prior next meeting call message "
+            "conversation event outcome context"
+        )
+    return f"{event_prefix} {tail}".strip()
 
 
 def _requests_evidence_reason(query: str) -> bool:
@@ -1490,6 +2010,60 @@ def _requests_activity_participation(
     return bool(raw_tokens.intersection(_ACTIVITY_PARTICIPATION_TERMS))
 
 
+def _requests_inventory_list_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if _requests_place_inventory_context(raw_tokens=raw_tokens, variants=variants):
+        return True
+    if _requests_people_inventory_context(raw_tokens=raw_tokens, variants=variants):
+        return True
+    if not variants.intersection(_INVENTORY_LIST_SLOT_TERMS):
+        return False
+    if not (
+        raw_tokens.intersection(_INVENTORY_LIST_PROMPT_TERMS)
+        or variants.intersection(_INVENTORY_LIST_PROMPT_TERMS)
+    ):
+        return False
+    return bool(
+        raw_tokens.intersection(_INVENTORY_LIST_ACTION_TERMS)
+        or variants.intersection(_INVENTORY_LIST_ACTION_TERMS)
+        or variants.intersection({"areas", "countries", "places", "states", "types", "kinds"})
+    )
+
+
+def _requests_people_inventory_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not (
+        raw_tokens.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
+        or variants.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
+    ):
+        return False
+    return bool(
+        raw_tokens.intersection(_PEOPLE_INVENTORY_ACTION_TERMS)
+        or variants.intersection(_PEOPLE_INVENTORY_ACTION_TERMS)
+    )
+
+
+def _requests_place_inventory_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not (raw_tokens.intersection({"where", "где"}) or variants.intersection({"where", "где"})):
+        return False
+    if variants.intersection(_RELOCATION_ACTION_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection(_PLACE_INVENTORY_ACTION_TERMS)
+        or variants.intersection(_PLACE_INVENTORY_ACTION_TERMS)
+    )
+
+
 def _requests_commonality_context(
     *,
     identities: tuple[str, ...],
@@ -1508,6 +2082,34 @@ def _requests_followup_task_context(
     if {"action", "item"}.issubset(variants) or {"follow", "up"}.issubset(raw_tokens):
         return True
     return bool(variants.intersection(_FOLLOWUP_TASK_TERMS))
+
+
+def _requests_conversation_counterparty(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not (
+        raw_tokens.intersection(_CONVERSATION_COUNTERPARTY_PROMPT_TERMS)
+        or variants.intersection(_CONVERSATION_COUNTERPARTY_PROMPT_TERMS)
+    ):
+        return False
+    if not variants.intersection(_CONVERSATION_COUNTERPARTY_ACTION_TERMS):
+        return False
+    return True
+
+
+def _requests_recommendation_source_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not variants.intersection(_RECOMMENDATION_SOURCE_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection(_RECOMMENDATION_PROVENANCE_TERMS)
+        or variants.intersection(_RECOMMENDATION_PROVENANCE_TERMS)
+    )
 
 
 def _requests_gotcha_failure_context(*, variants: frozenset[str]) -> bool:
@@ -1536,9 +2138,13 @@ def _requests_relocation_context(*, query: str, variants: frozenset[str]) -> boo
     origin_terms = variants.intersection(_RELOCATION_ORIGIN_TERMS)
     if {"where", "from"}.issubset(origin_terms):
         return True
-    if origin_terms.intersection({"home", "country", "lived", "origin", "city"}):
+    if "from" in variants and origin_terms.intersection({"home", "country", "city"}):
         return True
-    return bool(origin_terms.intersection({"дом", "жила", "жил", "жили", "город", "страна"}))
+    if origin_terms.intersection({"home", "lived", "origin"}):
+        return True
+    if origin_terms.intersection({"дом", "жила", "жил", "жили"}):
+        return True
+    return bool(variants.intersection({"из", "откуда"}) and origin_terms.intersection({"город", "страна"}))
 
 
 def _requests_relocation_destination_only(*, variants: frozenset[str]) -> bool:
@@ -1672,3 +2278,15 @@ def _clean_clause_query(query: str) -> str:
 
 def _query_dedupe_key(query: str) -> str:
     return _normalize_query(query).strip(" \t\r\n.,;:!?").casefold()
+
+
+def _truncate_query(query: str) -> str:
+    if len(query) <= _MAX_QUERY_CHARS:
+        return query.strip()
+    candidate = query[:_MAX_QUERY_CHARS].rstrip()
+    if not candidate:
+        return ""
+    boundary = candidate.rfind(" ")
+    if boundary >= max(0, _MAX_QUERY_CHARS - 32):
+        candidate = candidate[:boundary]
+    return candidate.strip(" \t\r\n.,;:!?")

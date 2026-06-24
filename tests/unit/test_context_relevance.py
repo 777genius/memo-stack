@@ -59,6 +59,48 @@ def test_query_relevance_matches_english_plural_and_progressive_forms() -> None:
     assert relevance.score_boost == 0.12
 
 
+def test_query_terms_include_cyrillic_name_case_variants() -> None:
+    variants_by_raw = {
+        term.raw: set(term.variants)
+        for term in query_terms("Что Мария обсуждала с Сергеем и Даной?")
+    }
+    relevance = score_query_relevance(
+        query="Что Мария обсуждала с Сергеем?",
+        text="Мария и Сергей обсуждали проект Атлас.",
+    )
+    cross_script_relevance = score_query_relevance(
+        query="Что Мария обсуждала с Сергеем?",
+        text="Maria and Sergey discussed Project Atlas.",
+    )
+
+    assert "сергей" in variants_by_raw["сергеем"]
+    assert "sergey" in variants_by_raw["сергеем"]
+    assert "дана" in variants_by_raw["даной"]
+    assert "dana" in variants_by_raw["даной"]
+    assert relevance.unique_term_hits >= 3
+    assert cross_script_relevance.unique_term_hits >= 3
+
+
+def test_query_terms_include_russian_mention_and_write_aliases() -> None:
+    variants_by_raw = {
+        term.raw: set(term.variants)
+        for term in query_terms("Что Мария упоминала и писала Сергею?")
+    }
+    mention_relevance = score_query_relevance(
+        query="Что Мария упоминала про Atlas?",
+        text="Maria mentioned Project Atlas in the chat.",
+    )
+    wrote_relevance = score_query_relevance(
+        query="Что Мария писала Сергею?",
+        text="Maria wrote Sergey about Project Atlas.",
+    )
+
+    assert "mentioned" in variants_by_raw["упоминала"]
+    assert "wrote" in variants_by_raw["писала"]
+    assert mention_relevance.unique_term_hits >= 2
+    assert wrote_relevance.unique_term_hits >= 3
+
+
 def test_query_terms_drop_question_stopwords_before_retrieval() -> None:
     terms = query_terms("What fields would Caroline likely pursue in her educaton?")
 

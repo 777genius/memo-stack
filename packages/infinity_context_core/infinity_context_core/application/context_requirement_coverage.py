@@ -14,6 +14,9 @@ from infinity_context_core.application.context_query_workflow_intent import (
     gotcha_failure_query_variants,
     workflow_commitment_query_variants,
 )
+from infinity_context_core.application.context_state_evidence import (
+    item_has_state_lifecycle_evidence,
+)
 from infinity_context_core.application.context_temporal_hints import temporal_hint_codes
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.application.safe_payload import safe_metadata_text
@@ -21,18 +24,6 @@ from infinity_context_core.domain.entities import MemoryAnchorKind
 
 _MAX_LIST_ITEMS = 12
 _MAX_KEY_CHARS = 64
-_STATE_LIFECYCLE_STATUSES = frozenset(
-    {
-        "active",
-        "current",
-        "deprecated",
-        "disputed",
-        "obsolete",
-        "stale",
-        "superseded",
-    }
-)
-
 _MODALITY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "image",
@@ -266,8 +257,19 @@ _CONVERSATION_PARTICIPANT_ANSWER_QUERY_RE = re.compile(
 _CONVERSATION_TOPIC_ANSWER_QUERY_RE = re.compile(
     rf"\bwhat\s+did\s+{_QUERY_ANSWER_LABEL_RE}\s+(?:and\s+{_QUERY_ANSWER_LABEL_RE}\s+)?"
     r"(?:talk|speak|chat|discuss)\s+about\b|"
+    rf"\bwhat\s+did\s+{_QUERY_ANSWER_LABEL_RE}\s+(?:discuss|talk|speak|chat)\s+"
+    rf"(?:with|to)\s+{_QUERY_ANSWER_LABEL_RE}\b|"
+    rf"\bwhat\s+was\s+(?:{_QUERY_ANSWER_LABEL_RE}(?:'s|’s)\s+)?"
+    rf"(?:the\s+)?(?:conversation|call|chat|meeting|discussion)\s+"
+    rf"(?:between|with)\s+{_QUERY_ANSWER_LABEL_RE}"
+    rf"(?:\s+and\s+{_QUERY_ANSWER_LABEL_RE})?\s+about\b|"
+    r"\bwhat\s+was\s+discussed\s+(?:in|during)\s+(?:the\s+)?"
+    r"(?:[\w._-]+\s+){0,4}(?:conversation|call|chat|meeting|discussion)\b|"
     rf"\bwhat\s+(?:topic|subject)\s+did\s+{_QUERY_ANSWER_LABEL_RE}\s+"
     r"(?:talk|speak|chat|discuss)\b|"
+    r"\bчто\s+"
+    rf"{_QUERY_ANSWER_LABEL_RE}(?:\s+и\s+{_QUERY_ANSWER_LABEL_RE})?\s+"
+    r"(?:обсуждал\w*|говорил\w*)\b|"
     r"\bо\s+ч[её]м\s+"
     rf"{_QUERY_ANSWER_LABEL_RE}\s+"
     r"(?:говорил\w*|общал\w*|переписывал\w*)\b",
@@ -305,10 +307,15 @@ _CONSTRAINT_ANSWER_QUERY_RE = re.compile(
 _ACTION_ROLE_VERB_QUERY_RE = (
     r"recommend(?:ed|s|ing)?|suggest(?:ed|s|ing)?|"
     r"promise(?:d|s|ing)?|assign(?:ed|s|ing)?|approv(?:e|ed|es|ing)|"
-    r"send|sent|give|gave|tell|told|ask(?:ed|s|ing)?|decid(?:e|ed|es|ing)|"
+    r"hear(?:d|s|ing)?|learn(?:ed|s|ing)?|find\s+out|found\s+out|"
+    r"help(?:ed|s|ing)?|assist(?:ed|s|ing)?|support(?:ed|s|ing)?|"
+    r"introduc(?:e|ed|es|ing)|send|sent|give|gave|tell|told|"
+    r"ask(?:ed|s|ing)?|decid(?:e|ed|es|ing)|"
     r"рекомендовал(?:а)?|посоветовал(?:а)?|"
     r"пообещал(?:а)?|обещал(?:а)?|назначил(?:а)?|одобрил(?:а)?|"
-    r"отправил(?:а)?|дал(?:а)?|сказал(?:а)?|спросил(?:а)?|решил(?:а)?"
+    r"отправил(?:а)?|дал(?:а)?|сказал(?:а)?|спросил(?:а)?|решил(?:а)?|"
+    r"познакомил(?:а|и)?|представил(?:а|и)?|узнал(?:а|и)?|услышал(?:а|и)?|"
+    r"помог(?:ла|ли)?|поддержал(?:а|и)?"
 )
 _ACTION_ROLE_ANSWER_QUERY_RE = re.compile(
     rf"\b{_QUERY_ANSWER_LABEL_RE}\s+"
@@ -335,7 +342,23 @@ _ACTION_ROLE_ANSWER_QUERY_RE = re.compile(
     r"пообещал|пообещала|обещал|обещала|назначил|назначила|"
     r"одобрил|одобрила|отправил|отправила|сказал|сказала|"
     r"ответственн\w*)\b|"
-    rf"\bкому\s+{_QUERY_ANSWER_LABEL_RE}\s+(?:{_ACTION_ROLE_VERB_QUERY_RE})\b",
+    rf"\bкому\s+{_QUERY_ANSWER_LABEL_RE}\s+(?:{_ACTION_ROLE_VERB_QUERY_RE})\b|"
+    rf"\bпо\s+чь(?:ему|ей|им)\s+(?:совет\w*|рекомендац\w*)\s+"
+    rf"{_QUERY_ANSWER_LABEL_RE}\s+"
+    r"(?:прочитал(?:а|и)?|посмотрел(?:а|и)?|попробовал(?:а|и)?|"
+    r"использовал(?:а|и)?|купил(?:а|и)?|посетил(?:а|и)?|начал(?:а|и)?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_POSSESSION_SOURCE_ANSWER_QUERY_RE = re.compile(
+    rf"\bwho\s+(?:gave|gifted)\s+{_QUERY_ANSWER_LABEL_RE}\s+"
+    r".{0,80}\b(?:necklace|pendant|ring|book|camera|photo|picture|"
+    r"keepsake|gift|present|item|object)\b|"
+    rf"\bwho\s+was\s+{_QUERY_ANSWER_LABEL_RE}(?:'s|s')?\s+"
+    r".{0,80}\s+from\b|"
+    rf"\bwhere\s+did\s+{_QUERY_ANSWER_LABEL_RE}(?:'s|s')?\s+"
+    r".{0,80}\s+(?:come\s+from|originate)\b|"
+    rf"\bwhere\s+did\s+{_QUERY_ANSWER_LABEL_RE}\s+"
+    r"(?:get|receive)\s+.{0,90}\s+from\b",
     re.IGNORECASE | re.DOTALL,
 )
 _LOCATION_ANSWER_QUERY_RE = re.compile(
@@ -491,6 +514,9 @@ _INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"indicates|suggests|shows|showed|based\s+on|seems|likely|probably|would|could|might|"
     r"supportive|support|supported|encouraging|encourages|accepted|acceptance|"
     r"helps?|cares?|kind|proud|interested|enjoys?|likes?|wants?|prefers?|"
+    r"fan\s+of|"
+    r"mentors?|mentored|mentoring|guided?|guidance|counsel(?:ed|ing)?|"
+    r"listened|empathy|empathetic|patient|volunteered?|volunteering|"
     r"похоже|вероятно|показывает|поддержк\w*|помога\w*|принял\w*|приняла\w*"
     r")\b",
     re.IGNORECASE,
@@ -574,10 +600,14 @@ _CONSTRAINT_ANSWER_TEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _ACTION_ROLE_VERB_TEXT_RE = (
-    r"recommended|suggested|promised|assigned|approved|sent|gave|told|asked|decided|"
+    r"recommended|suggested|promised|assigned|approved|heard|learned|helped|"
+    r"assisted|supported|"
+    r"introduced|sent|gave|"
+    r"told|asked|decided|"
     r"рекомендовал(?:а)?|посоветовал(?:а)?|пообещал(?:а)?|обещал(?:а)?|"
     r"назначил(?:а)?|одобрил(?:а)?|отправил(?:а)?|дал(?:а)?|сказал(?:а)?|"
-    r"спросил(?:а)?|решил(?:а)?"
+    r"спросил(?:а)?|решил(?:а)?|познакомил(?:а|и)?|представил(?:а|и)?|"
+    r"узнал(?:а|и)?|услышал(?:а|и)?|помог(?:ла|ли)?|поддержал(?:а|и)?"
 )
 _ACTION_ROLE_ANSWER_TEXT_RE = re.compile(
     rf"\b{_ANSWER_LABEL_RE}\s+(?:{_ACTION_ROLE_VERB_TEXT_RE})\b|"
@@ -586,6 +616,21 @@ _ACTION_ROLE_ANSWER_TEXT_RE = re.compile(
     rf"\b{_ANSWER_LABEL_RE}\s+(?:is|was|'s)\s+"
     r"(?:responsible|(?:the\s+)?owner)\s+(?:for|of)\b|"
     rf"\b{_ANSWER_LABEL_RE}\s+owns?\b"
+)
+_POSSESSION_SOURCE_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:gift|present|keepsake)\b.{0,40}\bfrom\b.{0,90}\b"
+    r"(?:grandma|grandmother|grandpa|grandfather|mother|father|mom|dad|"
+    r"parent|friend|mentor|family|relative|home\s+country|native\s+country|"
+    rf"{_ANSWER_LABEL_RE})\b|"
+    r"\b(?:got|received)\b.{0,120}\bfrom\b.{0,90}\b"
+    r"(?:grandma|grandmother|grandpa|grandfather|mother|father|mom|dad|"
+    r"parent|friend|mentor|family|relative|home\s+country|native\s+country|"
+    rf"{_ANSWER_LABEL_RE})\b|"
+    r"\b(?:given|gifted)\b.{0,80}\bby\b.{0,90}\b"
+    r"(?:grandma|grandmother|grandpa|grandfather|mother|father|mom|dad|"
+    r"parent|friend|mentor|family|relative|home\s+country|native\s+country|"
+    rf"{_ANSWER_LABEL_RE})\b",
+    re.IGNORECASE | re.DOTALL,
 )
 _LOCATION_ANSWER_TEXT_RE = re.compile(
     r"\b(?:lives?|living|resides?|residing|based|located|born|raised|"
@@ -1044,6 +1089,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         shapes.append("constraint")
     if _ACTION_ROLE_ANSWER_QUERY_RE.search(query):
         shapes.append("action_role")
+    if _POSSESSION_SOURCE_ANSWER_QUERY_RE.search(query):
+        shapes.append("possession_source")
     if _LOCATION_ANSWER_QUERY_RE.search(query):
         shapes.append("location")
     if _PREFERENCE_ANSWER_QUERY_RE.search(query):
@@ -1096,6 +1143,8 @@ def _covered_answer_shapes(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
             shapes.append("constraint")
         if _ACTION_ROLE_ANSWER_TEXT_RE.search(text):
             shapes.append("action_role")
+        if _POSSESSION_SOURCE_ANSWER_TEXT_RE.search(text):
+            shapes.append("possession_source")
         if _LOCATION_ANSWER_TEXT_RE.search(text):
             shapes.append("location")
         if _PREFERENCE_ANSWER_TEXT_RE.search(text):
@@ -1108,29 +1157,9 @@ def _covered_answer_shapes(items: tuple[ContextItem, ...]) -> tuple[str, ...]:
             shapes.append("gotcha")
         if _EXISTENCE_ANSWER_TEXT_RE.search(text):
             shapes.append("existence")
-        if _STATE_UPDATE_ANSWER_TEXT_RE.search(text) or _has_state_lifecycle_metadata(item):
+        if item_has_state_lifecycle_evidence(item):
             shapes.append("state_update")
     return _bounded_unique(shapes)
-
-
-def _has_state_lifecycle_metadata(item: ContextItem) -> bool:
-    diagnostics = item.diagnostics
-    if not isinstance(diagnostics, Mapping):
-        return False
-    return (
-        _mapping_has_state_lifecycle_metadata(diagnostics)
-        or _mapping_has_state_lifecycle_metadata(diagnostics.get("provenance"))
-    )
-
-
-def _mapping_has_state_lifecycle_metadata(value: object) -> bool:
-    if not isinstance(value, Mapping):
-        return False
-    for key in ("fact_status", "anchor_status", "relation_status", "state_status"):
-        status = str(value.get(key) or "").strip().casefold()
-        if status in _STATE_LIFECYCLE_STATUSES:
-            return True
-    return value.get("is_current") is True
 
 
 def _is_social_old_query(query: str) -> bool:

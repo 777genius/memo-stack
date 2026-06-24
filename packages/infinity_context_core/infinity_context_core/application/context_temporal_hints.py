@@ -157,7 +157,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     *(
         (
             f"last_{weekday}",
-            re.compile(rf"\b(?:last|previous)\s+{weekday}\b", re.IGNORECASE),
+            re.compile(rf"\b(?:last|previous|prior)\s+{weekday}\b", re.IGNORECASE),
             24.0,
             24.0 * 8,
         )
@@ -320,7 +320,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     (
         "last_week",
         re.compile(
-            r"\b(?:(?:last|previous)\s+week|(?:a\s+)?week\s+ago|1\s+week\s+ago|"
+            r"\b(?:(?:last|previous|prior)\s+week|(?:a\s+)?week\s+ago|1\s+week\s+ago|"
             r"на\s+прошлой\s+неделе|прошл(?:ой|ую)\s+недел[юе]|"
             r"недел[юи]\s+назад)\b",
             re.IGNORECASE,
@@ -341,7 +341,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     (
         "last_weekend",
         re.compile(
-            r"\b(?:(?:last|previous)\s+weekend|(?:a\s+)?weekend\s+ago|"
+            r"\b(?:(?:last|previous|prior)\s+weekend|(?:a\s+)?weekend\s+ago|"
             r"1\s+weekend\s+ago|на\s+прошлых\s+выходных|"
             r"прошл(?:ые|ых)\s+выходн(?:ые|ых))\b",
             re.IGNORECASE,
@@ -352,7 +352,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     (
         "last_month",
         re.compile(
-            r"\b(?:(?:last|previous)\s+month|(?:a\s+)?month\s+ago|1\s+month\s+ago|"
+            r"\b(?:(?:last|previous|prior)\s+month|(?:a\s+)?month\s+ago|1\s+month\s+ago|"
             r"в\s+прошлом\s+месяце|прошл(?:ый|ом)\s+месяц(?:е)?|"
             r"месяц\s+назад)\b",
             re.IGNORECASE,
@@ -363,7 +363,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     (
         "last_quarter",
         re.compile(
-            r"\b(?:(?:last|previous)\s+quarter|"
+            r"\b(?:(?:last|previous|prior)\s+quarter|"
             r"в\s+прошлом\s+квартале|прошл(?:ый|ом)\s+квартал(?:е)?)\b",
             re.IGNORECASE,
         ),
@@ -373,7 +373,7 @@ _TEMPORAL_HINT_PATTERNS: tuple[tuple[str, re.Pattern[str], float, float], ...] =
     (
         "last_year",
         re.compile(
-            r"\b(?:(?:last|previous)\s+year|(?:a\s+)?year\s+ago|1\s+year\s+ago|"
+            r"\b(?:(?:last|previous|prior)\s+year|(?:a\s+)?year\s+ago|1\s+year\s+ago|"
             r"в\s+прошлом\s+году|прошл(?:ый|ом)\s+год(?:у)?|год\s+назад)\b",
             re.IGNORECASE,
         ),

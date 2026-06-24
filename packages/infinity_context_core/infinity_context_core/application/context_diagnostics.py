@@ -107,8 +107,17 @@ _BUNDLE_COUNTER_KEYS = (
     "anchor_lookup_keys_considered",
     "anchors_loaded_by_lookup",
     "anchors_used",
+    "anchors_used_by_query_intent",
+    "anchors_dropped_by_query_intent_conflict",
     "anchor_relation_candidates_considered",
     "anchor_relation_items_used",
+    "query_anchor_hint_count",
+    "query_anchor_person_hint_count",
+    "query_anchor_event_hint_count",
+    "query_anchor_project_hint_count",
+    "query_anchor_organization_hint_count",
+    "query_anchor_temporal_hint_count",
+    "query_anchor_event_type_hint_count",
     "keyword_chunks_considered",
     "keyword_query_count",
     "keyword_chunks_dropped_by_relevance",
@@ -118,6 +127,8 @@ _BUNDLE_COUNTER_KEYS = (
     "keyword_source_sibling_chunks_considered",
     "keyword_source_sibling_chunks_used",
     "keyword_source_sibling_chunks_skipped",
+    "keyword_source_sibling_group_count",
+    "keyword_source_sibling_candidate_limit",
     "keyword_aggregation_chunks_considered",
     "keyword_aggregation_chunks_used",
     "keyword_aggregation_chunks_skipped",
@@ -256,8 +267,17 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "anchor_lookup_keys_considered": 0,
     "anchors_loaded_by_lookup": 0,
     "anchors_used": 0,
+    "anchors_used_by_query_intent": 0,
+    "anchors_dropped_by_query_intent_conflict": 0,
     "anchor_relation_candidates_considered": 0,
     "anchor_relation_items_used": 0,
+    "query_anchor_hint_count": 0,
+    "query_anchor_person_hint_count": 0,
+    "query_anchor_event_hint_count": 0,
+    "query_anchor_project_hint_count": 0,
+    "query_anchor_organization_hint_count": 0,
+    "query_anchor_temporal_hint_count": 0,
+    "query_anchor_event_type_hint_count": 0,
     "keyword_chunks_considered": 0,
     "keyword_query_count": 0,
     "keyword_chunks_dropped_by_relevance": 0,
@@ -267,6 +287,8 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "keyword_source_sibling_chunks_considered": 0,
     "keyword_source_sibling_chunks_used": 0,
     "keyword_source_sibling_chunks_skipped": 0,
+    "keyword_source_sibling_group_count": 0,
+    "keyword_source_sibling_candidate_limit": 0,
     "keyword_aggregation_chunks_considered": 0,
     "keyword_aggregation_chunks_used": 0,
     "keyword_aggregation_chunks_skipped": 0,
@@ -404,6 +426,31 @@ _BUNDLE_STATUS_DEFAULTS = {
     "artifact_evidence_status": "unknown",
     "requirement_guard_status": "not_triggered",
 }
+_BUNDLE_PROVIDER_STATUS_TEXT_KEYS = (
+    "vector_degraded_reason",
+    "vector_degraded_step",
+    "vector_skip_reason",
+    "graph_degraded_reason",
+    "graph_degraded_step",
+    "graph_skip_reason",
+    "rag_degraded_reason",
+    "rag_degraded_step",
+    "rag_skip_reason",
+)
+_BUNDLE_PROVIDER_STATUS_FLOAT_KEYS = (
+    "vector_deadline_seconds",
+    "graph_deadline_seconds",
+    "rag_deadline_seconds",
+)
+_BUNDLE_QUERY_ANCHOR_TEXT_KEYS = (
+    "query_anchor_intent_status",
+)
+_BUNDLE_QUERY_ANCHOR_LIST_KEYS = (
+    "query_anchor_hint_reasons",
+)
+_BUNDLE_KEYWORD_AGGREGATION_TEXT_KEYS = (
+    "keyword_aggregation_query_kind",
+)
 _BUNDLE_QUERY_PLAN_TEXT_KEYS = (
     "query_expansion_status",
     "query_decomposition_status",
@@ -579,6 +626,9 @@ def normalize_context_bundle_diagnostics(
         normalized[key] = (
             _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS) or default
         )
+    normalized.update(_safe_bundle_provider_status_diagnostics(raw))
+    normalized.update(_safe_bundle_query_anchor_diagnostics(raw))
+    normalized.update(_safe_bundle_keyword_aggregation_diagnostics(raw))
     normalized.update(_safe_bundle_query_plan_diagnostics(raw))
     normalized.update(_safe_bundle_temporal_query_diagnostics(raw))
     all_retrieval_sources = _bundle_retrieval_sources(
@@ -1000,6 +1050,48 @@ def _safe_bundle_query_plan_diagnostics(raw: dict[str, Any]) -> dict[str, object
         ]
         if safe_values:
             diagnostics[key] = safe_values
+    return diagnostics
+
+
+def _safe_bundle_provider_status_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    for key in _BUNDLE_PROVIDER_STATUS_TEXT_KEYS:
+        value = _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+        if value:
+            diagnostics[key] = value
+    for key in _BUNDLE_PROVIDER_STATUS_FLOAT_KEYS:
+        value = _optional_non_negative_float(raw.get(key))
+        if value is not None:
+            diagnostics[key] = value
+    return diagnostics
+
+
+def _safe_bundle_query_anchor_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    for key in _BUNDLE_QUERY_ANCHOR_TEXT_KEYS:
+        value = _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+        if value:
+            diagnostics[key] = value
+    for key in _BUNDLE_QUERY_ANCHOR_LIST_KEYS:
+        value = raw.get(key)
+        if not isinstance(value, list | tuple):
+            continue
+        safe_values = [
+            text
+            for raw_text in value[:_MAX_DIAGNOSTIC_LIST_ITEMS]
+            if (text := _safe_optional_text(raw_text, limit=_MAX_DIAGNOSTIC_KEY_CHARS))
+        ]
+        if safe_values:
+            diagnostics[key] = safe_values
+    return diagnostics
+
+
+def _safe_bundle_keyword_aggregation_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {}
+    for key in _BUNDLE_KEYWORD_AGGREGATION_TEXT_KEYS:
+        value = _safe_optional_text(raw.get(key), limit=_MAX_DIAGNOSTIC_KEY_CHARS)
+        if value is not None:
+            diagnostics[key] = value
     return diagnostics
 
 
@@ -1662,6 +1754,14 @@ def _optional_non_negative_int(value: object) -> int | None:
         return max(0, value)
     if isinstance(value, float):
         return max(0, int(value))
+    return None
+
+
+def _optional_non_negative_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, int | float):
+        return max(0.0, round(float(value), 4))
     return None
 
 

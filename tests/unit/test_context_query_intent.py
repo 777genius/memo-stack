@@ -77,6 +77,75 @@ def test_query_anchor_intent_extracts_future_relative_time_hints() -> None:
     assert "atlas" not in next_week.keys_for_kind(MemoryAnchorKind.PERSON)
 
 
+def test_query_anchor_intent_matches_activity_duration_and_recurrence_keys() -> None:
+    duration = build_query_anchor_intent("Has Maria volunteered for three years?")
+    duration_anchor = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Volunteered with Maria for three years",
+    )
+    duration_mismatch = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Volunteered with Maria for four years",
+        anchor_id="anchor_duration_mismatch",
+    )
+
+    duration_match = match_query_anchor_intent(duration, duration_anchor)
+
+    assert duration.keys_for_kind(MemoryAnchorKind.PERSON) == {"maria"}
+    assert duration.temporal_keys() == {"duration_for", "duration_for:3:year"}
+    assert duration_match is not None
+    assert "query_event_temporal_match" in duration_match.reasons
+    assert "duration_for:3:year" in duration_match.matched_keys
+    assert match_query_anchor_intent(duration, duration_mismatch) is None
+
+    recurrence = build_query_anchor_intent("Does Maria volunteer every weekend?")
+    recurrence_anchor = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Volunteers with Maria every weekend",
+        anchor_id="anchor_recurrence",
+    )
+    recurrence_mismatch = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Volunteers with Maria every week",
+        anchor_id="anchor_recurrence_mismatch",
+    )
+
+    recurrence_match = match_query_anchor_intent(recurrence, recurrence_anchor)
+
+    assert recurrence.temporal_keys() == {"recurrence_every", "recurrence_every:1:weekend"}
+    assert recurrence_match is not None
+    assert "query_event_temporal_match" in recurrence_match.reasons
+    assert "recurrence_every:1:weekend" in recurrence_match.matched_keys
+    assert match_query_anchor_intent(recurrence, recurrence_mismatch) is None
+
+
+def test_query_anchor_intent_adds_activity_state_event_type_hints() -> None:
+    duration = build_query_anchor_intent("How long has Maria lived in Sweden?")
+    duration_match = match_query_anchor_intent_to_text(
+        duration,
+        "Maria has lived in Sweden for three years and still calls it home.",
+    )
+
+    assert duration.keys_for_kind(MemoryAnchorKind.PERSON) == {"maria"}
+    assert "sweden" not in duration.keys_for_kind(MemoryAnchorKind.PERSON)
+    assert "sweden" not in duration.keys_for_kind(MemoryAnchorKind.PROJECT)
+    assert duration.event_type_keys() == {"group:activity", "lived"}
+    assert duration_match is not None
+    assert "query_event_type_match" in duration_match.reasons
+    assert "group:activity" in duration_match.matched_keys
+
+    recurrence = build_query_anchor_intent("How often does Maria volunteer at the shelter?")
+    recurrence_match = match_query_anchor_intent_to_text(
+        recurrence,
+        "Maria volunteers at the homeless shelter every weekend.",
+    )
+
+    assert recurrence.event_type_keys() == {"group:activity", "volunteer"}
+    assert recurrence_match is not None
+    assert "query_event_type_match" in recurrence_match.reasons
+    assert "group:activity" in recurrence_match.matched_keys
+
+
 def test_query_anchor_intent_does_not_promote_relative_time_words_as_people() -> None:
     english = build_query_anchor_intent("call with two weeks ago about Atlas")
     russian = build_query_anchor_intent("созвон с две недели назад по Атласу")
@@ -316,6 +385,19 @@ def test_query_anchor_intent_matches_text_event_identity() -> None:
         "query_event_temporal_match",
     }
     assert set(match.matched_keys) >= {"aleks", "atlas", "group:call", "last_week"}
+
+
+def test_query_anchor_intent_treats_conversation_as_broad_event_type() -> None:
+    intent = build_query_anchor_intent("latest conversation with Alex")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Call with Alex covered Project Atlas migration risks.",
+    )
+
+    assert query_anchor_intent_text_conflicts(intent, "Call with Alex covered Atlas.") is False
+    assert match is not None
+    assert "query_event_participant_match" in match.reasons
 
 
 def test_query_anchor_intent_text_match_rejects_wrong_event_time() -> None:

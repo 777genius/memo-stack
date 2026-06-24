@@ -231,6 +231,52 @@ _EVENT_INTERVIEW_SUBJECT_PATTERN = re.compile(
 )
 _EVENT_KEYWORD_PATTERN = re.compile(rf"\b({_EVENT_KEYWORDS})\b", re.IGNORECASE)
 _TEMPORAL_PATTERN = re.compile(rf"\b({_TEMPORAL_PHRASE})\b", re.IGNORECASE)
+_DURATION_EVENT_KEYWORDS = (
+    r"volunteer(?:s|ed|ing)?|work(?:s|ed|ing)?|live(?:s|d|ing)?|"
+    r"use(?:s|d|ing)?|play(?:s|ed|ing)?|run(?:s|ning)?|"
+    r"practice(?:s|d|ing)?|train(?:s|ed|ing)?|"
+    r"волонтерит|волонт[её]р(?:ит|ил|ила|или|ство)|работает|работал|работала|"
+    r"жив[её]т|жил|жила|жили|играет|играл|играла|использует|использовал|"
+    r"использовала|занимается|тренируется|участвует"
+)
+_DURATION_PHRASE = (
+    r"for\s+(?:about\s+|roughly\s+|nearly\s+|almost\s+|over\s+)?"
+    rf"(?:\d{{1,2}}|{_EN_NUMBER_WORD})\s+"
+    r"(?:years?|months?|weeks?|days?)|"
+    r"since\s+(?:19|20)\d{2}|"
+    r"с\s+(?:19|20)\d{2}|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+"
+    r"(?:лет|года|год|месяц(?:ев|а)?|недель|недели|дней)(?!\s+назад)"
+)
+_RECURRENCE_PHRASE = (
+    r"every\s+(?:day|night|morning|afternoon|evening|weekday|weekend|week|"
+    r"month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"daily|weekly|monthly|yearly|annually|regularly|usually|often|"
+    rf"(?:once|twice|{_EN_NUMBER_WORD}|\d{{1,2}})\s+times?\s+"
+    r"(?:a|per)\s+(?:day|week|month|year)|"
+    r"(?:once|twice)\s+(?:a|per)\s+(?:day|week|month|year)|"
+    r"кажд\w+\s+(?:день|недел\w*|месяц|год|утро|вечер|выходн\w*)|"
+    r"ежедневно|еженедельно|ежемесячно|ежегодно|регулярно|обычно|часто|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+раз(?:а)?\s+в\s+"
+    r"(?:день|недел\w*|месяц|год)"
+)
+_SUBJECT_DURATION_EVENT_PATTERN = re.compile(
+    rf"\b(?P<subject>{_EVENT_SUBJECT_PERSON_TOKEN})\s+"
+    r"(?:has\s+been\s+|have\s+been\s+|has\s+|have\s+|"
+    r"started\s+|began\s+)?"
+    rf"(?P<event>{_DURATION_EVENT_KEYWORDS})\b"
+    rf"(?P<tail>[^.!?\n]{{0,120}}?)\b(?P<duration>{_DURATION_PHRASE})\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_SUBJECT_RECURRENCE_EVENT_PATTERN = re.compile(
+    rf"\b(?P<subject>{_EVENT_SUBJECT_PERSON_TOKEN})\s+"
+    r"(?:has\s+been\s+|have\s+been\s+|has\s+|have\s+)?"
+    rf"(?P<event>{_DURATION_EVENT_KEYWORDS})\b"
+    rf"(?P<tail>[^.!?\n]{{0,120}}?)\b(?P<recurrence>{_RECURRENCE_PHRASE})\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_DURATION_PATTERN = re.compile(rf"\b({_DURATION_PHRASE})\b", re.IGNORECASE)
+_RECURRENCE_PATTERN = re.compile(rf"\b({_RECURRENCE_PHRASE})\b", re.IGNORECASE)
 
 _TEMPORAL_PERSON_STOP_WORDS = frozenset(
     {
@@ -474,6 +520,14 @@ class EventComponents:
     temporal_hint_code: str
     temporal_quantity: int | None
     temporal_unit: str
+    duration_phrase: str = ""
+    duration_hint_code: str = ""
+    duration_quantity: int | None = None
+    duration_unit: str = ""
+    recurrence_phrase: str = ""
+    recurrence_hint_code: str = ""
+    recurrence_quantity: int | None = None
+    recurrence_unit: str = ""
 
 
 def event_project_labels(text: str) -> tuple[str, ...]:
@@ -554,6 +608,24 @@ def event_labels(text: str) -> tuple[str, ...]:
         generic_temporal_label = f"{event} {temporal}".strip()
         if participant and temporal and generic_temporal_label != label:
             labels.append(generic_temporal_label)
+    labels.extend(_duration_event_labels(text))
+    return tuple(labels)
+
+
+def _duration_event_labels(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for match in _SUBJECT_DURATION_EVENT_PATTERN.finditer(text):
+        event = _display_event_type(match.group("event").strip())
+        subject = match.group("subject").strip()
+        duration = match.group("duration").strip()
+        prep = "с" if re.search(r"[А-Яа-яЁё]", subject) else "with"
+        labels.append(f"{event} {prep} {subject} {duration}")
+    for match in _SUBJECT_RECURRENCE_EVENT_PATTERN.finditer(text):
+        event = _display_event_type(match.group("event").strip())
+        subject = match.group("subject").strip()
+        recurrence = match.group("recurrence").strip()
+        prep = "с" if re.search(r"[А-Яа-яЁё]", subject) else "with"
+        labels.append(f"{event} {prep} {subject} {recurrence}")
     return tuple(labels)
 
 
@@ -604,6 +676,22 @@ def structured_event_metadata(
         metadata["event_temporal_quantity"] = components.temporal_quantity
     if components.temporal_unit:
         metadata["event_temporal_unit"] = components.temporal_unit
+    if components.duration_phrase:
+        metadata["event_duration_phrase"] = components.duration_phrase
+    if components.duration_hint_code:
+        metadata["event_duration_hint_code"] = components.duration_hint_code
+    if components.duration_quantity is not None:
+        metadata["event_duration_quantity"] = components.duration_quantity
+    if components.duration_unit:
+        metadata["event_duration_unit"] = components.duration_unit
+    if components.recurrence_phrase:
+        metadata["event_recurrence_phrase"] = components.recurrence_phrase
+    if components.recurrence_hint_code:
+        metadata["event_recurrence_hint_code"] = components.recurrence_hint_code
+    if components.recurrence_quantity is not None:
+        metadata["event_recurrence_quantity"] = components.recurrence_quantity
+    if components.recurrence_unit:
+        metadata["event_recurrence_unit"] = components.recurrence_unit
     return metadata
 
 
@@ -618,6 +706,21 @@ def event_identity_terms(components: EventComponents) -> list[str]:
         if components.temporal_quantity is not None and components.temporal_unit:
             temporal = f"{temporal}:{components.temporal_quantity}:{components.temporal_unit}"
         terms.append(temporal)
+    if components.duration_hint_code:
+        duration = components.duration_hint_code
+        if components.duration_quantity is not None and components.duration_unit:
+            duration = (
+                f"{duration}:{components.duration_quantity}:{components.duration_unit}"
+            )
+        terms.append(duration)
+    if components.recurrence_hint_code:
+        recurrence = components.recurrence_hint_code
+        if components.recurrence_quantity is not None and components.recurrence_unit:
+            recurrence = (
+                f"{recurrence}:{components.recurrence_quantity}:"
+                f"{components.recurrence_unit}"
+            )
+        terms.append(recurrence)
     return [term for term in terms if term]
 
 
@@ -626,7 +729,11 @@ def event_components(label: str) -> EventComponents:
     parts = normalized.split()
     event_type = parts[0] if parts else normalized
     temporal_phrase = _event_temporal_phrase(label)
+    duration_phrase = _event_duration_phrase(label)
+    recurrence_phrase = _event_recurrence_phrase(label)
     temporal_parts = set(normalize_anchor_key(temporal_phrase).split())
+    temporal_parts.update(normalize_anchor_key(duration_phrase).split())
+    temporal_parts.update(normalize_anchor_key(recurrence_phrase).split())
     participant_relation = ""
     participant_label = ""
     project_relation = ""
@@ -664,6 +771,12 @@ def event_components(label: str) -> EventComponents:
         project_label = _clean_project_label(" ".join(project_tokens)).casefold()
         break
     temporal_hint_code, temporal_quantity, temporal_unit = _temporal_hint_payload(temporal_phrase)
+    duration_hint_code, duration_quantity, duration_unit = _duration_hint_payload(
+        duration_phrase
+    )
+    recurrence_hint_code, recurrence_quantity, recurrence_unit = _recurrence_hint_payload(
+        recurrence_phrase
+    )
     return EventComponents(
         event_type=event_type,
         participant_label=participant_label,
@@ -674,6 +787,14 @@ def event_components(label: str) -> EventComponents:
         temporal_hint_code=temporal_hint_code,
         temporal_quantity=temporal_quantity,
         temporal_unit=temporal_unit,
+        duration_phrase=duration_phrase,
+        duration_hint_code=duration_hint_code,
+        duration_quantity=duration_quantity,
+        duration_unit=duration_unit,
+        recurrence_phrase=recurrence_phrase,
+        recurrence_hint_code=recurrence_hint_code,
+        recurrence_quantity=recurrence_quantity,
+        recurrence_unit=recurrence_unit,
     )
 
 
@@ -711,6 +832,20 @@ def canonical_anchor_key(label: str) -> str:
 
 def _event_temporal_phrase(label: str) -> str:
     matches = list(_TEMPORAL_PATTERN.finditer(label))
+    if not matches:
+        return ""
+    return matches[-1].group(1).strip()
+
+
+def _event_duration_phrase(label: str) -> str:
+    matches = list(_DURATION_PATTERN.finditer(label))
+    if not matches:
+        return ""
+    return matches[-1].group(1).strip()
+
+
+def _event_recurrence_phrase(label: str) -> str:
+    matches = list(_RECURRENCE_PATTERN.finditer(label))
     if not matches:
         return ""
     return matches[-1].group(1).strip()
@@ -934,10 +1069,117 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
     return "relative_time", None, ""
 
 
+def _duration_hint_payload(phrase: str) -> tuple[str, int | None, str]:
+    normalized = normalize_anchor_key(phrase)
+    if not normalized:
+        return "", None, ""
+    if match := re.match(
+        rf"for (?:(?:about|roughly|nearly|almost|over) )?"
+        rf"(?P<count>\d{{1,2}}|{_EN_NUMBER_WORD}) "
+        r"(?P<unit>years?|months?|weeks?|days?)$",
+        normalized,
+    ):
+        return "duration_for", _temporal_count(match.group("count")), _singular_unit(
+            match.group("unit")
+        )
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) "
+        r"(?P<unit>лет|года|год|месяц(?:ев|а)?|недель|недели|дней)$",
+        normalized,
+    ):
+        return "duration_for", _temporal_count(match.group("count")), _singular_unit(
+            match.group("unit")
+        )
+    if match := re.match(r"since (?P<year>(?:19|20)\d{2})$", normalized):
+        return "duration_since_year", int(match.group("year")), "year"
+    if match := re.match(r"с (?P<year>(?:19|20)\d{2})$", normalized):
+        return "duration_since_year", int(match.group("year")), "year"
+    return "duration", None, ""
+
+
+def _recurrence_hint_payload(phrase: str) -> tuple[str, int | None, str]:
+    normalized = normalize_anchor_key(phrase)
+    if not normalized:
+        return "", None, ""
+    if match := re.match(r"every (?P<unit>[a-z]+)$", normalized):
+        return "recurrence_every", 1, _singular_unit(match.group("unit"))
+    if match := re.match(r"кажд\w* (?P<unit>[а-яё]+)$", normalized):
+        return "recurrence_every", 1, _singular_unit(match.group("unit"))
+    if normalized in {"daily", "ежедневно"}:
+        return "recurrence_every", 1, "day"
+    if normalized in {"weekly", "еженедельно"}:
+        return "recurrence_every", 1, "week"
+    if normalized in {"monthly", "ежемесячно"}:
+        return "recurrence_every", 1, "month"
+    if normalized in {"yearly", "annually", "ежегодно"}:
+        return "recurrence_every", 1, "year"
+    if match := re.match(
+        rf"(?P<count>once|twice|{_EN_NUMBER_WORD}|\d{{1,2}}) "
+        r"(?:times? )?(?:a|per) (?P<unit>day|week|month|year)$",
+        normalized,
+    ):
+        return "recurrence_per", _recurrence_count(match.group("count")), _singular_unit(
+            match.group("unit")
+        )
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) раз(?:а)? в "
+        r"(?P<unit>день|недел\w*|месяц|год)$",
+        normalized,
+    ):
+        return "recurrence_per", _temporal_count(match.group("count")), _singular_unit(
+            match.group("unit")
+        )
+    if normalized in {"regularly", "usually", "often", "регулярно", "обычно", "часто"}:
+        return "recurrence_regular", None, ""
+    return "recurrence", None, ""
+
+
 def _temporal_count(value: str) -> int:
     if value.isdigit():
         return int(value)
     return _NUMBER_WORDS.get(value, 0)
+
+
+def _recurrence_count(value: str) -> int:
+    if value == "once":
+        return 1
+    if value == "twice":
+        return 2
+    return _temporal_count(value)
+
+
+def _singular_unit(value: str) -> str:
+    normalized = value.casefold()
+    if normalized in {
+        "day",
+        "days",
+        "день",
+        "дней",
+        "дня",
+    }:
+        return "day"
+    if normalized in {
+        "week",
+        "weeks",
+        "недел",
+        "недели",
+        "неделю",
+        "недель",
+    } or normalized.startswith("недел"):
+        return "week"
+    if normalized in {"weekday", "weekdays"}:
+        return "weekday"
+    if normalized in {"weekend", "weekends", "выходн", "выходные", "выходных"}:
+        return "weekend"
+    if normalized.startswith("выходн"):
+        return "weekend"
+    if normalized in {"month", "months", "месяц", "месяца", "месяцев"}:
+        return "month"
+    if normalized in {"year", "years", "год", "года", "лет"}:
+        return "year"
+    if normalized in {"morning", "afternoon", "evening", "night", "утро", "вечер"}:
+        return "part_of_day"
+    return normalized.rstrip("s")
 
 
 def _nearby_temporal_after(text: str, start: int) -> str:

@@ -398,6 +398,80 @@ def test_context_requirement_coverage_tracks_inference_answer_shape() -> None:
     assert coverage["status"] == "satisfied"
 
 
+def test_context_requirement_coverage_tracks_support_role_inference_evidence() -> None:
+    query = "Would Caroline be a good mentor for Alex?"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="caroline_mentor_fit",
+            item_type="chunk",
+            text=(
+                "Caroline mentored LGBTQ youth, listened patiently, and helped "
+                "people feel safe in the community program."
+            ),
+            score=0.9,
+            source_refs=(SourceRef(source_type="locomo_turn", source_id="D9:2"),),
+            diagnostics={"memory_scope_id": "scope"},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert "inference" in coverage["requested_answer_shapes"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert "inference" not in coverage["missing_answer_shapes"]
+
+
+def test_context_requirement_coverage_tracks_preference_inference_evidence() -> None:
+    query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="melanie_classical_music",
+        item_type="chunk",
+        text="Melanie is a fan of classical music like Bach and Mozart.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D15:3"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
+def test_context_requirement_coverage_keeps_topic_only_music_out_of_inference() -> None:
+    query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="vivaldi_topic_only",
+        item_type="chunk",
+        text="The orchestra discussed Vivaldi and classical symphony forms in music class.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D15:4"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert "inference" in coverage["requested_answer_shapes"]
+    assert "inference" not in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == ["inference"]
+
+
 def test_context_requirement_coverage_tracks_choice_answer_shape() -> None:
     query = "Does John live close to a beach or the mountains?"
     intent = build_query_anchor_intent(query)
@@ -634,6 +708,10 @@ def test_context_requirement_coverage_tracks_conversation_topic_answer_shape() -
             "Alex discussed Project Atlas with Maria.",
         ),
         (
+            "What was Alex's conversation with Maria about?",
+            "Alex talked with Maria about Project Atlas.",
+        ),
+        (
             "О чем Алекс говорил с Марией?",
             "Алекс говорил с Марией про Atlas.",
         ),
@@ -799,8 +877,80 @@ def test_context_requirement_coverage_tracks_requested_recipient_with_trailing_c
     assert "action_role" not in coverage["missing_answer_shapes"]
 
 
+def test_context_requirement_coverage_tracks_possession_source_shape() -> None:
+    query = "Who gave Caroline the necklace?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="caroline_necklace_source",
+        item_type="chunk",
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D4:3"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["possession_source"]
+    assert "possession_source" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
+def test_context_requirement_coverage_tracks_missing_possession_source_shape() -> None:
+    query = "Who gave Caroline the necklace?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="caroline_necklace_symbols",
+        item_type="chunk",
+        text="Caroline shared a pendant necklace with a transgender symbol and a cross.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D8:2"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert "possession_source" in coverage["requested_answer_shapes"]
+    assert "possession_source" not in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == ["possession_source"]
+
+
 def test_context_requirement_coverage_tracks_russian_requested_recipient_action_role() -> None:
     query = "Кому Кэролайн посоветовала прочитать Becoming Nicole?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="caroline_recommendation",
+        item_type="chunk",
+        text="Кэролайн посоветовала Мелани прочитать Becoming Nicole.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D5:2"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["action_role"]
+    assert "action_role" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
+def test_context_requirement_coverage_tracks_russian_whose_advice_action_role() -> None:
+    query = "По чьему совету Мелани прочитала Becoming Nicole?"
     intent = build_query_anchor_intent(query)
     item = ContextItem(
         item_id="caroline_recommendation",
@@ -1871,6 +2021,75 @@ def test_context_requirement_coverage_tracks_missing_state_update_shape() -> Non
     assert coverage["requested_answer_shapes"] == ["state_update"]
     assert "state_update" not in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == ["state_update"]
+
+
+def test_context_requirement_coverage_does_not_cover_state_update_from_temporal_before_only() -> None:
+    query = "What is the latest current Atlas provider?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="atlas_before_call_note",
+        item_type="chunk",
+        text="Project Atlas was approved before the billing call.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D3:4"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["state_update"]
+    assert "state_update" not in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == ["state_update"]
+
+
+def test_context_requirement_coverage_does_not_cover_state_update_from_russian_old_friend() -> None:
+    query = "Какой текущий провайдер Атласа?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="alex_old_friend_ru",
+        item_type="chunk",
+        text="Алекс сказал, что Мария его старый друг со школы.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D4:2"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["state_update"]
+    assert "state_update" not in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == ["state_update"]
+
+
+def test_context_requirement_coverage_covers_plain_text_stale_state_without_metadata() -> None:
+    query = "Which Atlas provider is no longer valid?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="atlas_stale_provider_chunk",
+        item_type="chunk",
+        text="LocalAI is no longer valid for Atlas after the provider switch.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="document", source_id="atlas_note"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["state_update"]
+    assert "state_update" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
 
 
 def test_context_requirement_coverage_does_not_treat_old_friend_as_state_update() -> None:

@@ -69,11 +69,14 @@ _FUSION_RANK_CONSTANT = 60.0
 _FUSION_MAX_RANK_PER_QUERY = 50
 _HIGH_SIGNAL_DECOMPOSITION_REASONS = frozenset(
     {
+        "decomposition_activity_duration",
         "decomposition_activity_participation",
         "decomposition_artifact_evidence",
         "decomposition_event_context",
         "decomposition_event_sequence",
         "decomposition_evidence_reason",
+        "decomposition_frequency_recurrence",
+        "decomposition_inventory_list",
         "decomposition_lgbtq_pride_event",
         "decomposition_lgbtq_school_speech_event",
         "decomposition_lgbtq_support_group_event",
@@ -103,6 +106,8 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "beach_count_activity_bridge",
         "business_start_reason_bridge",
         "camping_detail_bridge",
+        "cause_education_infrastructure_inventory_bridge",
+        "cause_veterans_inventory_bridge",
         "charity_brand_sponsorship_bridge",
         "charity_tournament_count_bridge",
         "children_preference_bridge",
@@ -118,6 +123,10 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "family_painting_activity_bridge",
         "family_swimming_activity_bridge",
         "food_preference_bridge",
+        "friend_place_inventory_bridge",
+        "friend_place_shelter_inventory_bridge",
+        "friend_place_gym_inventory_bridge",
+        "friend_place_church_inventory_bridge",
         "gaming_medium_bridge",
         "hiking_trail_count_bridge",
         "hobby_interest_bridge",
@@ -141,11 +150,13 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "source_evidence_bridge",
         "speaker_turn_bridge",
         "state_residence_inference_bridge",
+        "support_network_bridge",
         "symbol_importance_bridge",
         "temporal_event_detail_bridge",
         "transgender_poetry_event_bridge",
         "transgender_youth_center_event_bridge",
         "tournament_count_bridge",
+        "travel_country_inventory_bridge",
         "video_transcript_evidence_bridge",
         "visual_text_evidence_bridge",
         "volunteer_career_inference_bridge",
@@ -492,6 +503,14 @@ class VectorContextCollector:
             except Exception as exc:
                 degraded_count += 1
                 degraded_reason = _exception_code("vector", exc)
+                if degraded_reason == "vector.timeout":
+                    _mark_derived_retrieval_degraded(
+                        diagnostics,
+                        component="vector",
+                        reason=degraded_reason,
+                        step="search",
+                        deadline_seconds=self._deadlines.vector_search_seconds,
+                    )
                 continue
             if result.status != PortStatus.OK:
                 degraded_count += 1
@@ -612,6 +631,14 @@ class GraphContextCollector:
             except Exception as exc:
                 degraded_count += 1
                 degraded_reason = _exception_code("graph", exc)
+                if degraded_reason == "graph.timeout":
+                    _mark_derived_retrieval_degraded(
+                        diagnostics,
+                        component="graph",
+                        reason=degraded_reason,
+                        step="search",
+                        deadline_seconds=self._deadlines.graph_search_seconds,
+                    )
                 continue
             if result.status != PortStatus.OK:
                 degraded_count += 1
@@ -715,6 +742,14 @@ class RagContextCollector:
             except Exception as exc:
                 degraded_count += 1
                 degraded_reason = _exception_code("rag", exc)
+                if degraded_reason == "rag.timeout":
+                    _mark_derived_retrieval_degraded(
+                        diagnostics,
+                        component="rag",
+                        reason=degraded_reason,
+                        step="recall",
+                        deadline_seconds=self._deadlines.rag_recall_seconds,
+                    )
                 continue
             if result.status != CapabilityStatus.OK:
                 degraded_count += 1
@@ -991,7 +1026,10 @@ def _protect_query_head_for_reason(reason: str) -> bool:
         or reason
         in {
             "decomposition_activity_participation",
+            "decomposition_activity_duration",
             "decomposition_artifact_evidence",
+            "decomposition_frequency_recurrence",
+            "decomposition_inventory_list",
             "decomposition_lgbtq_pride_event",
             "decomposition_lgbtq_school_speech_event",
             "decomposition_lgbtq_support_group_event",

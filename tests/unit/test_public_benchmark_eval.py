@@ -246,6 +246,12 @@ class _ParallelBenchmarkAdapter:
         )
 
 
+def _skip_if_local_public_benchmark_environment_unavailable() -> None:
+    preflight = public_benchmark_module.check_local_benchmark_environment()
+    if not preflight.ok:
+        pytest.skip(preflight.reason or "local public benchmark environment unavailable")
+
+
 def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     tmp_path: Path,
 ) -> None:
@@ -766,6 +772,7 @@ def test_public_memory_benchmark_rejects_non_positive_request_timeout(
 def test_public_memory_benchmark_local_parallel_degrades_to_safe_transport(
     tmp_path: Path,
 ) -> None:
+    _skip_if_local_public_benchmark_environment_unavailable()
     dataset = tmp_path / "public-benchmark-parallel.jsonl"
     progress_out = tmp_path / "progress.jsonl"
     rows = [
@@ -911,6 +918,30 @@ def test_public_memory_benchmark_reports_missing_expected_terms(tmp_path: Path) 
     assert result["benchmarks"][0]["ok"] is False
     assert result["cases"][0]["missing_terms"] == ["Notion"]
     assert result["failures"][0]["reason"] == "missing_expected_terms"
+
+
+def test_public_memory_benchmark_flattens_nested_expected_terms(tmp_path: Path) -> None:
+    dataset = tmp_path / "public-benchmark-nested-expected.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "benchmark": "locomo",
+                        "id": "nested-expected",
+                        "question": "Where is the release checklist?",
+                        "facts": ["The release checklist moved from Linear to Notion."],
+                        "expected_terms": [["Linear"], ["Notion"]],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+
+    assert case.expected_terms == ("Linear", "Notion")
 
 
 def test_public_memory_benchmark_accepts_normalized_abstention_case(
@@ -1554,7 +1585,19 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         and event["seed_cache_hit_count"] == 1
         for event in progress_events
     )
-    assert progress_events[-1]["event_type"] == "run_completed"
+    final_progress = progress_events[-1]
+    assert final_progress["event_type"] == "run_completed"
+    assert final_progress["processed_case_count"] == 2
+    assert final_progress["processed_case_ratio"] == 1.0
+    assert final_progress["remaining_case_count"] == 0
+    assert final_progress["resume_pending_case_count"] == 0
+    assert final_progress["succeeded_case_count"] == 2
+    assert final_progress["failed_case_count"] == 0
+    assert final_progress["accuracy_so_far"] == 1.0
+    assert final_progress["capability_case_count_so_far"] == {
+        "longmemeval:information_extraction": 1,
+        "longmemeval:knowledge_update": 1,
+    }
     progress_snapshots = [
         event for event in progress_events if event["event_type"] == "case_progress"
     ]
@@ -1925,8 +1968,21 @@ def test_public_memory_benchmark_resumes_from_compatible_checkpoint(
         "checkpoint_success_case_count": 1,
         "checkpoint_failed_case_count": 0,
         "checkpoint_invalid_case_count": 0,
+        "checkpoint_failure_diagnostic_count": 0,
+        "checkpoint_failures": [],
+        "resumed_case_ids": ["locomo:resume-one"],
+        "pending_case_ids": ["locomo:resume-two"],
+        "resumed_case_id_truncated_count": 0,
+        "pending_case_id_truncated_count": 0,
     }
     assert any(event["event_type"] == "run_resumed" for event in progress_events)
+    execution_configured = next(
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
+    )
+    assert execution_configured["resumed_case_ids"] == ["locomo:resume-one"]
+    assert execution_configured["pending_case_ids"] == ["locomo:resume-two"]
+    assert execution_configured["resumed_case_id_truncated_count"] == 0
+    assert execution_configured["pending_case_id_truncated_count"] == 0
     assert not any(
         event["event_type"] == "case_started" and event["case_id"] == "resume-one"
         for event in progress_events
@@ -2049,6 +2105,30 @@ def test_public_memory_benchmark_resume_retries_checkpoint_failed_cases(
     assert result["resume"]["checkpoint_success_case_count"] == 1
     assert result["resume"]["checkpoint_failed_case_count"] == 1
     assert result["resume"]["checkpoint_invalid_case_count"] == 0
+    assert result["resume"]["checkpoint_failure_diagnostic_count"] == 1
+    assert result["resume"]["resumed_case_ids"] == ["locomo:resume-ok"]
+    assert result["resume"]["pending_case_ids"] == ["locomo:resume-failed"]
+    assert result["resume"]["resumed_case_id_truncated_count"] == 0
+    assert result["resume"]["pending_case_id_truncated_count"] == 0
+    assert result["resume"]["checkpoint_failures"] == [
+        {
+            "case_id": "resume-failed",
+            "category": "locomo",
+            "capability": "locomo_unknown",
+            "reason": "missing_expected_terms",
+            "missing_terms": ["SHARED_MARKER"],
+            "leaked_terms": [],
+            "checkpoint_status": "failed",
+            "retry_pending": True,
+            "from_checkpoint": True,
+        }
+    ]
+    assert any(
+        event["event_type"] == "run_resumed"
+        and event["checkpoint_failure_diagnostic_count"] == 1
+        and event["checkpoint_failed_case_ids"] == ["resume-failed"]
+        for event in progress_events
+    )
     assert any(
         event["event_type"] == "case_started" and event["case_id"] == "resume-failed"
         for event in progress_events
@@ -2243,11 +2323,36 @@ def test_public_memory_benchmark_reports_resume_skip_reason(
         "checkpoint_success_case_count": 0,
         "checkpoint_failed_case_count": 0,
         "checkpoint_invalid_case_count": 0,
+        "checkpoint_failure_diagnostic_count": 0,
+        "checkpoint_failures": [],
+        "resumed_case_ids": [],
+        "pending_case_ids": ["locomo:resume-skip"],
+        "resumed_case_id_truncated_count": 0,
+        "pending_case_id_truncated_count": 0,
     }
     assert result["metrics"]["resumed_case_count"] == 0
     assert result["metrics"]["pending_case_count"] == 1
     assert resume_skipped["reason"] == "dataset_hash_mismatch"
     assert [path for path, _ in adapter.posts] == ["/v1/documents", "/v1/context"]
+
+
+def test_public_benchmark_bounds_resume_case_id_details() -> None:
+    cases = tuple(
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id=f"resume-detail-{index}",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+        )
+        for index in range(23)
+    )
+
+    case_ids, truncated_count = public_benchmark_module._bounded_case_id_details(cases)
+
+    assert len(case_ids) == 20
+    assert case_ids[0] == "locomo:resume-detail-0"
+    assert case_ids[-1] == "locomo:resume-detail-19"
+    assert truncated_count == 3
 
 
 def test_public_memory_benchmark_accepts_official_locomo_shape(tmp_path: Path) -> None:
@@ -2420,6 +2525,7 @@ def test_public_memory_benchmark_indexes_official_locomo_observations(
                                 "text": "I am thinking about next steps.",
                             }
                         ],
+                        "session_1_date_time": "11 March, 2023",
                     },
                     "qa": [
                         {
@@ -2457,6 +2563,7 @@ def test_public_memory_benchmark_indexes_official_locomo_observations(
     assert "D1:1 Caroline: Caroline is considering mental health counseling education." in (
         observation_docs[0].text
     )
+    assert "session_1 date: 11 March, 2023" in observation_docs[0].text
     assert result["ok"] is True
 
 
@@ -2618,6 +2725,526 @@ def test_public_memory_benchmark_recalls_locomo_event_help_aggregation(
 
     assert result["ok"] is True
     assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_social_support_network(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-social-support-network-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-social-support-network-mini",
+                    "conversation": {
+                        "session_4": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D4:7",
+                                "text": (
+                                    "After the breakup, my mother Maya and my "
+                                    "running coach Lena were there for me. They "
+                                    "comforted me and helped me through it."
+                                ),
+                            }
+                        ],
+                        "session_5": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D5:2",
+                                "text": (
+                                    "I also helped review backend support notes "
+                                    "for the provider integration."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "Who helped Caroline through it?",
+                            "answer": "Her mother Maya and coach Lena.",
+                            "evidence": ["D4:7"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_support_role_inference(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-support-role-inference-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-support-role-inference-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D2:5",
+                                "text": (
+                                    "My friends and family support me and give "
+                                    "me strength when I feel uncertain."
+                                ),
+                            }
+                        ],
+                        "session_9": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D9:2",
+                                "text": (
+                                    "Last weekend I joined a mentorship program "
+                                    "for LGBTQ youth. I listened patiently and "
+                                    "helped people feel safe in the community."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "Would Caroline be a good mentor for Alex?",
+                            "answer": (
+                                "Yes, she joined a mentorship program, listened "
+                                "patiently, and helped LGBTQ youth feel safe."
+                            ),
+                            "evidence": ["D9:2"],
+                            "category": 3,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pytest.importorskip("aiosqlite")
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_emotion_cause_paraphrase(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-emotion-cause-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-emotion-cause-mini",
+                    "conversation": {
+                        "session_5": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D5:1",
+                                "text": (
+                                    "Last week I went to an LGBTQ+ pride parade. "
+                                    "Everyone was happy, and the parade made me "
+                                    "feel at home in the community."
+                                ),
+                            }
+                        ],
+                        "session_6": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D6:4",
+                                "text": (
+                                    "I also joined an online support group for "
+                                    "general planning advice."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What gave Caroline a sense of belonging?",
+                            "answer": "The LGBTQ+ pride parade.",
+                            "evidence": ["D5:1"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    pytest.importorskip("aiosqlite")
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_after_conversation_sequence(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-after-conversation-sequence-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-after-conversation-sequence-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "After talking with Sam about Atlas, I decided "
+                                    "to wait for invoice approval before launch."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D3:5",
+                                "text": (
+                                    "After talking with Priya about Stripe, I changed "
+                                    "the billing retry plan."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "What did Alex decide after talking with Sam about Atlas?"
+                            ),
+                            "answer": "Wait for invoice approval before launch.",
+                            "evidence": ["D2:3"],
+                            "category": 3,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_conversation_counterparty(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-conversation-counterparty-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-conversation-counterparty-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "I talked with Sam about Project Atlas rollout "
+                                    "and invoice approval."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D3:5",
+                                "text": (
+                                    "I talked with Priya about Stripe billing retries."
+                                ),
+                            }
+                        ],
+                        "session_4": [
+                            {
+                                "speaker": "Taylor",
+                                "dia_id": "D4:7",
+                                "text": (
+                                    "Project Atlas was delayed, but there was no "
+                                    "conversation with Alex."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "Who did Alex talk to about Project Atlas?",
+                            "answer": "Sam.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_conversation_topic(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-conversation-topic-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-conversation-topic-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "Alex and Maria talked about Project Atlas "
+                                    "and invoice approval."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D3:5",
+                                "text": "Alex and Maria talked after lunch.",
+                            }
+                        ],
+                        "session_4": [
+                            {
+                                "speaker": "Maria",
+                                "dia_id": "D4:7",
+                                "text": (
+                                    "Alex and Maria did not talk about Stripe "
+                                    "billing retries."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What did Alex and Maria talk about?",
+                            "answer": "Project Atlas and invoice approval.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_direct_recipient_action(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-direct-recipient-action-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-direct-recipient-action-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "I told Maria about the Project Atlas delay "
+                                    "after the invoice approval call."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Maria",
+                                "dia_id": "D3:5",
+                                "text": (
+                                    "I told Alex about the Project Atlas delay "
+                                    "after the invoice approval call."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "Who did Alex tell about the Project Atlas delay?",
+                            "answer": "Maria.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_passive_task_recipient_action(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-passive-task-recipient-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-passive-task-recipient-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Alex",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "I asked Maria to send the Project Atlas invoice "
+                                    "after the approval call."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Maria",
+                                "dia_id": "D3:5",
+                                "text": (
+                                    "I asked Alex to send the Project Atlas invoice "
+                                    "after the approval call."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": (
+                                "Who was asked to send the Project Atlas invoice by Alex?"
+                            ),
+                            "answer": "Maria.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["missing_terms"] == []
+
+
+def test_public_memory_benchmark_recalls_locomo_recommended_that_recipient(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-recommended-that-recipient-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-recommended-that-recipient-mini",
+                    "conversation": {
+                        "session_2": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D2:3",
+                                "text": (
+                                    "I recommended that Melanie read Becoming Nicole "
+                                    "by Amy Ellis Nutt for book club."
+                                ),
+                            }
+                        ],
+                        "session_3": [
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D3:5",
+                                "text": (
+                                    "I recommended that Caroline read Becoming Nicole "
+                                    "by Amy Ellis Nutt for book club."
+                                ),
+                            }
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "Who recommended that Melanie read Becoming Nicole?",
+                            "answer": "Caroline.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        },
+                        {
+                            "question": "What book did Caroline recommend Melanie read?",
+                            "answer": "Becoming Nicole by Amy Ellis Nutt.",
+                            "evidence": ["D2:3"],
+                            "category": 1,
+                        }
+                    ],
+                    "event_summary": [],
+                    "observation": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert [case["missing_terms"] for case in result["cases"]] == [[], []]
 
 
 def test_public_memory_benchmark_recalls_locomo_lgbtq_events_aggregation(
@@ -3080,6 +3707,118 @@ def test_public_memory_benchmark_links_observations_to_adjacent_same_speaker_tur
     assert "D14:20" not in observation_doc.text
 
 
+def test_public_memory_benchmark_preserves_multiple_locomo_observation_evidence_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-multi-observation-evidence-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-multi-observation-evidence-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:1",
+                                "text": "I want to pursue counseling.",
+                            },
+                            {
+                                "speaker": "Melanie",
+                                "dia_id": "D1:2",
+                                "text": "That sounds meaningful.",
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:4",
+                                "text": "Mental health work feels like the right path.",
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What field is Caroline likely to pursue?",
+                            "answer": "counseling",
+                            "evidence": ["D1:1", "D1:4"],
+                            "category": 3,
+                        }
+                    ],
+                    "observation": {
+                        "session_1_observation": {
+                            "Caroline": [
+                                {
+                                    "text": (
+                                        "Caroline wants counseling and mental health "
+                                        "work as her career path."
+                                    ),
+                                    "evidence_ids": ["D1:1", ["D1:4"]],
+                                }
+                            ]
+                        }
+                    },
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+    observation_doc = next(
+        document for document in case.documents if document.source_type == "locomo_observation"
+    )
+
+    assert "D1:1 Caroline:" in observation_doc.text
+    assert "Related turns: D1:4." in observation_doc.text
+    assert "D1:2" not in observation_doc.text
+
+
+def test_public_memory_benchmark_accepts_nested_official_locomo_qa_evidence(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-nested-qa-evidence-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-nested-qa-evidence-mini",
+                    "conversation": {
+                        "session_1": [
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:1",
+                                "text": "I want to pursue counseling.",
+                            },
+                            {
+                                "speaker": "Caroline",
+                                "dia_id": "D1:4",
+                                "text": "Mental health work feels like the right path.",
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "What field is Caroline likely to pursue?",
+                            "answer": "counseling",
+                            "evidence": ["D1:1", ["D1:4", "D1:missing"]],
+                            "category": 3,
+                        }
+                    ],
+                    "observation": [],
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+
+    assert case.expected_terms == ("D1:1", "D1:4")
+
+
 def test_public_memory_benchmark_recalls_locomo_career_intent_synonyms(
     tmp_path: Path,
 ) -> None:
@@ -3156,6 +3895,7 @@ def test_public_memory_benchmark_indexes_official_locomo_summaries(
                                 "text": "I checked in with Melanie today.",
                             }
                         ],
+                        "session_1_date_time": "8 May, 2023",
                     },
                     "qa": [
                         {
@@ -3205,6 +3945,7 @@ def test_public_memory_benchmark_indexes_official_locomo_summaries(
         "locomo_event_summary",
     }
     assert any("Q4 launch window" in document.text for document in summary_docs)
+    assert any("session_1 date: 8 May, 2023" in document.text for document in summary_docs)
     assert any("Atlas migration fallback" in document.text for document in summary_docs)
     assert result["ok"] is True
     assert result["benchmarks"][0]["metrics"]["capability_count"] == 2

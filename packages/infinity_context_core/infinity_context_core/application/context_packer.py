@@ -43,13 +43,22 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "book-suggestion-bridge",
         "children-count-event-bridge",
         "children-count-sibling-bridge",
+        "cause-education-infrastructure-inventory-bridge",
+        "cause-veterans-inventory-bridge",
+        "decomposition-activity-duration",
         "decomposition-activity-participation",
         "decomposition-attribute-aggregation",
+        "decomposition-frequency-recurrence",
+        "decomposition-inventory-list",
         "decomposition-quantity-count",
         "event-participation-bridge",
         "family-activity-bridge",
         "family-hike-detail-bridge",
         "family-hike-activity-bridge",
+        "friend-place-inventory-bridge",
+        "friend-place-shelter-inventory-bridge",
+        "friend-place-gym-inventory-bridge",
+        "friend-place-church-inventory-bridge",
         "family-painting-activity-bridge",
         "family-swimming-activity-bridge",
         "hike-count-activity-bridge",
@@ -61,6 +70,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "running-reason-question-bridge",
         "symbol-importance-bridge",
         "transgender-youth-center-event-bridge",
+        "travel-country-inventory-bridge",
         "volunteer-career-inference-bridge",
     }
 )
@@ -116,6 +126,10 @@ _POTTERY_TYPE_GENERIC_ANSWER_OBJECT_RE = re.compile(
     r"\b(?:pottery|art|painting|creative|creativity)\b",
     re.IGNORECASE,
 )
+_POTTERY_TYPE_INVENTORY_CONTEXT_RE = re.compile(
+    r"\b(?:pottery|ceramic|clay|bowl|bowls|cup|cups|mug|mugs|plate|plates)\b",
+    re.IGNORECASE,
+)
 _FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE = re.compile(
     r"\b(?:husband|motivated|motivate|motivation)\b(?=.{0,180}\b"
     r"(?:family|kids?|children|hiking|hike|nature|waterfall|trail))|"
@@ -130,6 +144,58 @@ _FAMILY_ACTIVITY_ACTIVITY_OBJECT_RE = re.compile(
 )
 _FAMILY_ACTIVITY_CONTEXT_OBJECT_RE = re.compile(
     r"\b(?:family|fam|kids?|children|husband)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_FRIEND_PLACE_DIRECT_RE = re.compile(
+    r"\b(?:became\s+friends|now\s+friends|made\s+friends|friends\s+with|"
+    r"fellow\s+volunteers?)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_FRIEND_COMMUNITY_PLACE_RE = re.compile(
+    r"\b(?:joined\s+(?:a\s+|the\s+|nearby\s+|local\s+)?(?:church|gym)|"
+    r"(?:church|gym).{0,120}\b(?:community|supportive|welcoming|people)|"
+    r"(?:supportive|welcoming).{0,120}\b(?:church|gym)|"
+    r"feel\s+closer\s+to\s+a\s+community)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_SHELTER_SLOT_RE = re.compile(
+    r"\b(?:homeless\s+shelter|dog\s+shelter|animal\s+shelter|shelter)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_GYM_SLOT_RE = re.compile(
+    r"\b(?:joined\s+(?:a\s+|the\s+|nearby\s+|local\s+)?gym|gym)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_CHURCH_JOINED_SLOT_RE = re.compile(
+    r"\bjoined\s+(?:a\s+|the\s+)?(?:nearby\s+|local\s+)?church\b",
+    re.IGNORECASE,
+)
+_INVENTORY_CHURCH_SLOT_RE = re.compile(r"\bchurch\b", re.IGNORECASE)
+_INVENTORY_VOLUNTEER_SLOT_RE = re.compile(
+    r"\b(?:volunteer|volunteers|volunteering)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_EDUCATION_INFRASTRUCTURE_SLOT_RE = re.compile(
+    r"\b(?:education|educational|school|schools|infrastructure|"
+    r"community\s+meetings?|education\s+reform|infrastructure\s+development)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_VETERANS_SLOT_RE = re.compile(
+    r"\b(?:veterans?|military|served|service\s+members?|memorial)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_COMMUNITY_SLOT_RE = re.compile(
+    r"\b(?:community|supportive\s+people|welcoming\s+atmosphere)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_SUPPORT_GROUP_SLOT_RE = re.compile(r"\bsupport\s+group\b", re.IGNORECASE)
+_INVENTORY_COUNTRY_SLOT_RE = re.compile(
+    r"\b(?:england|spain|france|italy|germany|portugal|ireland|sweden|"
+    r"country|countries|abroad|european?)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_PLACE_MARKER_RE = re.compile(
+    r"\b(?:homeless\s+shelter|dog\s+shelter|shelter|volunteers?|church|gym)\b",
     re.IGNORECASE,
 )
 
@@ -475,7 +541,7 @@ def _answer_support_diversity_candidates(items: list[ContextItem]) -> dict[str, 
 
 def _ordered_answer_support_families(candidates: dict[str, ContextItem]) -> tuple[str, ...]:
     marker_source_group_counts = _marker_coverage_source_group_counts(candidates)
-    return tuple(
+    ordered = tuple(
         sorted(
             candidates,
             key=lambda family: (
@@ -489,6 +555,43 @@ def _ordered_answer_support_families(candidates: dict[str, ContextItem]) -> tupl
             ),
         )
     )
+    return _round_robin_inventory_slot_families(ordered)
+
+
+def _round_robin_inventory_slot_families(families: tuple[str, ...]) -> tuple[str, ...]:
+    inventory_positions = tuple(
+        index
+        for index, family in enumerate(families)
+        if _answer_support_inventory_family_slot(family)
+    )
+    if len(inventory_positions) < 3:
+        return families
+    slot_counts: dict[str, int] = {}
+    ranked: list[tuple[int, int, int, str]] = []
+    for index in inventory_positions:
+        family = families[index]
+        slot = _answer_support_inventory_family_slot(family)
+        coverage_round = slot_counts.get(slot, 0)
+        slot_counts[slot] = coverage_round + 1
+        slot_priority = _inventory_answer_slot_priority(slot)
+        if slot_priority >= 3:
+            coverage_round += 2
+        ranked.append((coverage_round, slot_priority, index, family))
+    reranked_inventory = iter(family for _, _, _, family in sorted(ranked))
+    inventory_position_set = set(inventory_positions)
+    return tuple(
+        next(reranked_inventory) if index in inventory_position_set else family
+        for index, family in enumerate(families)
+    )
+
+
+def _answer_support_inventory_family_slot(family: str) -> str:
+    if _diversity_family_base(family) not in {
+        "query_reason_inventory_slot",
+        "query_reason_inventory_slot_source_group",
+    }:
+        return ""
+    return _inventory_answer_slot_from_family(family)
 
 
 def _answer_support_family_priority(
@@ -506,10 +609,22 @@ def _answer_support_family_priority(
     }:
         return 0
     query_reason = _answer_support_query_reason(item)
-    if base in {"query_reason", "query_reason_source_group"} and _is_pottery_type_reason(
-        query_reason
+    if _is_pottery_type_reason(query_reason) and base in {
+        "query_reason",
+        "query_reason_marker_coverage_source_group",
+        "query_reason_source_group",
+    }:
+        return 0
+    if (
+        base == "query_reason_marker_coverage_source_group"
+        and _is_pottery_type_inventory_item(item, query_reason=query_reason)
     ):
-        return 4
+        return 0
+    if base in {
+        "query_reason_inventory_slot",
+        "query_reason_inventory_slot_source_group",
+    }:
+        return _inventory_answer_slot_priority(_inventory_answer_slot_from_family(family))
     if base == "query_reason_marker_coverage_source_group":
         if _is_family_activity_reason(query_reason):
             return 4
@@ -550,6 +665,7 @@ def _answer_support_source_group_reason_key(family: str) -> str:
         "query_reason_activity_slot_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
+        "query_reason_inventory_slot_source_group",
         "query_reason_marker_coverage_source_group",
         "query_reason_source_group",
     }:
@@ -576,6 +692,7 @@ def _answer_support_source_group_limit(
         "query_reason_activity_slot_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
+        "query_reason_inventory_slot_source_group",
         "query_reason_marker_coverage_source_group",
     }
     if (
@@ -610,11 +727,19 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
         source_group = _answer_support_source_group(item)
         career_slot = _career_answer_slot(item, query_reason=query_reason)
         activity_slot = _activity_answer_slot(item, query_reason=query_reason)
+        inventory_slot = _inventory_answer_slot(item, query_reason=query_reason)
         if source_group:
             if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
                 return _compound_diversity_family(
                     "query_reason_count_coverage_source_group",
                     query_reason,
+                    source_group,
+                )
+            if inventory_slot:
+                return _compound_diversity_family(
+                    "query_reason_inventory_slot_source_group",
+                    query_reason,
+                    inventory_slot,
                     source_group,
                 )
             if marker_slot := _aggregation_marker_coverage_slot(
@@ -657,6 +782,12 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                 "query_reason_activity_slot",
                 query_reason,
                 activity_slot,
+            )
+        if inventory_slot:
+            return _compound_diversity_family(
+                "query_reason_inventory_slot",
+                query_reason,
+                inventory_slot,
             )
         if career_slot:
             return _compound_diversity_family(
@@ -812,6 +943,65 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
     return ""
 
 
+def _inventory_answer_slot(item: ContextItem, *, query_reason: str) -> str:
+    if not _is_inventory_list_reason(query_reason):
+        return ""
+    return _inventory_answer_slot_for_text(item.text)
+
+
+def _inventory_answer_slot_for_text(text: str) -> str:
+    if _INVENTORY_SHELTER_SLOT_RE.search(text):
+        return "shelter"
+    if _INVENTORY_GYM_SLOT_RE.search(text):
+        return "gym"
+    if _INVENTORY_CHURCH_JOINED_SLOT_RE.search(text):
+        return "church_joined"
+    if _INVENTORY_CHURCH_SLOT_RE.search(text):
+        return "church"
+    if _INVENTORY_EDUCATION_INFRASTRUCTURE_SLOT_RE.search(text):
+        return "education_infrastructure"
+    if _INVENTORY_VETERANS_SLOT_RE.search(text):
+        return "veterans"
+    if _INVENTORY_FRIEND_PLACE_DIRECT_RE.search(text):
+        return "direct_friend"
+    if _INVENTORY_VOLUNTEER_SLOT_RE.search(text):
+        return "volunteer"
+    if _INVENTORY_COMMUNITY_SLOT_RE.search(text):
+        return "community"
+    if _INVENTORY_SUPPORT_GROUP_SLOT_RE.search(text):
+        return "support_group"
+    if _INVENTORY_COUNTRY_SLOT_RE.search(text):
+        return "country"
+    if _INVENTORY_PLACE_MARKER_RE.search(text):
+        return "place"
+    return ""
+
+
+def _inventory_answer_slot_priority(slot: str) -> int:
+    normalized_slot = slot.replace("-", "_")
+    return {
+        "direct_friend": 0,
+        "shelter": 1,
+        "gym": 1,
+        "church_joined": 1,
+        "country": 1,
+        "education_infrastructure": 1,
+        "veterans": 1,
+        "church": 2,
+        "volunteer": 2,
+        "community": 3,
+        "place": 4,
+        "support_group": 5,
+    }.get(normalized_slot, 6)
+
+
+def _inventory_answer_slot_from_family(family: str) -> str:
+    parts = family.split(":")
+    if len(parts) >= 3:
+        return parts[2]
+    return ""
+
+
 def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | str, ...]:
     signals = _diagnostic_score_signals(item)
     query_reason = _answer_support_query_reason(item)
@@ -829,6 +1019,7 @@ def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | st
         _precise_turn_answer_support_rank(item, query_reason=query_reason),
         _precise_answer_content_rank(item, query_reason=query_reason),
         _answer_object_rank(item, query_reason=query_reason),
+        _marker_coverage_answer_support_rank(item, query_reason=query_reason),
         -len(item.source_refs),
         *signal_rank,
         -len(diagnostic_retrieval_sources(item.diagnostics)),
@@ -839,13 +1030,34 @@ def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | st
 def _answer_object_rank(item: ContextItem, *, query_reason: str) -> int:
     if _is_pottery_type_reason(query_reason):
         return _pottery_type_answer_object_rank(item.text)
+    if _is_pottery_type_inventory_item(item, query_reason=query_reason):
+        return _pottery_type_answer_object_rank(item.text)
     if _is_family_activity_reason(query_reason):
         return _family_activity_answer_object_rank(item.text)
+    if _is_inventory_list_reason(query_reason):
+        return _inventory_list_answer_object_rank(item.text)
     return 2
+
+
+def _marker_coverage_answer_support_rank(item: ContextItem, *, query_reason: str) -> int:
+    if not _aggregation_marker_coverage_slot(item, query_reason=query_reason):
+        return 0
+    markers = tuple(
+        dict.fromkeys(match.group(0) for match in _DIALOGUE_MARKER_RE.finditer(item.text))
+    )
+    return -len(markers)
 
 
 def _is_pottery_type_reason(query_reason: str) -> bool:
     return query_reason.replace("_", "-") == "pottery-type-bridge"
+
+
+def _is_pottery_type_inventory_item(item: ContextItem, *, query_reason: str) -> bool:
+    if query_reason.replace("_", "-") != "decomposition-inventory-list":
+        return False
+    if _POTTERY_TYPE_INVENTORY_CONTEXT_RE.search(item.text) is None:
+        return False
+    return _pottery_type_answer_object_rank(item.text) <= 1
 
 
 def _is_family_activity_reason(query_reason: str) -> bool:
@@ -856,6 +1068,19 @@ def _is_family_activity_reason(query_reason: str) -> bool:
         "family-hike-detail-bridge",
         "family-painting-activity-bridge",
         "family-swimming-activity-bridge",
+    }
+
+
+def _is_inventory_list_reason(query_reason: str) -> bool:
+    return query_reason.replace("_", "-") in {
+        "decomposition-inventory-list",
+        "friend-place-inventory-bridge",
+        "friend-place-shelter-inventory-bridge",
+        "friend-place-gym-inventory-bridge",
+        "friend-place-church-inventory-bridge",
+        "cause-education-infrastructure-inventory-bridge",
+        "cause-veterans-inventory-bridge",
+        "travel-country-inventory-bridge",
     }
 
 
@@ -881,6 +1106,28 @@ def _family_activity_answer_object_rank(text: str) -> int:
     if has_family_context:
         return 3
     return 5
+
+
+def _inventory_list_answer_object_rank(text: str) -> int:
+    slot = _inventory_answer_slot_for_text(text)
+    if slot == "direct_friend":
+        return 0
+    if slot in {
+        "shelter",
+        "gym",
+        "church_joined",
+        "country",
+        "education_infrastructure",
+        "veterans",
+    }:
+        return 1
+    if slot in {"church", "volunteer"}:
+        return 2
+    if slot in {"community", "place"} or _INVENTORY_FRIEND_COMMUNITY_PLACE_RE.search(text):
+        return 3
+    if slot == "support_group":
+        return 5
+    return 6
 
 
 def _precise_turn_answer_support_rank(item: ContextItem, *, query_reason: str) -> int:

@@ -82,10 +82,33 @@ def test_query_decomposition_covers_conversational_event_wording() -> None:
     english = build_query_decomposition_plan("What did Alex decide after the Atlas DM?")
     talk = build_query_decomposition_plan("Who did Alex talk to about Project Atlas?")
     meet = build_query_decomposition_plan("Who did Alex meet with about Atlas?")
+    short_call = build_query_decomposition_plan("Who did Alex call?")
+    topic = build_query_decomposition_plan("What did Alex and Maria talk about?")
+    topic_discuss_with = build_query_decomposition_plan("What did Alex discuss with Maria?")
+    topic_conversation_with = build_query_decomposition_plan(
+        "What was the conversation with Maria about?"
+    )
+    topic_possessive_conversation = build_query_decomposition_plan(
+        "What was Alex's conversation with Maria about?"
+    )
+    topic_discussed_in_call = build_query_decomposition_plan(
+        "What was discussed during the Atlas call?"
+    )
     russian = build_query_decomposition_plan(
         "Что Мария решила после переписки с Сергеем по Атласу?"
     )
     russian_talk = build_query_decomposition_plan("С кем Алекс говорил про Atlas?")
+    russian_short_talk = build_query_decomposition_plan("С кем Алекс говорил?")
+    russian_topic = build_query_decomposition_plan("О чем Алекс и Мария говорили?")
+    russian_topic_discuss = build_query_decomposition_plan("Что Алекс и Мария обсуждали?")
+    latest = build_query_decomposition_plan("What was my latest call with Alex about?")
+    russian_latest = build_query_decomposition_plan("Что было на последнем созвоне с Алексом?")
+    relative_recent = build_query_decomposition_plan(
+        "What did I discuss with Alex two hours ago?"
+    )
+    russian_relative_recent = build_query_decomposition_plan(
+        "Что я обсуждал с Алексом час назад?"
+    )
 
     english_context = next(
         item for item in english.decompositions if item.reason == "decomposition_event_context"
@@ -96,30 +119,141 @@ def test_query_decomposition_covers_conversational_event_wording() -> None:
     talk_context = next(
         item for item in talk.decompositions if item.reason == "decomposition_event_context"
     )
+    talk_counterparty = next(
+        item
+        for item in talk.decompositions
+        if item.reason == "decomposition_conversation_counterparty"
+    )
     meet_context = next(
         item for item in meet.decompositions if item.reason == "decomposition_event_context"
     )
+    meet_counterparty = next(
+        item
+        for item in meet.decompositions
+        if item.reason == "decomposition_conversation_counterparty"
+    )
+    short_call_counterparty = next(
+        item
+        for item in short_call.decompositions
+        if item.reason == "decomposition_conversation_counterparty"
+    )
+    topic_context = next(
+        item for item in topic.decompositions if item.reason == "decomposition_event_context"
+    )
+    topic_focus = next(
+        item
+        for item in topic.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    topic_discuss_with_focus = next(
+        item
+        for item in topic_discuss_with.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    topic_conversation_with_focus = next(
+        item
+        for item in topic_conversation_with.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    topic_possessive_conversation_focus = next(
+        item
+        for item in topic_possessive_conversation.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    topic_discussed_in_call_focus = next(
+        item
+        for item in topic_discussed_in_call.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
     russian_context = next(
         item for item in russian.decompositions if item.reason == "decomposition_event_context"
+    )
+    russian_sequence = next(
+        item for item in russian.decompositions if item.reason == "decomposition_event_sequence"
     )
     russian_talk_context = next(
         item
         for item in russian_talk.decompositions
         if item.reason == "decomposition_event_context"
     )
+    russian_talk_counterparty = next(
+        item
+        for item in russian_talk.decompositions
+        if item.reason == "decomposition_conversation_counterparty"
+    )
+    russian_short_talk_counterparty = next(
+        item
+        for item in russian_short_talk.decompositions
+        if item.reason == "decomposition_conversation_counterparty"
+    )
+    russian_topic_focus = next(
+        item
+        for item in russian_topic.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    russian_topic_discuss_focus = next(
+        item
+        for item in russian_topic_discuss.decompositions
+        if item.reason == "decomposition_conversation_topic"
+    )
+    latest_focus = next(
+        item
+        for item in latest.decompositions
+        if item.reason == "decomposition_conversation_recency"
+    )
+    russian_latest_focus = next(
+        item
+        for item in russian_latest.decompositions
+        if item.reason == "decomposition_conversation_recency"
+    )
+    relative_recent_focus = next(
+        item
+        for item in relative_recent.decompositions
+        if item.reason == "decomposition_conversation_recency"
+    )
+    russian_relative_recent_focus = next(
+        item
+        for item in russian_relative_recent.decompositions
+        if item.reason == "decomposition_conversation_recency"
+    )
 
     assert "chat message dm transcript" in english_context.query
     assert "meeting call chat message conversation event" in english_sequence.query
+    assert "atlas" in english_sequence.query.casefold()
     assert "alex" in talk_context.query.casefold()
     assert "project" in talk_context.query.casefold()
     assert "atlas" in talk_context.query.casefold()
     assert "event conversation meeting call chat message" in talk_context.query
+    assert "counterparty participant with to from talked spoke" in talk_counterparty.query
     assert "atlas" in meet_context.query.casefold()
+    assert "counterparty participant with to from talked spoke" in meet_counterparty.query
+    assert short_call_counterparty.query.casefold().startswith("alex ")
+    assert "maria" in topic_context.query.casefold()
+    assert "conversation topic subject about discussed" in topic_focus.query
+    assert "conversation topic subject about discussed" in topic_discuss_with_focus.query
+    assert "conversation topic subject about discussed" in topic_conversation_with_focus.query
+    assert "conversation topic subject about discussed" in (
+        topic_possessive_conversation_focus.query
+    )
+    assert "conversation topic subject about discussed" in topic_discussed_in_call_focus.query
     assert "сергеем" in russian_context.query.casefold()
     assert "атлас" in russian_context.query.casefold()
     assert "chat message dm transcript" in russian_context.query
+    assert "сергеем" in russian_sequence.query.casefold()
+    assert "атлас" in russian_sequence.query.casefold()
     assert "алекс" in russian_talk_context.query.casefold()
     assert "atlas" in russian_talk_context.query.casefold()
+    assert "counterparty participant with to from talked spoke" in russian_talk_counterparty.query
+    assert russian_short_talk_counterparty.query.casefold().startswith("алекс ")
+    assert "conversation topic subject about discussed" in russian_topic_focus.query
+    assert "conversation topic subject about discussed" in russian_topic_discuss_focus.query
+    assert "latest recent newest current conversation call" in latest_focus.query
+    assert "temporal event" in latest_focus.query
+    assert "latest recent newest current conversation call" in russian_latest_focus.query
+    assert "latest recent newest current conversation call" in relative_recent_focus.query
+    assert "latest recent newest current conversation call" in (
+        russian_relative_recent_focus.query
+    )
 
 
 def test_query_decomposition_covers_relocation_life_event_origin() -> None:
@@ -173,6 +307,142 @@ def test_query_decomposition_does_not_treat_book_suggestion_from_as_relocation()
     assert "decomposition_clause" not in reasons
 
 
+def test_query_decomposition_routes_travel_country_lists_as_inventory_not_relocation() -> None:
+    english = build_query_decomposition_plan("What European countries has Maria been to?")
+    russian = build_query_decomposition_plan("Какие страны Мария посещала?")
+
+    english_reasons = {item.reason for item in english.decompositions}
+    russian_reasons = {item.reason for item in russian.decompositions}
+    english_inventory = next(
+        item for item in english.decompositions if item.reason == "decomposition_inventory_list"
+    )
+    russian_inventory = next(
+        item for item in russian.decompositions if item.reason == "decomposition_inventory_list"
+    )
+
+    assert "decomposition_relocation_context" not in english_reasons
+    assert "decomposition_relocation_context" not in russian_reasons
+    assert "country countries europe european england spain" in english_inventory.query
+    assert "solo trip travel visited went" in english_inventory.query
+    assert "мария" in russian_inventory.query.casefold()
+    assert "country countries europe european england spain" in russian_inventory.query
+
+
+def test_query_decomposition_adds_inventory_list_for_broad_list_slots() -> None:
+    cases = [
+        (
+            "What areas of the U.S. has John been to or is planning to go to?",
+            "place area country state city coast destination",
+        ),
+        (
+            "What shelters does Maria volunteer at?",
+            "volunteer volunteered volunteering shelter",
+        ),
+        (
+            "What causes does John feel passionate about supporting?",
+            "cause causes passionate support supporting",
+        ),
+        (
+            "What types of pottery have Melanie and her kids made?",
+            "type kind made finished created project",
+        ),
+    ]
+
+    for query, expected_tail in cases:
+        inventory = next(
+            item
+            for item in build_query_decomposition_plan(query).decompositions
+            if item.reason == "decomposition_inventory_list"
+        )
+
+        assert expected_tail in inventory.query
+        assert not inventory.query.endswith((" p", " pain"))
+
+
+def test_query_decomposition_adds_inventory_for_where_place_lists_without_relocation() -> None:
+    plan = build_query_decomposition_plan("Where has Maria made friends?")
+    relocation = build_query_decomposition_plan("Where did Caroline move from 4 years ago?")
+
+    reasons = {item.reason for item in plan.decompositions}
+    inventory = next(
+        item for item in plan.decompositions if item.reason == "decomposition_inventory_list"
+    )
+
+    assert "decomposition_inventory_list" in reasons
+    assert "decomposition_relocation_context" not in reasons
+    assert "place friends shelter church gym community welcoming people" in inventory.query
+    assert "fellow volunteers joined made met" in inventory.query
+    assert "decomposition_inventory_list" not in {
+        item.reason for item in relocation.decompositions
+    }
+
+
+def test_query_decomposition_adds_people_inventory_for_who_met_helped_questions() -> None:
+    english = build_query_decomposition_plan(
+        "Who has Maria met and helped while volunteering?"
+    )
+    russian = build_query_decomposition_plan("Кому Мария помогала во время волонтерства?")
+    recommendation = build_query_decomposition_plan(
+        "Who did Caroline recommend Becoming Nicole to?"
+    )
+
+    english_inventory = next(
+        item for item in english.decompositions if item.reason == "decomposition_inventory_list"
+    )
+    russian_inventory = next(
+        item for item in russian.decompositions if item.reason == "decomposition_inventory_list"
+    )
+
+    assert "people person names met helped worked with friend customer" in (
+        english_inventory.query
+    )
+    assert "people person names met helped worked with friend customer" in (
+        russian_inventory.query
+    )
+    assert "decomposition_inventory_list" not in {
+        item.reason for item in recommendation.decompositions
+    }
+
+
+def test_query_decomposition_adds_recommendation_source_query() -> None:
+    source_plan = build_query_decomposition_plan(
+        "What book did Melanie read from Caroline's suggestion?"
+    )
+    recipient_plan = build_query_decomposition_plan(
+        "Who did Caroline recommend Becoming Nicole to?"
+    )
+    russian_plan = build_query_decomposition_plan(
+        "По чьему совету Мария прочитала книгу?"
+    )
+
+    source = next(
+        item
+        for item in source_plan.decompositions
+        if item.reason == "decomposition_recommendation_source"
+    )
+    recipient = next(
+        item
+        for item in recipient_plan.decompositions
+        if item.reason == "decomposition_recommendation_source"
+    )
+    russian = next(
+        item
+        for item in russian_plan.decompositions
+        if item.reason == "decomposition_recommendation_source"
+    )
+
+    assert "melanie" in source.query.casefold()
+    assert "caroline" in source.query.casefold()
+    assert "source actor recipient to from because of" in source.query
+    assert "caroline" in recipient.query.casefold()
+    assert "becoming" in recipient.query.casefold()
+    assert "nicole" in recipient.query.casefold()
+    assert "who whom whose" in recipient.query
+    assert "мария" in russian.query.casefold()
+    assert "прочитала" in russian.query.casefold()
+    assert "recommendation suggestion advice" in russian.query
+
+
 def test_query_decomposition_covers_activity_life_event_questions() -> None:
     plan = build_query_decomposition_plan("What LGBTQ+ events has Caroline participated in?")
 
@@ -220,6 +490,21 @@ def test_query_decomposition_adds_after_event_sequence_query() -> None:
     assert "meeting call chat message conversation event" in sequence.query
 
 
+def test_query_decomposition_adds_after_conversation_sequence_query() -> None:
+    plan = build_query_decomposition_plan(
+        "What did Alex decide after talking with Sam about Atlas?"
+    )
+
+    sequence = next(
+        item for item in plan.decompositions if item.reason == "decomposition_event_sequence"
+    )
+
+    assert sequence.query.casefold().startswith("alex ")
+    assert "sam" in sequence.query.casefold()
+    assert "atlas" in sequence.query.casefold()
+    assert "after following later next timeline" in sequence.query
+
+
 def test_query_decomposition_treats_since_event_as_after_sequence() -> None:
     plan = build_query_decomposition_plan("What changed since the Atlas call?")
 
@@ -230,6 +515,20 @@ def test_query_decomposition_treats_since_event_as_after_sequence() -> None:
     assert "atlas" in sequence.query.casefold()
     assert "after following later next timeline" in sequence.query
     assert "meeting call chat message conversation event" in sequence.query
+
+
+def test_query_decomposition_does_not_treat_generic_after_phrases_as_event_sequence() -> None:
+    after_work = build_query_decomposition_plan("How does Melanie unwind after work?")
+    after_gaming = build_query_decomposition_plan(
+        "What alternative career might Nate consider after gaming?"
+    )
+
+    assert "decomposition_event_sequence" not in {
+        item.reason for item in after_work.decompositions
+    }
+    assert "decomposition_event_sequence" not in {
+        item.reason for item in after_gaming.decompositions
+    }
 
 
 def test_query_decomposition_adds_before_event_sequence_query() -> None:
@@ -630,6 +929,27 @@ def test_query_decomposition_adds_evidence_reason_query() -> None:
     assert "source citation quote explanation" in reason.query
 
 
+def test_query_decomposition_adds_emotion_cause_query_for_belonging_paraphrases() -> None:
+    plan = build_query_decomposition_plan("What gave Caroline a sense of belonging?")
+    russian = build_query_decomposition_plan("Как Каролина почувствовала себя принятой?")
+
+    emotion = next(
+        item for item in plan.decompositions if item.reason == "decomposition_emotion_cause"
+    )
+    russian_emotion = next(
+        item
+        for item in russian.decompositions
+        if item.reason == "decomposition_emotion_cause"
+    )
+
+    assert emotion.query.casefold().startswith("caroline ")
+    assert "sense" in emotion.query.casefold()
+    assert "belonging at home community welcomed" in emotion.query
+    assert "pride parade support group" in emotion.query
+    assert russian_emotion.query.casefold().startswith("каролина ")
+    assert "accepted acceptance belonged" in russian_emotion.query
+
+
 def test_query_decomposition_adds_gotcha_failure_query() -> None:
     watch_out = build_query_decomposition_plan(
         "What should I watch out for in Atlas deployment?"
@@ -706,6 +1026,31 @@ def test_query_decomposition_adds_action_role_query() -> None:
     requested_recipient_plan = build_query_decomposition_plan(
         "Who did Caroline recommend Becoming Nicole to?"
     )
+    recommended_that_plan = build_query_decomposition_plan(
+        "Who recommended that Melanie read Becoming Nicole?"
+    )
+    recommend_object_plan = build_query_decomposition_plan(
+        "What book did Caroline recommend Melanie read?"
+    )
+    direct_recipient_plan = build_query_decomposition_plan(
+        "Who did Alex tell about the Atlas delay?"
+    )
+    direct_message_plan = build_query_decomposition_plan(
+        "Who did Alex message about the Atlas delay?"
+    )
+    ask_to_task_plan = build_query_decomposition_plan(
+        "Who did Alex ask to send the Atlas invoice?"
+    )
+    passive_actor_plan = build_query_decomposition_plan(
+        "Who was told about the Atlas delay by Alex?"
+    )
+    introduce_plan = build_query_decomposition_plan("Who introduced Maria to Alex?")
+    heard_from_plan = build_query_decomposition_plan(
+        "Who did John hear inspiring stories from?"
+    )
+    help_plan = build_query_decomposition_plan(
+        "Who helped Maria with the Atlas migration?"
+    )
 
     action = next(
         item for item in plan.decompositions if item.reason == "decomposition_action_role"
@@ -723,6 +1068,61 @@ def test_query_decomposition_adds_action_role_query() -> None:
         for item in requested_recipient_plan.decompositions
         if item.reason == "decomposition_action_role"
     )
+    recommended_that_action = next(
+        item
+        for item in recommended_that_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    recommended_that_source = next(
+        item
+        for item in recommended_that_plan.decompositions
+        if item.reason == "decomposition_recommendation_source"
+    )
+    recommend_object_action = next(
+        item
+        for item in recommend_object_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    recommend_object_source = next(
+        item
+        for item in recommend_object_plan.decompositions
+        if item.reason == "decomposition_recommendation_source"
+    )
+    direct_recipient_action = next(
+        item
+        for item in direct_recipient_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    direct_message_action = next(
+        item
+        for item in direct_message_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    ask_to_task_action = next(
+        item
+        for item in ask_to_task_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    passive_actor_action = next(
+        item
+        for item in passive_actor_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    introduce_action = next(
+        item
+        for item in introduce_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    heard_from_action = next(
+        item
+        for item in heard_from_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    help_action = next(
+        item
+        for item in help_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
 
     assert "alex" in action.query.casefold()
     assert "maria" in action.query.casefold()
@@ -736,6 +1136,36 @@ def test_query_decomposition_adds_action_role_query() -> None:
     assert "caroline" in requested_recipient_action.query.casefold()
     assert "becoming" in requested_recipient_action.query.casefold()
     assert "actor recipient speaker" in requested_recipient_action.query
+    assert "melanie" in recommended_that_action.query.casefold()
+    assert "becoming" in recommended_that_action.query.casefold()
+    assert "actor recipient speaker" in recommended_that_action.query
+    assert "source actor recipient" in recommended_that_source.query
+    assert "caroline" in recommend_object_action.query.casefold()
+    assert "melanie" in recommend_object_action.query.casefold()
+    assert "actor recipient speaker" in recommend_object_action.query
+    assert "source actor recipient" in recommend_object_source.query
+    assert "alex" in direct_recipient_action.query.casefold()
+    assert "atlas" in direct_recipient_action.query.casefold()
+    assert "actor recipient speaker" in direct_recipient_action.query
+    assert "alex" in direct_message_action.query.casefold()
+    assert "atlas" in direct_message_action.query.casefold()
+    assert "actor recipient speaker" in direct_message_action.query
+    assert "alex" in ask_to_task_action.query.casefold()
+    assert "atlas" in ask_to_task_action.query.casefold()
+    assert "invoice" in ask_to_task_action.query.casefold()
+    assert "actor recipient speaker" in ask_to_task_action.query
+    assert "alex" in passive_actor_action.query.casefold()
+    assert "atlas" in passive_actor_action.query.casefold()
+    assert "actor recipient speaker" in passive_actor_action.query
+    assert "maria" in introduce_action.query.casefold()
+    assert "alex" in introduce_action.query.casefold()
+    assert "actor recipient speaker" in introduce_action.query
+    assert "john" in heard_from_action.query.casefold()
+    assert "stories" in heard_from_action.query.casefold()
+    assert "actor recipient speaker" in heard_from_action.query
+    assert "maria" in help_action.query.casefold()
+    assert "atlas" in help_action.query.casefold()
+    assert "actor recipient speaker" in help_action.query
 
 
 def test_query_decomposition_adds_deadline_commitment_query() -> None:
@@ -896,6 +1326,63 @@ def test_best_query_relevance_uses_absence_contrast_decomposition() -> None:
     assert relevance.unique_term_hits >= 2
 
 
+def test_best_query_relevance_uses_recommendation_source_decomposition() -> None:
+    plan = build_query_expansion_plan("Who did Caroline recommend Becoming Nicole to?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline suggested the book Becoming Nicole to Melanie, and Melanie "
+            "followed the recommendation after the conversation."
+        ),
+    )
+
+    assert reason == "decomposition_recommendation_source"
+    assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_conversation_counterparty_decomposition() -> None:
+    plan = build_query_expansion_plan("Who did Alex talk to about Project Atlas?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Alex talked with Sam about Project Atlas rollout and the invoice "
+            "approval plan."
+        ),
+    )
+
+    assert reason == "decomposition_conversation_counterparty"
+    assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_conversation_topic_decomposition() -> None:
+    plan = build_query_expansion_plan("What did Alex and Maria talk about?")
+    discuss_with_plan = build_query_expansion_plan("What did Alex discuss with Maria?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Alex and Maria talked about Project Atlas, invoice approval, and "
+            "the launch plan."
+        ),
+    )
+
+    assert reason == "decomposition_conversation_topic"
+    assert relevance.distinctive_term_hits >= 4
+
+    _, discuss_reason, discuss_relevance = best_query_relevance(
+        discuss_with_plan,
+        text=(
+            "Alex discussed Project Atlas, invoice approval, and the launch "
+            "plan with Maria."
+        ),
+    )
+
+    assert discuss_reason == "decomposition_conversation_topic"
+    assert discuss_relevance.distinctive_term_hits >= 4
+
+
 def test_best_query_relevance_uses_quantity_count_decomposition() -> None:
     plan = build_query_expansion_plan("How many concerts has Alex attended?")
 
@@ -1020,3 +1507,24 @@ def test_best_query_relevance_uses_evidence_reason_decomposition() -> None:
 
     assert reason == "decomposition_evidence_reason"
     assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_emotion_cause_decomposition_for_paraphrases() -> None:
+    cases = (
+        (
+            "What gave Caroline a sense of belonging?",
+            "The LGBTQ pride parade made Caroline feel at home in the community.",
+        ),
+        (
+            "What made Caroline feel proud and powerful?",
+            "Giving her school speech about her transgender journey was empowering.",
+        ),
+    )
+
+    for query, text in cases:
+        plan = build_query_expansion_plan(query)
+
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "decomposition_emotion_cause"
+        assert relevance.distinctive_term_hits >= 3

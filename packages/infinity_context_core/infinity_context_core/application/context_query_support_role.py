@@ -71,24 +71,44 @@ _ROLE_TERMS = frozenset(
 )
 _HELP_ACTION_TERMS = frozenset(
     {
+        "confide",
+        "confided",
+        "confides",
+        "confiding",
         "help",
         "helping",
+        "open",
+        "opened",
+        "opening",
         "support",
         "supporting",
         "comfort",
         "comforting",
+        "trust",
+        "trusted",
+        "trusting",
     }
 )
 _HELP_SCENARIO_TERMS = frozenset(
     {
+        "anxiety",
         "community",
         "health",
+        "issue",
         "issues",
         "kids",
         "mental",
+        "personal",
+        "private",
+        "problem",
+        "problems",
+        "secret",
+        "sensitive",
         "people",
         "shelter",
         "similar",
+        "struggle",
+        "struggles",
         "youth",
     }
 )

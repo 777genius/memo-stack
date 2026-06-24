@@ -1,0 +1,30 @@
+"""Static deterministic query expansion rules."""
+
+from __future__ import annotations
+
+from infinity_context_core.application.context_query_expansion_rule_catalog_part1 import (
+    EXPANSION_RULES_PART_1,
+)
+from infinity_context_core.application.context_query_expansion_rule_catalog_part2 import (
+    EXPANSION_RULES_PART_2,
+)
+from infinity_context_core.application.context_query_expansion_rule_catalog_part3 import (
+    EXPANSION_RULES_PART_3,
+)
+from infinity_context_core.application.context_query_expansion_rule_catalog_part4 import (
+    EXPANSION_RULES_PART_4,
+)
+from infinity_context_core.application.context_query_expansion_rule_catalog_part5 import (
+    EXPANSION_RULES_PART_5,
+)
+from infinity_context_core.application.context_query_expansion_rule_terms import (
+    MAX_QUERY_EXPANSIONS,
+)
+
+EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
+    *EXPANSION_RULES_PART_1,
+    *EXPANSION_RULES_PART_2,
+    *EXPANSION_RULES_PART_3,
+    *EXPANSION_RULES_PART_4,
+    *EXPANSION_RULES_PART_5,
+)

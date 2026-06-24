@@ -353,6 +353,41 @@ def test_answer_support_family_uses_derived_group_refs_for_keyword_observations(
     assert family.endswith("locomo-conv-26-session-1")
 
 
+def test_answer_support_family_uses_marker_source_group_for_duration_and_frequency() -> None:
+    for reason in (
+        "decomposition_activity_duration",
+        "decomposition_frequency_recurrence",
+    ):
+        item = ContextItem(
+            item_id=f"{reason}_observation",
+            item_type="chunk",
+            text=(
+                "D4:1 Maria has volunteered for three years. Related turns: "
+                "D4:1, D4:2."
+            ),
+            score=0.98,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_observation",
+                    source_id="locomo:conv-26:session_4:observation",
+                ),
+            ),
+            diagnostics={
+                "retrieval_source": "keyword_aggregation_chunks",
+                "retrieval_sources": ["keyword_aggregation_chunks"],
+                "source_type": "locomo_observation",
+                "score_signals": {"query_expansion_reason": reason},
+                "provenance": {
+                    "keyword_aggregation_source_group": "locomo:conv-26:session_4",
+                },
+            },
+        )
+
+        assert _answer_support_diversity_family(item).startswith(
+            "query_reason_marker_coverage_source_group:"
+        )
+
+
 def test_answer_support_family_prefers_broader_evidence_span_within_same_family() -> None:
     narrow = ContextItem(
         item_id="d1_16_turn",
@@ -1808,6 +1843,11 @@ def test_context_packer_preserves_distinct_observation_marker_windows_under_budg
     assert _answer_support_diversity_family(early_window) != (
         _answer_support_diversity_family(later_window)
     )
+    candidates = _answer_support_diversity_candidates([early_window, later_window])
+    ordered = _ordered_answer_support_families(candidates)
+    assert ordered.index(_answer_support_diversity_family(later_window)) < (
+        ordered.index(_answer_support_diversity_family(early_window))
+    )
 
     result = ContextPacker().pack(
         bundle_id="ctx_observation_marker_windows",
@@ -1896,6 +1936,66 @@ def test_context_packer_prioritizes_pottery_answer_object_marker_window() -> Non
 
     assert _ordered_answer_support_families(candidates)[0] == (
         _answer_support_diversity_family(kids_clay_window)
+    )
+
+
+def test_answer_support_orders_specific_pottery_before_generic_inventory_slots() -> None:
+    generic_inventory_items = tuple(
+        ContextItem(
+            item_id=f"chunk_generic_inventory_{index}",
+            item_type="chunk",
+            text=text,
+            score=0.99,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-26:session_15:D15:{index}:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+            },
+        )
+        for index, text in enumerate(
+            (
+                "D15:2 Melanie visited a gym.",
+                "D15:4 Melanie volunteered at a shelter.",
+                "D15:6 Melanie talked about a country trip.",
+            ),
+            start=1,
+        )
+    )
+    pottery_marker_window = ContextItem(
+        item_id="chunk_pottery_marker_window",
+        item_type="chunk",
+        text=(
+            "D12:8 Melanie's pottery project was a source of happiness. "
+            "Related turns: D12:2 D12:4 D12:10. "
+            "D12:14 Melanie values friendship with Caroline. "
+            "Related turns: D12:6 D12:16."
+        ),
+        score=0.92,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-26:session_12:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [*generic_inventory_items, pottery_marker_window]
+    )
+
+    assert _ordered_answer_support_families(candidates)[0] == (
+        _answer_support_diversity_family(pottery_marker_window)
     )
 
 
@@ -1988,6 +2088,461 @@ def test_context_packer_allows_more_answer_support_repairs_for_aggregation_reaso
 
     assert result.bundle.diagnostics["answer_support_families_considered"] == 5
     assert result.bundle.diagnostics["answer_support_items_used"] == 4
+
+
+def test_context_packer_allows_more_answer_support_repairs_for_inventory_lists() -> None:
+    items = tuple(
+        ContextItem(
+            item_id=f"chunk_inventory_{index}",
+            item_type="chunk",
+            text=f"D{index}:1 Maria independent inventory evidence marker {index}.",
+            score=0.9 - index * 0.04,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-41:session_{index}:D{index}:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+            },
+        )
+        for index in range(5)
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_answer_support_inventory_repair_cap",
+        items=items,
+        token_budget=2000,
+    )
+
+    assert result.bundle.diagnostics["answer_support_families_considered"] == 5
+    assert result.bundle.diagnostics["answer_support_items_used"] == 4
+
+
+def test_answer_support_order_prioritizes_inventory_friend_places() -> None:
+    direct = ContextItem(
+        item_id="d4_friend",
+        item_type="chunk",
+        text="D4:1 Maria became friends with a fellow volunteer.",
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_4:D4:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    shelter = ContextItem(
+        item_id="d2_shelter",
+        item_type="chunk",
+        text="D2:1 Maria donated her old car to a homeless shelter where she volunteers.",
+        score=0.78,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_2:D2:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    church = ContextItem(
+        item_id="d14_church",
+        item_type="chunk",
+        text="D14:10 Maria joined a nearby church to feel closer to a community.",
+        score=0.8,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_14:D14:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    gym = ContextItem(
+        item_id="d19_gym",
+        item_type="chunk",
+        text="D19:1 Maria joined a gym with supportive people and a welcoming atmosphere.",
+        score=0.79,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_19:D19:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    generic = ContextItem(
+        item_id="d27_generic",
+        item_type="chunk",
+        text="D27:1 John asked family and friends to join a virtual support group.",
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_27:D27:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, gym, church, shelter, direct])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert candidates[ordered[0]].item_id == "d4_friend"
+    assert {candidates[ordered[index]].item_id for index in range(1, 4)} == {
+        "d2_shelter",
+        "d14_church",
+        "d19_gym",
+    }
+    assert candidates[ordered[-1]].item_id == "d27_generic"
+
+
+def test_answer_support_family_splits_inventory_place_slots() -> None:
+    items = (
+        ContextItem(
+            item_id="d4_friend",
+            item_type="chunk",
+            text="D4:1 Maria became friends with a fellow volunteer.",
+            score=0.82,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_4:D4:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "friend_place_inventory_bridge"},
+            },
+        ),
+        ContextItem(
+            item_id="d2_shelter",
+            item_type="chunk",
+            text="D2:1 Maria donated her old car to a homeless shelter where she volunteers.",
+            score=0.78,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_2:D2:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "friend_place_inventory_bridge"},
+            },
+        ),
+        ContextItem(
+            item_id="d14_church",
+            item_type="chunk",
+            text="D14:10 Maria joined a nearby church to feel closer to a community.",
+            score=0.8,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_14:D14:10:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "friend_place_inventory_bridge"},
+            },
+        ),
+        ContextItem(
+            item_id="d19_gym",
+            item_type="chunk",
+            text="D19:1 Maria joined a gym with supportive people and a welcoming atmosphere.",
+            score=0.79,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_19:D19:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "friend_place_inventory_bridge"},
+            },
+        ),
+    )
+
+    families = {_answer_support_diversity_family(item) for item in items}
+
+    assert len(families) == len(items)
+    assert any(":direct-friend:" in family for family in families)
+    assert any(":shelter:" in family for family in families)
+    assert any(":church-joined:" in family for family in families)
+    assert any(":gym:" in family for family in families)
+
+
+def test_answer_support_family_splits_travel_country_inventory_slot() -> None:
+    england = ContextItem(
+        item_id="d8_england",
+        item_type="chunk",
+        text="D8:15 Maria took a trip to England a few years ago.",
+        score=0.8,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_8:D8:15:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
+        },
+    )
+    spain = ContextItem(
+        item_id="d13_spain",
+        item_type="chunk",
+        text="D13:24 Maria took a solo trip in Spain.",
+        score=0.79,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_13:D13:24:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
+        },
+    )
+    unrelated = ContextItem(
+        item_id="d27_generic",
+        item_type="chunk",
+        text="D27:1 John asked family and friends to join a virtual support group.",
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_27:D27:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([unrelated, spain, england])
+    ordered = _ordered_answer_support_families(candidates)
+    families = set(candidates)
+
+    assert any(":country:" in family for family in families)
+    assert {candidates[ordered[index]].item_id for index in range(2)} == {
+        "d8_england",
+        "d13_spain",
+    }
+    assert candidates[ordered[-1]].item_id == "d27_generic"
+
+
+def test_answer_support_order_round_robins_inventory_slots_before_repeats() -> None:
+    items: list[ContextItem] = [
+        ContextItem(
+            item_id=f"shelter_{index}",
+            item_type="chunk",
+            text=f"D{index}:1 Maria volunteered at a homeless shelter.",
+            score=0.88 - index / 100,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-41:session_{index}:D{index}:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {
+                    "query_expansion_reason": "friend_place_shelter_inventory_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        )
+        for index in range(1, 7)
+    ]
+    items.extend(
+        [
+            ContextItem(
+                item_id="d19_gym",
+                item_type="chunk",
+                text="D19:1 Maria joined a gym with supportive people.",
+                score=0.79,
+                source_refs=(
+                    SourceRef(
+                        source_type="locomo_turn",
+                        source_id="locomo:conv-41:session_19:D19:1:turn",
+                    ),
+                ),
+                diagnostics={
+                    "memory_scope_id": "memory_scope_default",
+                    "score_signals": {
+                        "query_expansion_reason": "friend_place_gym_inventory_bridge",
+                        "distinctive_term_hits": 7,
+                    },
+                },
+            ),
+            ContextItem(
+                item_id="d14_church",
+                item_type="chunk",
+                text="D14:10 Maria joined a nearby church to feel closer to a community.",
+                score=0.78,
+                source_refs=(
+                    SourceRef(
+                        source_type="locomo_observation",
+                        source_id="locomo:conv-41:session_14:observation",
+                    ),
+                ),
+                diagnostics={
+                    "memory_scope_id": "memory_scope_default",
+                    "score_signals": {
+                        "query_expansion_reason": "friend_place_inventory_bridge",
+                        "distinctive_term_hits": 8,
+                    },
+                },
+            ),
+        ]
+    )
+
+    candidates = _answer_support_diversity_candidates(items)
+    ordered = _ordered_answer_support_families(candidates)
+    first_slots = [ordered_family.split(":")[2] for ordered_family in ordered[:3]]
+
+    assert {"shelter", "gym", "church-joined"}.issubset(set(first_slots))
+
+
+def test_answer_support_inventory_slot_takes_precedence_over_marker_coverage() -> None:
+    item = ContextItem(
+        item_id="d14_observation",
+        item_type="chunk",
+        text=(
+            "D14:10 Maria joined a nearby church to feel closer to a community. "
+            "Related turns: D14:8 D14:12."
+        ),
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-41:session_14:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "friend_place_inventory_bridge",
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+
+    family = _answer_support_diversity_family(item)
+
+    assert family.startswith("query_reason_inventory_slot_source_group:")
+    assert ":church-joined:" in family
+
+
+def test_answer_support_family_splits_cause_inventory_slots() -> None:
+    education = ContextItem(
+        item_id="d9_education",
+        item_type="chunk",
+        text=(
+            "D9:8 John: Improving education and infrastructure is particularly "
+            "interesting to me. Related turns: D9:10 D9:12. "
+            "D9:18 John reminisced about volunteering last year."
+        ),
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-41:session_9:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "distinctive_term_hits": 7,
+            },
+        },
+    )
+    veterans = ContextItem(
+        item_id="d15_veterans",
+        item_type="chunk",
+        text="D15:3 John is passionate about veterans and their rights.",
+        score=0.81,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_15:D15:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "distinctive_term_hits": 6,
+            },
+        },
+    )
+    education_repeat = ContextItem(
+        item_id="d12_education",
+        item_type="chunk",
+        text="D12:5 John focused on education reform and infrastructure development.",
+        score=0.8,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_12:D12:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "distinctive_term_hits": 7,
+            },
+        },
+    )
+    generic = ContextItem(
+        item_id="generic_community",
+        item_type="chunk",
+        text="D20:1 John talked about community support.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="chunk", source_id="generic"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic, education_repeat, veterans, education]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+    first_three_ids = {candidates[ordered[index]].item_id for index in range(3)}
+
+    assert any(":education-infrastructure:" in family for family in candidates)
+    assert any(":veterans:" in family for family in candidates)
+    assert first_three_ids == {"d9_education", "d12_education", "d15_veterans"}
 
 
 def test_context_packer_allows_more_answer_support_repairs_for_family_activity() -> None:

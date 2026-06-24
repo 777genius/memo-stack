@@ -7,6 +7,12 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from infinity_context_core.application.anchor_identity_normalization import (
+    canonical_token,
+    normalize_cyrillic_person_case,
+    normalize_cyrillic_project_case,
+)
+
 _TERM_RE = re.compile(r"\w+", re.UNICODE)
 _ISO_DATE_RE = re.compile(
     r"(?<!\d)(?P<year>(?:19|20)\d{2})[-/.](?P<month>\d{1,2})[-/.](?P<day>\d{1,2})(?!\d)"
@@ -83,8 +89,24 @@ _CROSS_LANGUAGE_ALIASES = {
     "demo": ("демо",),
     "destress": ("therapy", "therapeutic", "relax", "calm", "running", "pottery"),
     "decision": ("choice", "plan", "goal"),
-    "discuss": ("discussed", "обсудил", "обсудила", "обсудили"),
-    "discussed": ("discuss", "обсудил", "обсудила", "обсудили"),
+    "discuss": (
+        "discussed",
+        "обсудил",
+        "обсудила",
+        "обсудили",
+        "обсуждал",
+        "обсуждала",
+        "обсуждали",
+    ),
+    "discussed": (
+        "discuss",
+        "обсудил",
+        "обсудила",
+        "обсудили",
+        "обсуждал",
+        "обсуждала",
+        "обсуждали",
+    ),
     "document": ("file", "attachment", "artifact", "документ", "файл", "вложение"),
     "event": ("meeting", "call", "conversation", "событие", "встреч", "созвон"),
     "education": ("school", "study", "studies", "learning", "counseling"),
@@ -107,7 +129,17 @@ _CROSS_LANGUAGE_ALIASES = {
     "look": ("consider", "explore", "pursue", "interested", "interest"),
     "looking": ("consider", "explore", "pursue", "interested", "interest"),
     "meeting": ("встреч", "созвон"),
-    "mentioned": ("said", "told", "упомянул", "упомянула", "сказал", "сказала"),
+    "mentioned": (
+        "said",
+        "told",
+        "упомянул",
+        "упомянула",
+        "упоминал",
+        "упоминала",
+        "упоминали",
+        "сказал",
+        "сказала",
+    ),
     "mental": ("health", "counseling"),
     "move": ("moved", "home", "country", "roots"),
     "moved": ("move", "home", "country", "roots"),
@@ -124,7 +156,16 @@ _CROSS_LANGUAGE_ALIASES = {
     "pursu": ("consider", "explore", "look", "looking", "interested", "interest"),
     "pursue": ("consider", "explore", "look", "looking", "interested", "interest"),
     "project": ("проект",),
-    "said": ("told", "mentioned", "сказал", "сказала", "упомянул", "упомянула"),
+    "said": (
+        "told",
+        "mentioned",
+        "сказал",
+        "сказала",
+        "упомянул",
+        "упомянула",
+        "упоминал",
+        "упоминала",
+    ),
     "say": ("said", "told", "mentioned", "сказал", "сказала"),
     "recording": ("запись", "транскрипт", "transcript"),
     "religious": ("church", "faith", "conservative", "conservatives"),
@@ -139,6 +180,36 @@ _CROSS_LANGUAGE_ALIASES = {
     "video": ("видео", "видеозапись", "видеофрагмент"),
     "week": ("недел",),
     "work": ("career", "job", "jobs", "profession", "occupation"),
+    "write": (
+        "wrote",
+        "written",
+        "написал",
+        "написала",
+        "написали",
+        "писал",
+        "писала",
+        "писали",
+    ),
+    "written": (
+        "write",
+        "wrote",
+        "написал",
+        "написала",
+        "написали",
+        "писал",
+        "писала",
+        "писали",
+    ),
+    "wrote": (
+        "write",
+        "written",
+        "написал",
+        "написала",
+        "написали",
+        "писал",
+        "писала",
+        "писали",
+    ),
     "алекс": ("alex", "aleks"),
     "артефакт": ("artifact", "file", "document", "attachment"),
     "атлас": ("atlas",),
@@ -163,6 +234,9 @@ _CROSS_LANGUAGE_ALIASES = {
     "обсудил": ("discussed", "discuss"),
     "обсудила": ("discussed", "discuss"),
     "обсудили": ("discussed", "discuss"),
+    "обсуждал": ("discussed", "discuss"),
+    "обсуждала": ("discussed", "discuss"),
+    "обсуждали": ("discussed", "discuss"),
     "отношения": ("relationship", "single", "partner", "breakup"),
     "проект": ("project",),
     "рассказал": ("told", "said"),
@@ -185,6 +259,15 @@ _CROSS_LANGUAGE_ALIASES = {
     "событие": ("event", "meeting", "call"),
     "упомянул": ("mentioned", "said", "told"),
     "упомянула": ("mentioned", "said", "told"),
+    "упоминал": ("mentioned", "said", "told"),
+    "упоминала": ("mentioned", "said", "told"),
+    "упоминали": ("mentioned", "said", "told"),
+    "написал": ("wrote", "write", "written"),
+    "написала": ("wrote", "write", "written"),
+    "написали": ("wrote", "write", "written"),
+    "писал": ("wrote", "write", "written"),
+    "писала": ("wrote", "write", "written"),
+    "писали": ("wrote", "write", "written"),
 }
 _QUERY_STOPWORDS = frozenset(
     {
@@ -455,6 +538,14 @@ def _underscore_prefix_variants(token: str) -> tuple[str, ...]:
 
 def _russian_variants(token: str) -> tuple[str, ...]:
     variants: list[str] = []
+    for normalized_case in (
+        normalize_cyrillic_person_case(token),
+        normalize_cyrillic_project_case(token),
+    ):
+        if normalized_case != token and len(normalized_case) >= 3:
+            variants.append(normalized_case)
+            variants.extend(_cyrillic_transliteration_variants(normalized_case))
+    variants.extend(_cyrillic_transliteration_variants(token))
     for suffix in _RUSSIAN_SUFFIXES:
         if not token.endswith(suffix):
             continue
@@ -468,6 +559,18 @@ def _russian_variants(token: str) -> tuple[str, ...]:
     skeleton = token.translate(_RUSSIAN_VOWELS)
     if len(skeleton) >= 3:
         variants.append(skeleton)
+    return tuple(variants)
+
+
+def _cyrillic_transliteration_variants(token: str) -> tuple[str, ...]:
+    if not _has_cyrillic(token):
+        return ()
+    transliterated = canonical_token(token)
+    variants = [transliterated] if len(transliterated) >= 3 else []
+    if transliterated.endswith("ei") and len(transliterated) > 3:
+        variants.append(f"{transliterated[:-2]}ey")
+    if transliterated.endswith("iya") and len(transliterated) > 4:
+        variants.append(f"{transliterated[:-3]}ia")
     return tuple(variants)
 
 

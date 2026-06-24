@@ -7,7 +7,17 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from infinity_context_core.application.context_activity_companion import (
+    activity_companion_signal,
+)
 from infinity_context_core.application.context_action_roles import action_role_rerank_signal
+from infinity_context_core.application.context_conversation_counterparty import (
+    conversation_counterparty_evidence_signal,
+    conversation_recency_evidence_signal,
+    conversation_recency_missing_temporal_signal,
+    conversation_recency_temporal_hint_signal,
+    conversation_topic_evidence_signal,
+)
 from infinity_context_core.application.context_diagnostics import (
     context_duplicate_primary_key,
     context_rank_key,
@@ -19,12 +29,30 @@ from infinity_context_core.application.context_diagnostics import (
     safe_diagnostic_mapping,
     safe_score_signals,
 )
+from infinity_context_core.application.context_domain_rerank_apply import (
+    apply_domain_rerank_signals,
+)
+from infinity_context_core.application.context_domain_rerank_signals import (
+    commonality_who_else_anchor_override,
+    has_multi_evidence_aggregation_candidate,
+)
 from infinity_context_core.application.context_lexical import (
     LexicalQueryTerm,
     query_term_frequency,
     query_terms,
     text_variant_counts,
     text_variant_sequence,
+)
+from infinity_context_core.application.context_inference_evidence import (
+    answer_evidence_rerank_signal,
+)
+from infinity_context_core.application.context_polarity_rerank import (
+    absence_contrast_signal,
+    negative_preference_signal,
+    status_polarity_signal,
+)
+from infinity_context_core.application.context_possession_source import (
+    possession_source_signal,
 )
 from infinity_context_core.application.context_query_expansion import QueryExpansionPlan
 from infinity_context_core.application.context_query_intent import (
@@ -68,10 +96,16 @@ from infinity_context_core.application.context_relevance import (
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
 )
+from infinity_context_core.application.context_speaker_attribution import (
+    speaker_attribution_signal,
+)
 from infinity_context_core.application.context_temporal_query import (
     TemporalQueryIntent,
     build_temporal_query_intent,
     temporal_query_boost_signal,
+)
+from infinity_context_core.application.context_temporal_metadata import (
+    temporal_hint_code_from_metadata,
 )
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import (
@@ -112,89 +146,29 @@ _CONTEXT_REQUIREMENT_ANCHOR_BOOST = 0.008
 _CONTEXT_REQUIREMENT_MODALITY_BOOST = 0.022
 _CONTEXT_REQUIREMENT_FEATURE_BOOST = 0.014
 _CONTEXT_REQUIREMENT_ANSWER_SHAPE_BOOST = 0.012
-_GENERIC_BOOSTABLE_ANSWER_SHAPES = frozenset(
-    {
-        "causal",
-        "choice",
-        "commonality",
-        "commitment",
-        "constraint",
-        "conversation_participant",
-        "conversation_topic",
-        "count",
-        "existence",
-        "gotcha",
-        "inference",
-        "list",
-        "location",
-        "ordinal",
-        "preference",
-        "relationship",
-        "speaker",
-        "temporal",
-    }
-)
+_GENERIC_BOOSTABLE_ANSWER_SHAPES = frozenset((
+    "causal",
+    "choice",
+    "commonality",
+    "commitment",
+    "constraint",
+    "conversation_participant",
+    "conversation_topic",
+    "count",
+    "existence",
+    "gotcha",
+    "inference",
+    "list",
+    "location",
+    "ordinal",
+    "preference",
+    "relationship",
+    "speaker",
+    "temporal",
+))
 _DETERMINISTIC_RERANK_MAX_BOOST = 0.055
 _DETERMINISTIC_RERANK_MAX_PENALTY = 0.085
 _DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
-_NOT_BLOCKED_QUERY_RE = re.compile(
-    r"\b(?:not\s+blocked|isn'?t\s+blocked|unblocked|not\s+stuck)\b|"
-    r"\b(?:не\s+заблокирован\w*|не\s+застрял\w*)\b",
-    re.IGNORECASE,
-)
-_BLOCKED_TEXT_RE = re.compile(
-    r"\b(?:blocked|stuck|blocked\s+by|blocked\s+on)\b|"
-    r"\b(?:заблокирован\w*|застрял\w*)\b",
-    re.IGNORECASE,
-)
-_NOT_BLOCKED_TEXT_RE = re.compile(
-    r"\b(?:not\s+blocked|isn'?t\s+blocked|unblocked|not\s+stuck|active|open)\b|"
-    r"\b(?:не\s+заблокирован\w*|не\s+застрял\w*|активн\w*)\b",
-    re.IGNORECASE,
-)
-_NEGATIVE_PREFERENCE_QUERY_RE = re.compile(
-    r"\b(?:not\s+(?:like|likes|liked|interested|eat|eats|enjoy|enjoys|want|wants)|"
-    r"doesn'?t\s+(?:like|eat|enjoy|want)|does\s+not\s+(?:like|eat|enjoy|want)|"
-    r"would\s+not\s+(?:like|eat|enjoy|want)|never\s+(?:eat|eats|like|likes)|"
-    r"avoid|avoids|allergic)\b",
-    re.IGNORECASE,
-)
-_NEGATIVE_EATING_QUERY_RE = re.compile(
-    r"\b(?:can\W*t|cannot|can\s+not|unable\s+to)\b(?=.{0,80}\beat(?:s|ing)?\b)|"
-    r"\beat(?:s|ing)?\b(?=.{0,80}\b(?:can\W*t|cannot|can\s+not|unable\s+to)\b)",
-    re.IGNORECASE | re.DOTALL,
-)
-_NEGATIVE_PREFERENCE_TEXT_RE = re.compile(
-    r"\b(?:not\s+(?:like|likes|liked|interested|eat|eats|enjoy|enjoys|want|wants)|"
-    r"doesn'?t\s+(?:like|eat|enjoy|want)|does\s+not\s+(?:like|eat|enjoy|want)|"
-    r"would\s+not\s+(?:like|eat|enjoy|want)|never\s+(?:eat|eats|like|likes)|"
-    r"dislikes?|hates?|avoids?|allergic|cannot\s+eat|can'?t\s+eat)\b",
-    re.IGNORECASE,
-)
-_POSITIVE_PREFERENCE_TEXT_RE = re.compile(
-    r"\b(?:likes?|liked|loves?|loved|eats?|ate|enjoys?|enjoyed|wants?|wanted|"
-    r"interested\s+in|fan\s+of)\b",
-    re.IGNORECASE,
-)
-_ABSENCE_CONTRAST_NEGATIVE_DESCRIPTOR_RE = (
-    r"(?:"
-    r"pet|animal|provider|model|project|thread|scope|meeting|call|event|person|"
-    r"contact|file|document|doc|image|screenshot|audio|video|old|previous|former|"
-    r"current|primary|backup|recommended|домашн\w*|питомц\w*|животн\w*|"
-    r"провайдер\w*|модел\w*|проект\w*|тред\w*|встреч\w*|звон\w*|событи\w*|"
-    r"человек\w*|контакт\w*|файл\w*|документ\w*|картинк\w*|скриншот\w*|"
-    r"аудио|видео|стар\w*|прошл\w*|текущ\w*|основн\w*|резервн\w*|"
-    r"рекомендованн\w*"
-    r")"
-)
-_ABSENCE_CONTRAST_NAMED_QUERY_RE = re.compile(
-    r"\b(?:named|called|назвал\w*)\s+(?P<positive>[A-Za-zА-Яа-яЁё][\w.-]{1,60})\s+"
-    r"(?:instead\s+of|rather\s+than)\s+"
-    r"(?:a|an|the)?\s*"
-    rf"(?:(?:{_ABSENCE_CONTRAST_NEGATIVE_DESCRIPTOR_RE})\s+){{0,3}}"
-    r"(?P<negative>[A-Za-zА-Яа-яЁё][\w.-]{1,60})\b",
-    re.IGNORECASE,
-)
 _STRONG_EVIDENCE_RERANK_SOURCES = frozenset(
     {
         "approved_context_linked_anchors",
@@ -283,6 +257,13 @@ _VOLUNTEER_CAREER_CONTEXT_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_VOLUNTEER_CAREER_STRONG_NON_TURN_EVIDENCE_RE = re.compile(
+    r"\b("
+    r"front\s+desk|talks?|compliments?|residents?|bed|food|"
+    r"counsel(?:or|ing)?|coordinator|started\s+volunteering"
+    r")\b",
+    re.IGNORECASE,
+)
 _POST_EVENT_ACTIVITY_TIMING_CONTEXT_RE = re.compile(
     r"\b(?:road\s*trip|roadtrip)\b(?=.{0,180}\b(?:yesterday|recent|"
     r"just\s+did|after\s+the\s+(?:road\s*trip|drive)|relax))|"
@@ -294,9 +275,6 @@ _SHOE_USAGE_CONTEXT_RE = re.compile(
     r"purple\s+running\s+shoe",
     re.IGNORECASE,
 )
-_SPEAKER_ATTRIBUTION_MATCH_BOOST = 0.024
-_SPEAKER_ATTRIBUTION_SUBJECT_SELF_REPORT_PENALTY = 0.034
-_SPEAKER_ATTRIBUTION_OTHER_SPEAKER_PENALTY = 0.024
 _EVENT_PARTICIPATION_QUERY_RE = re.compile(
     r"\b(attend(?:ed|ing)?|participat(?:e|ed|ing)|partook|joined|went)\b",
     re.IGNORECASE,
@@ -351,59 +329,6 @@ _SPEAKER_LABEL_RE = r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}"
 _DIALOGUE_SPEAKER_RE = re.compile(
     rf"\bD\d+:\d+\s+(?P<speaker>{_SPEAKER_LABEL_RE}):",
     re.IGNORECASE,
-)
-_SPEAKER_ATTRIBUTION_QUERY_RE = re.compile(
-    rf"\b(?P<speaker>{_SPEAKER_LABEL_RE})\s+"
-    r"(?:say|said|tell|told|think|thinks|describe|describes|"
-    r"сказал|сказала|рассказал|рассказала|упомянул|упомянула|"
-    r"думает|считает|описал|описала)\s+"
-    rf"(?P<subject>{_SPEAKER_LABEL_RE})\b",
-    re.IGNORECASE,
-)
-_SPEAKER_ONLY_ATTRIBUTION_QUERY_RE = re.compile(
-    r"\b(?:what\s+did\s+|did\s+|what\s+does\s+|does\s+|has\s+|have\s+)?"
-    rf"(?P<speaker>{_SPEAKER_LABEL_RE})\s+"
-    r"(?:ever\s+|previously\s+|already\s+)?"
-    r"(?:say|said|tell|told|mention|mentioned|think|thinks|"
-    r"describe|describes|сказал|сказала|рассказал|рассказала|"
-    r"упомянул|упомянула|думает|считает|описал|описала)\b",
-    re.IGNORECASE,
-)
-_SPEAKER_ONLY_INVERTED_ATTRIBUTION_QUERY_RE = re.compile(
-    r"\b(?:что|чего|о\s+ч[её]м)\s+"
-    r"(?:сказал|сказала|рассказал|рассказала|упомянул|упомянула|"
-    r"думает|считает|описал|описала)\s+"
-    rf"(?P<speaker>{_SPEAKER_LABEL_RE})\b",
-    re.IGNORECASE,
-)
-_ACCORDING_TO_SPEAKER_QUERY_RE = re.compile(
-    rf"\baccording\s+to\s+(?P<speaker>{_SPEAKER_LABEL_RE})\b",
-    re.IGNORECASE,
-)
-_SPEAKER_PERSPECTIVE_QUERY_RE = re.compile(
-    rf"\b(?:from|in)\s+(?P<speaker>{_SPEAKER_LABEL_RE})(?:'s|s')?\s+"
-    r"(?:view|opinion|perspective)\b",
-    re.IGNORECASE,
-)
-_RU_ACCORDING_TO_SPEAKER_QUERY_RE = re.compile(
-    rf"\bпо\s+словам\s+(?P<speaker>{_SPEAKER_LABEL_RE})\b",
-    re.IGNORECASE,
-)
-_ATTRIBUTION_QUERY_LABEL_STOP_WORDS = frozenset(
-    {
-        "what",
-        "who",
-        "where",
-        "when",
-        "which",
-        "что",
-        "кто",
-        "где",
-        "когда",
-        "какой",
-        "какая",
-        "какие",
-    }
 )
 
 
@@ -601,6 +526,10 @@ def apply_deterministic_rerank_adjustments(
     )
     temporal_query_intent = build_temporal_query_intent(query)
     requested_total = _coverage_int(requested_coverage.get("requested_total"))
+    has_multi_aggregation_candidate = has_multi_evidence_aggregation_candidate(
+        query=query,
+        items=items,
+    )
     return tuple(
         _with_deterministic_rerank_adjustment(
             item,
@@ -609,6 +538,7 @@ def apply_deterministic_rerank_adjustments(
             query_anchor_intent=query_anchor_intent,
             temporal_query_intent=temporal_query_intent,
             requested_total=requested_total,
+            has_multi_evidence_aggregation_candidate=has_multi_aggregation_candidate,
             query_relevance_cache=query_relevance_cache,
             max_boost=max_boost,
             max_penalty=max_penalty,
@@ -1064,6 +994,12 @@ def _select_bm25_query_match(
         return candidate
     if candidate.matched_term_count < best.matched_term_count:
         return best
+    candidate_priority = _QUERY_REASON_PRIORITY.get(candidate.query_reason, 0)
+    best_priority = _QUERY_REASON_PRIORITY.get(best.query_reason, 0)
+    if candidate_priority > best_priority:
+        return candidate
+    if candidate_priority < best_priority:
+        return best
     if candidate.query_reason == "original_query" and best.query_reason != "original_query":
         return candidate
     return best
@@ -1363,6 +1299,7 @@ def _with_deterministic_rerank_adjustment(
     query_anchor_intent: QueryAnchorIntent,
     temporal_query_intent: TemporalQueryIntent,
     requested_total: int,
+    has_multi_evidence_aggregation_candidate: bool,
     query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] | None,
     max_boost: float,
     max_penalty: float,
@@ -1377,6 +1314,7 @@ def _with_deterministic_rerank_adjustment(
         query_anchor_intent=query_anchor_intent,
         temporal_query_intent=temporal_query_intent,
         requested_total=requested_total,
+        has_multi_evidence_aggregation_candidate=has_multi_evidence_aggregation_candidate,
         query_relevance_cache=query_relevance_cache,
         max_boost=max_boost,
         max_penalty=max_penalty,
@@ -1418,6 +1356,7 @@ def _deterministic_rerank_signals(
     query_anchor_intent: QueryAnchorIntent,
     temporal_query_intent: TemporalQueryIntent,
     requested_total: int,
+    has_multi_evidence_aggregation_candidate: bool,
     query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] | None,
     max_boost: float,
     max_penalty: float,
@@ -1451,6 +1390,15 @@ def _deterministic_rerank_signals(
             item=item,
             query_anchor_intent=query_anchor_intent,
             relevance=relevance,
+        )
+    )
+    commonality_anchor_override = (
+        text_anchor_conflict
+        and not project_identity_conflict
+        and commonality_who_else_anchor_override(
+            query=query,
+            query_reason=query_reason,
+            item=item,
         )
     )
     boost = 0.0
@@ -1501,7 +1449,7 @@ def _deterministic_rerank_signals(
     if owner_penalty > 0:
         penalty += owner_penalty
         reasons.append(owner_reason)
-    speaker_boost, speaker_penalty, speaker_reason = _speaker_attribution_signal(
+    speaker_boost, speaker_penalty, speaker_reason = speaker_attribution_signal(
         query=query,
         text=item.text,
     )
@@ -1526,7 +1474,24 @@ def _deterministic_rerank_signals(
     if action_signal.penalty > 0:
         penalty += action_signal.penalty
         reasons.append(action_signal.reason)
-    polarity_boost, polarity_penalty, polarity_reason = _status_polarity_signal(
+    possession_boost, possession_penalty, possession_reason = possession_source_signal(
+        query=query,
+        item=item,
+    )
+    if possession_boost > 0:
+        boost += possession_boost
+        reasons.append(possession_reason)
+    if possession_penalty > 0:
+        penalty += possession_penalty
+        reasons.append(possession_reason)
+    inference_signal = answer_evidence_rerank_signal(query=query, text=item.text)
+    if inference_signal.boost > 0:
+        boost += inference_signal.boost
+        reasons.append(inference_signal.reason)
+    if inference_signal.penalty > 0:
+        penalty += inference_signal.penalty
+        reasons.append(inference_signal.reason)
+    polarity_boost, polarity_penalty, polarity_reason = status_polarity_signal(
         query=query,
         text=item.text,
     )
@@ -1536,7 +1501,7 @@ def _deterministic_rerank_signals(
     if polarity_penalty > 0:
         penalty += polarity_penalty
         reasons.append(polarity_reason)
-    negative_boost, negative_penalty, negative_reason = _negative_preference_signal(
+    negative_boost, negative_penalty, negative_reason = negative_preference_signal(
         query=query,
         text=item.text,
     )
@@ -1546,7 +1511,7 @@ def _deterministic_rerank_signals(
     if negative_penalty > 0:
         penalty += negative_penalty
         reasons.append(negative_reason)
-    contrast_boost, contrast_penalty, contrast_reason = _absence_contrast_signal(
+    contrast_boost, contrast_penalty, contrast_reason = absence_contrast_signal(
         query=query,
         text=item.text,
     )
@@ -1556,6 +1521,56 @@ def _deterministic_rerank_signals(
     if contrast_penalty > 0:
         penalty += contrast_penalty
         reasons.append(contrast_reason)
+    conversation_boost, conversation_penalty, conversation_reason = (
+        conversation_counterparty_evidence_signal(
+            query=query,
+            text=item.text,
+        )
+    )
+    if conversation_boost > 0:
+        boost += conversation_boost
+        reasons.append(conversation_reason)
+    if conversation_penalty > 0:
+        penalty += conversation_penalty
+        reasons.append(conversation_reason)
+    topic_boost, topic_penalty, topic_reason = conversation_topic_evidence_signal(
+        query=query,
+        text=item.text,
+    )
+    if topic_boost > 0:
+        boost += topic_boost
+        reasons.append(topic_reason)
+    if topic_penalty > 0:
+        penalty += topic_penalty
+        reasons.append(topic_reason)
+    recency_boost, recency_penalty, recency_reason = conversation_recency_evidence_signal(
+        query=query,
+        text=item.text,
+    )
+    if recency_boost > 0:
+        boost += recency_boost
+        reasons.append(recency_reason)
+    if recency_penalty > 0:
+        penalty += recency_penalty
+        reasons.append(recency_reason)
+    temporal_hint_code = _item_temporal_hint_code(item)
+    recency_hint_boost, recency_hint_reason = conversation_recency_temporal_hint_signal(
+        query=query,
+        temporal_hint_code=temporal_hint_code,
+    )
+    if recency_hint_boost > 0:
+        boost += recency_hint_boost
+        reasons.append(recency_hint_reason)
+    recency_missing_time_penalty, recency_missing_time_reason = (
+        conversation_recency_missing_temporal_signal(
+            query=query,
+            text=item.text,
+            temporal_hint_code=temporal_hint_code,
+        )
+    )
+    if recency_missing_time_penalty > 0:
+        penalty += recency_missing_time_penalty
+        reasons.append(recency_missing_time_reason)
     if not _temporal_query_signal_already_applied(item):
         temporal_signal = temporal_query_boost_signal(
             item,
@@ -1578,6 +1593,8 @@ def _deterministic_rerank_signals(
         reasons.append(temporal_answer_reason)
     if source_speaker_anchor_override:
         reasons.append("query_anchor_conflict_overridden_by_source_speaker")
+    elif commonality_anchor_override:
+        reasons.append("query_anchor_conflict_overridden_by_commonality_who_else")
     elif anchor_conflict and not _action_role_confirms_requested_relation(action_signal.reason):
         penalty += 0.07
         reasons.append("query_anchor_conflict")
@@ -1592,6 +1609,17 @@ def _deterministic_rerank_signals(
     elif _event_participation_source_sibling_noise(query=query, item=item):
         penalty += 0.07
         reasons.append("event_participation_source_sibling_noise")
+    companion_boost, companion_penalty, companion_reason = activity_companion_signal(
+        query=query,
+        item=item,
+        query_anchor_intent=query_anchor_intent,
+    )
+    if companion_boost > 0:
+        boost += companion_boost
+        reasons.append(companion_reason)
+    if companion_penalty > 0:
+        penalty += companion_penalty
+        reasons.append(companion_reason)
     if _activity_source_sibling_noise(item=item):
         penalty += 0.04
         reasons.append("activity_source_sibling_noise")
@@ -1632,6 +1660,16 @@ def _deterministic_rerank_signals(
     if _shoe_usage_weak_evidence(query_reason=query_reason, item=item):
         penalty += 0.12
         reasons.append("shoe_usage_weak_evidence")
+    domain_adjustment = apply_domain_rerank_signals(
+        query=query,
+        query_reason=query_reason,
+        item=item,
+        relevance=relevance,
+        has_multi_evidence_aggregation_candidate=has_multi_evidence_aggregation_candidate,
+    )
+    boost += domain_adjustment.boost
+    penalty += domain_adjustment.penalty
+    reasons.extend(domain_adjustment.reasons)
     if requested_total > 0:
         if coverage_ratio <= 0:
             penalty += 0.025
@@ -1746,6 +1784,12 @@ def _temporal_query_signal_already_applied(item: ContextItem) -> bool:
     diagnostics = normalize_context_diagnostics(item.diagnostics)
     provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
     return provenance.get("temporal_query_intent_applied") is True
+
+
+def _item_temporal_hint_code(item: ContextItem) -> str:
+    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
+    return temporal_hint_code_from_metadata(diagnostics, provenance)
 
 
 def _temporal_answer_signal(*, query: str, item: ContextItem) -> tuple[float, float, str]:
@@ -1865,6 +1909,8 @@ def _volunteer_career_broad_evidence(*, query_reason: str, item: ContextItem) ->
         return False
     if _item_source_is_turn(item):
         return False
+    if _VOLUNTEER_CAREER_STRONG_NON_TURN_EVIDENCE_RE.search(item.text) is not None:
+        return False
     return _VOLUNTEER_CAREER_CONTEXT_RE.search(item.text) is not None
 
 
@@ -1940,6 +1986,7 @@ def _action_role_confirms_requested_relation(reason: str) -> bool:
     return reason in {
         "action_role_actor_recipient_match",
         "action_role_actor_to_recipient_evidence",
+        "action_role_information_source_evidence",
         "action_role_recipient_match",
     }
 
@@ -1978,53 +2025,6 @@ def _numeric_signal(value: object) -> float:
     return 0.0
 
 
-def _status_polarity_signal(*, query: str, text: str) -> tuple[float, float, str]:
-    if not _NOT_BLOCKED_QUERY_RE.search(query):
-        return 0.0, 0.0, ""
-    if _NOT_BLOCKED_TEXT_RE.search(text):
-        return 0.024, 0.0, "status_polarity_not_blocked_match"
-    if _BLOCKED_TEXT_RE.search(text):
-        return 0.0, 0.034, "status_polarity_blocked_conflict"
-    return 0.0, 0.0, ""
-
-
-def _negative_preference_signal(*, query: str, text: str) -> tuple[float, float, str]:
-    if not (
-        _NEGATIVE_PREFERENCE_QUERY_RE.search(query)
-        or _NEGATIVE_EATING_QUERY_RE.search(query)
-    ):
-        return 0.0, 0.0, ""
-    if _NEGATIVE_PREFERENCE_TEXT_RE.search(text):
-        return 0.026, 0.0, "negative_preference_match"
-    if _POSITIVE_PREFERENCE_TEXT_RE.search(text):
-        return 0.0, 0.03, "negative_preference_positive_conflict"
-    return 0.0, 0.0, ""
-
-
-def _absence_contrast_signal(*, query: str, text: str) -> tuple[float, float, str]:
-    match = _ABSENCE_CONTRAST_NAMED_QUERY_RE.search(query)
-    if match is None:
-        return 0.0, 0.0, ""
-    positive = match.group("positive")
-    negative = match.group("negative")
-    if not positive or not negative:
-        return 0.0, 0.0, ""
-    has_positive = _query_token_in_text(positive, text)
-    has_negative = _query_token_in_text(negative, text)
-    if has_positive and not has_negative:
-        return 0.026, 0.0, "absence_contrast_positive_match"
-    if has_negative and not has_positive:
-        return 0.0, 0.032, "absence_contrast_negative_only_conflict"
-    return 0.0, 0.0, ""
-
-
-def _query_token_in_text(token: str, text: str) -> bool:
-    normalized = token.strip("._- ")
-    if not normalized:
-        return False
-    return bool(re.search(rf"\b{re.escape(normalized)}\b", text, flags=re.IGNORECASE))
-
-
 def _activity_owner_signal(
     *,
     query_anchor_intent: QueryAnchorIntent,
@@ -2042,67 +2042,6 @@ def _activity_owner_signal(
     if speakers.intersection(query_people):
         return _ACTIVITY_OWNER_MATCH_BOOST, 0.0, "activity_owner_speaker_match"
     return 0.0, _ACTIVITY_OWNER_MISMATCH_PENALTY, "activity_owner_speaker_mismatch"
-
-
-def _speaker_attribution_signal(
-    *,
-    query: str,
-    text: str,
-) -> tuple[float, float, str]:
-    match = _SPEAKER_ATTRIBUTION_QUERY_RE.search(query)
-    attributed_speaker, attributed_subject = _attributed_speaker_and_subject(match)
-    if not attributed_speaker:
-        attributed_speaker = _attributed_speaker_from_query(query)
-    if not attributed_speaker:
-        return 0.0, 0.0, ""
-    speakers = _dialogue_speaker_labels(text)
-    if not speakers:
-        return 0.0, 0.0, ""
-    if attributed_speaker in speakers:
-        return (
-            _SPEAKER_ATTRIBUTION_MATCH_BOOST,
-            0.0,
-            "speaker_attribution_match",
-        )
-    if attributed_subject and attributed_subject in speakers:
-        return (
-            0.0,
-            _SPEAKER_ATTRIBUTION_SUBJECT_SELF_REPORT_PENALTY,
-            "speaker_attribution_subject_self_report",
-        )
-    return (
-        0.0,
-        _SPEAKER_ATTRIBUTION_OTHER_SPEAKER_PENALTY,
-        "speaker_attribution_other_speaker",
-    )
-
-
-def _attributed_speaker_and_subject(
-    match: re.Match[str] | None,
-) -> tuple[str, str]:
-    if match is None:
-        return "", ""
-    speaker = _normalized_dialogue_label(match.group("speaker"))
-    subject = _normalized_dialogue_label(match.group("subject"))
-    if not speaker or speaker == subject or speaker in _ATTRIBUTION_QUERY_LABEL_STOP_WORDS:
-        return "", ""
-    return speaker, subject
-
-
-def _attributed_speaker_from_query(query: str) -> str:
-    for pattern in (
-        _ACCORDING_TO_SPEAKER_QUERY_RE,
-        _SPEAKER_PERSPECTIVE_QUERY_RE,
-        _RU_ACCORDING_TO_SPEAKER_QUERY_RE,
-        _SPEAKER_ONLY_INVERTED_ATTRIBUTION_QUERY_RE,
-        _SPEAKER_ONLY_ATTRIBUTION_QUERY_RE,
-    ):
-        match = pattern.search(query)
-        if match is not None:
-            speaker = _normalized_dialogue_label(match.group("speaker"))
-            if speaker not in _ATTRIBUTION_QUERY_LABEL_STOP_WORDS:
-                return speaker
-    return ""
 
 
 def _query_person_labels(query_anchor_intent: QueryAnchorIntent) -> frozenset[str]:

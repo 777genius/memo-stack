@@ -88,6 +88,35 @@ def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
     )
 
 
+def test_protected_query_head_keys_keep_inventory_and_friend_place_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:decomposition_inventory_list": ("d13_spain", "generic_a"),
+        "2:travel_country_inventory_bridge": ("d8_england", "d13_spain"),
+        "3:friend_place_shelter_inventory_bridge": ("d2_shelter",),
+        "4:friend_place_gym_inventory_bridge": ("d19_gym",),
+        "5:friend_place_church_inventory_bridge": ("d14_church",),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "d13_spain",
+        "d8_england",
+        "d2_shelter",
+        "d19_gym",
+        "d14_church",
+    )
+
+
+def test_protected_query_head_keys_keep_duration_and_frequency_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:decomposition_activity_duration": ("d4_duration", "generic_a"),
+        "2:decomposition_frequency_recurrence": ("d9_frequency", "generic_b"),
+    }
+
+    assert _protected_query_head_keys(rankings) == ("d4_duration", "d9_frequency")
+
+
 def test_bounded_retrieval_queries_prioritize_specific_bridges_over_decomposition() -> None:
     plan = QueryExpansionPlan(
         original_query="original",
@@ -141,6 +170,29 @@ def test_bounded_retrieval_queries_keep_high_signal_decomposition() -> None:
     ]
 
 
+def test_bounded_retrieval_queries_keep_duration_and_frequency_decomposition() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="generic clause", reason="decomposition_clause"),
+            QueryExpansion(query="duration evidence", reason="decomposition_activity_duration"),
+            QueryExpansion(query="frequency evidence", reason="decomposition_frequency_recurrence"),
+        ),
+        expansions=(
+            QueryExpansion(query="visual evidence", reason="visual_text_evidence_bridge"),
+            QueryExpansion(query="audio evidence", reason="audio_transcript_evidence_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=3)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_activity_duration",
+        "decomposition_frequency_recurrence",
+    ]
+
+
 def test_bounded_retrieval_queries_keep_activity_and_children_preference_bridges() -> None:
     broad_family_activity = _bounded_derived_retrieval_queries(
         build_query_expansion_plan("What activities has Melanie done with her family?"),
@@ -180,6 +232,46 @@ def test_bounded_retrieval_queries_keep_activity_and_children_preference_bridges
     }
     assert "family_hike_detail_bridge" in {query.reason for query in family_hike}
     assert "children_preference_bridge" in {query.reason for query in kids_like}
+
+
+def test_bounded_retrieval_queries_keep_inventory_friend_place_slots() -> None:
+    travel = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What European countries has Maria been to?"),
+        fallback="fallback",
+        limit=3,
+    )
+    friends = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("Where has Maria made friends?"),
+        fallback="fallback",
+        limit=6,
+    )
+
+    assert [query.reason for query in travel] == [
+        "original_query",
+        "decomposition_inventory_list",
+        "travel_country_inventory_bridge",
+    ]
+    assert {
+        "friend_place_inventory_bridge",
+        "friend_place_shelter_inventory_bridge",
+        "friend_place_gym_inventory_bridge",
+        "friend_place_church_inventory_bridge",
+    }.issubset({query.reason for query in friends})
+
+
+def test_bounded_retrieval_queries_keep_cause_inventory_bridges() -> None:
+    selected = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What causes does John feel passionate about supporting?"),
+        fallback="fallback",
+        limit=4,
+    )
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_inventory_list",
+        "cause_education_infrastructure_inventory_bridge",
+        "cause_veterans_inventory_bridge",
+    ]
 
 
 def test_bounded_retrieval_queries_prioritize_high_signal_evidence_bridges() -> None:

@@ -12,6 +12,10 @@ from typing import Any
 
 _MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
 _MAX_CHECKPOINT_CASES = 50_000
+_MAX_CHECKPOINT_FAILURE_DIAGNOSTICS = 200
+_MAX_FAILURE_TERMS = 20
+_MAX_FAILURE_TEXT_CHARS = 240
+_MAX_FAILURE_REASON_CHARS = 80
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,7 @@ class BenchmarkResumeLoadResult:
     checkpoint_success_case_count: int = 0
     checkpoint_failed_case_count: int = 0
     checkpoint_invalid_case_count: int = 0
+    checkpoint_failures: tuple[Mapping[str, object], ...] = ()
 
 
 def load_checkpoint_resume_state(
@@ -144,6 +149,8 @@ def load_checkpoint_resume_state_with_diagnostics(
             checkpoint_case_count=len(raw_cases),
         )
     run_results: list[CaseRunResult] = []
+    checkpoint_failures: list[Mapping[str, object]] = []
+    checkpoint_failure_reports = _checkpoint_failure_reports_by_case(payload.get("failures"))
     seen: set[tuple[str, str]] = set()
     seen_checkpoint_keys: set[tuple[str, str]] = set()
     checkpoint_failed_case_count = 0
@@ -159,6 +166,14 @@ def load_checkpoint_resume_state_with_diagnostics(
         seen_checkpoint_keys.add(key)
         if not result.ok:
             checkpoint_failed_case_count += 1
+            if len(checkpoint_failures) < _MAX_CHECKPOINT_FAILURE_DIAGNOSTICS:
+                checkpoint_failures.append(
+                    _checkpoint_failure_diagnostic(
+                        result,
+                        checkpoint_failure_reports.get(key)
+                        or checkpoint_failure_reports.get(("", result.case_id)),
+                    )
+                )
             continue
         run_results.append(result)
         seen.add(key)
@@ -169,6 +184,7 @@ def load_checkpoint_resume_state_with_diagnostics(
             checkpoint_case_count=len(raw_cases),
             checkpoint_failed_case_count=checkpoint_failed_case_count,
             checkpoint_invalid_case_count=checkpoint_invalid_case_count,
+            checkpoint_failures=tuple(checkpoint_failures),
         )
     seeded_source_keys, seeded_corpus_identities = resume_seed_state(
         cases=(selected_cases[key] for key in seen),
@@ -202,6 +218,7 @@ def load_checkpoint_resume_state_with_diagnostics(
         checkpoint_success_case_count=len(run_results),
         checkpoint_failed_case_count=checkpoint_failed_case_count,
         checkpoint_invalid_case_count=checkpoint_invalid_case_count,
+        checkpoint_failures=tuple(checkpoint_failures),
     )
 
 
@@ -213,6 +230,7 @@ def _resume_load_skipped(
     checkpoint_success_case_count: int = 0,
     checkpoint_failed_case_count: int = 0,
     checkpoint_invalid_case_count: int = 0,
+    checkpoint_failures: tuple[Mapping[str, object], ...] = (),
 ) -> BenchmarkResumeLoadResult:
     return BenchmarkResumeLoadResult(
         state=None,
@@ -223,6 +241,7 @@ def _resume_load_skipped(
         checkpoint_success_case_count=checkpoint_success_case_count,
         checkpoint_failed_case_count=checkpoint_failed_case_count,
         checkpoint_invalid_case_count=checkpoint_invalid_case_count,
+        checkpoint_failures=checkpoint_failures,
     )
 
 
@@ -383,6 +402,65 @@ def _case_run_result_from_payload(raw: object) -> CaseRunResult | None:
         latency_ms=_float_field(raw, "latency_ms", default=0.0),
         question_preview=str(raw.get("question_preview") or "")[:240],
     )
+
+
+def _checkpoint_failure_reports_by_case(
+    raw: object,
+) -> dict[tuple[str, str], Mapping[str, object]]:
+    reports: dict[tuple[str, str], Mapping[str, object]] = {}
+    for item in _as_sequence(raw):
+        report = _as_mapping(item)
+        case_id = _non_empty_str(report.get("case_id"))
+        if case_id is None:
+            continue
+        category = _non_empty_str(report.get("category")) or _non_empty_str(
+            report.get("benchmark")
+        )
+        if category is not None:
+            reports[(category, case_id)] = report
+        reports[("", case_id)] = report
+    return reports
+
+
+def _checkpoint_failure_diagnostic(
+    result: CaseRunResult,
+    report: Mapping[str, object] | None,
+) -> Mapping[str, object]:
+    raw_reason = _non_empty_str(report.get("reason")) if report is not None else None
+    reason = raw_reason or _failure_reason_from_result(result)
+    payload: dict[str, object] = {
+        "case_id": result.case_id,
+        "category": result.benchmark,
+        "capability": result.capability,
+        "reason": reason[:_MAX_FAILURE_REASON_CHARS],
+        "missing_terms": _bounded_str_list(result.missing_terms),
+        "leaked_terms": _bounded_str_list(result.leaked_terms),
+        "checkpoint_status": "failed",
+        "retry_pending": True,
+        "from_checkpoint": True,
+    }
+    question_preview = result.question_preview or (
+        _non_empty_str(report.get("question_preview")) if report is not None else None
+    )
+    if question_preview:
+        payload["question_preview"] = question_preview[:_MAX_FAILURE_TEXT_CHARS]
+    return payload
+
+
+def _failure_reason_from_result(result: CaseRunResult) -> str:
+    if result.missing_terms:
+        return "missing_expected_terms"
+    if result.leaked_terms:
+        return "forbidden_terms_leaked"
+    if not result.expected_ok:
+        return "expected_terms_check_failed"
+    if not result.forbidden_ok:
+        return "forbidden_terms_check_failed"
+    return "checkpoint_failed_case"
+
+
+def _bounded_str_list(values: Sequence[str]) -> list[str]:
+    return [str(item)[:120] for item in values[:_MAX_FAILURE_TERMS] if item is not None]
 
 
 def _as_sequence(value: object) -> Sequence[object]:
