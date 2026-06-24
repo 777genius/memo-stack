@@ -78,6 +78,12 @@ _COMMONALITY_RERANK_REASONS = frozenset(
         "decomposition_commonality",
     )
 )
+_FAMILY_HIKE_DETAIL_RERANK_REASONS = frozenset(
+    (
+        "family_hike_activity_bridge",
+        "family_hike_detail_bridge",
+    )
+)
 _RELATIONSHIP_STATUS_RERANK_REASONS = frozenset(
     (
         "relationship_status_bridge",
@@ -328,6 +334,35 @@ _COMMONALITY_SHARED_ARTIFACT_RE = re.compile(
     r"\bshared?\s+(?:a\s+|an\s+|the\s+)?"
     r"(?:photo|picture|image|screenshot|file|document|attachment|link|post)\b",
     re.IGNORECASE,
+)
+_SHARED_PAINTED_SUBJECT_EXACT_RE = re.compile(
+    r"\b(?:sunsets?|sunrises?|landscapes?|flowers?|nature(?:-inspired)?|"
+    r"lake|mountains?|abstract|portraits?|scen(?:e|ery))\b"
+    r"(?=.{0,80}\b(?:paint(?:ed|ing)?|artwork|work|image|visual|caption)\b)|"
+    r"\b(?:paint(?:ed|ing)?|artwork|work|image|visual|caption)\b"
+    r"(?=.{0,80}\b(?:sunsets?|sunrises?|landscapes?|flowers?|"
+    r"nature(?:-inspired)?|lake|mountains?|abstract|portraits?|scen(?:e|ery))\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_SHARED_PAINTED_SUBJECT_TOPIC_RE = re.compile(
+    r"\b(?:paint(?:ed|ing)?|artwork)\b",
+    re.IGNORECASE,
+)
+_FAMILY_HIKE_DETAIL_EXACT_RE = re.compile(
+    r"\b(?:roast(?:ed|ing)?\s+marshmallows?|marshmallows?|"
+    r"tell(?:ing)?\s+stories|shared\s+stories)\b",
+    re.IGNORECASE,
+)
+_FAMILY_HIKE_DETAIL_TOPIC_RE = re.compile(
+    r"\b(?:family|kids?|children|hikes?|hiking|camp(?:ing|fire)?|nature|"
+    r"trail|waterfall|photos?|pictures?)\b",
+    re.IGNORECASE,
+)
+_FAMILY_HIKE_DETAIL_QUERY_RE = re.compile(
+    r"\bwhat\b(?=.{0,80}\b(?:family|kids?|children)\b)"
+    r"(?=.{0,80}\b(?:hikes?|hiking)\b)|"
+    r"\b(?:hikes?|hiking)\b(?=.{0,80}\b(?:family|kids?|children)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _COMMONALITY_NAMED_ANCHOR_RE = re.compile(r"\b[A-Z][A-Za-z0-9._-]{1,}\b")
 _COMMONALITY_IGNORED_ANCHORS = frozenset(
@@ -824,6 +859,13 @@ def commonality_rerank_signal(
     who_else_signal = _commonality_who_else_signal(query=query, item=item)
     if who_else_signal.reason:
         return who_else_signal
+    shared_painted_subject_signal = _shared_painted_subject_signal(
+        query_reason=query_reason,
+        item=item,
+        relevance=relevance,
+    )
+    if shared_painted_subject_signal.reason:
+        return shared_painted_subject_signal
     anchor_terms = _commonality_anchor_terms(query)
     if len(anchor_terms) < 2:
         return DomainRerankSignal()
@@ -837,6 +879,63 @@ def commonality_rerank_signal(
         return DomainRerankSignal(penalty=0.048, reason="commonality_anchor_mismatch")
     if not has_commonality_shape or relevance.distinctive_term_hits < 5:
         return DomainRerankSignal(penalty=0.032, reason="commonality_weak_evidence")
+    return DomainRerankSignal()
+
+
+def _shared_painted_subject_signal(
+    *,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _matches_query_or_score_signal_reason(
+        query_reason=query_reason,
+        item=item,
+        target_reason="shared_painted_subject_bridge",
+    ):
+        return DomainRerankSignal()
+    if (
+        _SHARED_PAINTED_SUBJECT_EXACT_RE.search(item.text) is not None
+        and relevance.distinctive_term_hits >= 4
+    ):
+        return DomainRerankSignal(
+            boost=0.034,
+            reason="shared_painted_subject_exact_evidence",
+        )
+    if _SHARED_PAINTED_SUBJECT_TOPIC_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            penalty=0.052,
+            reason="shared_painted_subject_topic_only_noise",
+        )
+    return DomainRerankSignal()
+
+
+def family_hike_detail_rerank_signal(
+    *,
+    query: str = "",
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_family_hike_detail_candidate(
+        query=query,
+        query_reason=query_reason,
+        item=item,
+    ):
+        return DomainRerankSignal()
+    if (
+        _FAMILY_HIKE_DETAIL_EXACT_RE.search(item.text) is not None
+        and relevance.distinctive_term_hits >= 4
+    ):
+        return DomainRerankSignal(
+            boost=0.034,
+            reason="family_hike_detail_exact_evidence",
+        )
+    if _FAMILY_HIKE_DETAIL_TOPIC_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            penalty=0.062,
+            reason="family_hike_detail_topic_only_noise",
+        )
     return DomainRerankSignal()
 
 
@@ -1258,6 +1357,19 @@ def _is_commonality_candidate(
     if _score_signal_reason(item) in _COMMONALITY_RERANK_REASONS:
         return True
     return _COMMONALITY_QUERY_RE.search(query) is not None
+
+
+def _is_family_hike_detail_candidate(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    return (
+        query_reason in _FAMILY_HIKE_DETAIL_RERANK_REASONS
+        or _score_signal_reason(item) in _FAMILY_HIKE_DETAIL_RERANK_REASONS
+        or _FAMILY_HIKE_DETAIL_QUERY_RE.search(query) is not None
+    )
 
 
 def _is_relationship_status_candidate(*, query_reason: str, item: ContextItem) -> bool:

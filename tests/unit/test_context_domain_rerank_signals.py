@@ -9,6 +9,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     current_goal_rerank_signal,
     current_state_rerank_signal,
     event_sequence_rerank_signal,
+    family_hike_detail_rerank_signal,
     inventory_list_rerank_signal,
     positive_preference_rerank_signal,
     relationship_duration_rerank_signal,
@@ -275,6 +276,69 @@ def test_commonality_signal_requires_both_query_anchors_and_shared_shape() -> No
     assert exact_signal.reason == "commonality_exact_evidence"
     assert weak_signal.penalty > 0
     assert weak_signal.reason == "commonality_weak_evidence"
+
+
+def test_commonality_signal_allows_shared_painted_subject_single_anchor_evidence() -> None:
+    exact = _item(
+        "caroline_sunset_painting",
+        text="D14:5 Caroline finished a new work. visual query: sunset painting.",
+        query_expansion_reason="shared_painted_subject_bridge",
+    )
+    topic_only = _item(
+        "generic_shared_painting",
+        text="Caroline and Melanie both enjoy painting on weekends.",
+        query_expansion_reason="shared_painted_subject_bridge",
+    )
+
+    exact_signal = commonality_rerank_signal(
+        query="What subject have Caroline and Melanie both painted?",
+        query_reason="shared_painted_subject_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=7, unique_term_hits=7),
+    )
+    topic_signal = commonality_rerank_signal(
+        query="What subject have Caroline and Melanie both painted?",
+        query_reason="shared_painted_subject_bridge",
+        item=topic_only,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "shared_painted_subject_exact_evidence"
+    assert topic_signal.penalty > 0
+    assert topic_signal.reason == "shared_painted_subject_topic_only_noise"
+
+
+def test_family_hike_detail_signal_prefers_campfire_actions_over_topic_only() -> None:
+    exact = _item(
+        "campfire_actions",
+        text=(
+            "Melanie roasted marshmallows and shared stories around the "
+            "campfire with her family."
+        ),
+        query_expansion_reason="family_hike_detail_bridge",
+    )
+    topic_only = _item(
+        "hike_photo",
+        text="Melanie hikes with her kids and takes nature photos near a trail.",
+        query_expansion_reason="family_hike_activity_bridge",
+    )
+
+    exact_signal = family_hike_detail_rerank_signal(
+        query_reason="family_hike_detail_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=8, unique_term_hits=8),
+    )
+    topic_signal = family_hike_detail_rerank_signal(
+        query_reason="family_hike_activity_bridge",
+        item=topic_only,
+        relevance=_relevance(distinctive_term_hits=6, unique_term_hits=6),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "family_hike_detail_exact_evidence"
+    assert topic_signal.penalty > 0
+    assert topic_signal.reason == "family_hike_detail_topic_only_noise"
 
 
 def test_commonality_signal_boosts_who_else_single_anchor_answer() -> None:

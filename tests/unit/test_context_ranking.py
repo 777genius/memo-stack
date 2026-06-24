@@ -846,6 +846,49 @@ def test_deterministic_rerank_penalizes_weak_activity_source_sibling() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_family_hike_actions_over_topic_only() -> None:
+    query = "What does Melanie do with her family on hikes?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    campfire_actions = _item(
+        "campfire_actions",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D16:4 Melanie roasted marshmallows and shared stories around "
+            "the campfire with her family."
+        ),
+    )
+    topic_only = _item(
+        "hike_photo",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="Melanie hikes with her kids and takes nature photos near a trail.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_only, campfire_actions),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["campfire_actions"].score > by_id["hike_photo"].score
+    assert (
+        "family_hike_detail_exact_evidence"
+        in by_id["campfire_actions"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "family_hike_detail_topic_only_noise"
+        in by_id["hike_photo"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_penalizes_capped_source_sibling_low_signal() -> None:
     query = "What job might Maria pursue in the future?"
     plan = build_query_expansion_plan(query)
@@ -4781,6 +4824,56 @@ def test_deterministic_rerank_prefers_true_commonality_over_shared_artifact() ->
     assert (
         "commonality_weak_evidence"
         in by_id["shared_photo_note"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_deterministic_rerank_prefers_shared_painted_subject_over_topic_only() -> None:
+    query = "What subject have Caroline and Melanie both painted?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    caroline_sunset = _item(
+        "caroline_sunset_painting",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="D14:5 Caroline finished a new work. visual query: sunset painting.",
+    )
+    melanie_sunset = _item(
+        "melanie_sunset_painting",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D8:6 Melanie loves painting nature-inspired work with her kids. "
+            "visual query: sunset painting."
+        ),
+    )
+    topic_only = _item(
+        "generic_shared_painting",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="Caroline and Melanie both enjoy painting on weekends.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_only, caroline_sunset, melanie_sunset),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_sunset_painting"].score > by_id["generic_shared_painting"].score
+    assert by_id["melanie_sunset_painting"].score > by_id["generic_shared_painting"].score
+    assert (
+        "shared_painted_subject_exact_evidence"
+        in by_id["caroline_sunset_painting"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "shared_painted_subject_topic_only_noise"
+        in by_id["generic_shared_painting"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
     )
