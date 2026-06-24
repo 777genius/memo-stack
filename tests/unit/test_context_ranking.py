@@ -6572,6 +6572,39 @@ def test_deterministic_rerank_penalizes_relation_requirement_decoy() -> None:
     )
 
 
+def test_deterministic_rerank_penalizes_relation_requirement_wrong_object() -> None:
+    query = "Did Alex ever mention Project Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    evidence = _item(
+        "alex_mentioned_atlas",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex mentioned Atlas during the billing call.",
+    )
+    wrong_object = _item(
+        "alex_mentioned_apollo",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex mentioned Project Apollo during the billing call.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (wrong_object, evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_mentioned_atlas"].score > by_id["alex_mentioned_apollo"].score
+    assert (
+        "relation_requirement_object_mismatch"
+        in by_id["alex_mentioned_apollo"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_penalizes_possession_relation_decoy() -> None:
     query = "Is there any evidence that Alex has a cat?"
     plan = build_query_expansion_plan(query)

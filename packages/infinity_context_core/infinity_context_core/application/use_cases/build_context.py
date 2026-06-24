@@ -212,8 +212,14 @@ _LOW_SIGNAL_INVENTORY_AGGREGATION_TERMS = frozenset(
 )
 _OBJECT_KIND_MISMATCH_RERANK_REASON = "object_kind_species_mismatch"
 _OBJECT_KIND_MATCH_RERANK_REASON = "object_kind_match"
-_RELATION_REQUIREMENT_MISMATCH_RERANK_REASON = "relation_requirement_missing_relation"
+_RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS = frozenset(
+    {
+        "relation_requirement_missing_relation",
+        "relation_requirement_object_mismatch",
+    }
+)
 _RELATION_REQUIREMENT_MATCH_RERANK_REASON = "relation_requirement_match"
+_ANSWER_SHAPE_MISSING_RERANK_REASON = "explicit_answer_shape_missing"
 
 
 class BuildContextUseCase:
@@ -2359,11 +2365,14 @@ def _apply_explicit_requirement_guard(
     )
     requested_anchor_kinds = set(_coverage_strings(coverage.get("requested_anchor_kinds")))
     missing_anchor_kinds = set(_coverage_strings(coverage.get("missing_anchor_kinds")))
+    requested_answer_shapes = set(_coverage_strings(coverage.get("requested_answer_shapes")))
+    missing_answer_shapes = set(_coverage_strings(coverage.get("missing_answer_shapes")))
     diagnostics: dict[str, object] = {
         "requirement_guard_items_considered": len(items),
         "requirement_guard_items_dropped": 0,
         "requirement_guard_object_kind_mismatch_drop_count": 0,
         "requirement_guard_relation_mismatch_drop_count": 0,
+        "requirement_guard_count_answer_shape_missing_drop_count": 0,
     }
     if "project" in requested_anchor_kinds and "project" in missing_anchor_kinds:
         diagnostics.update(
@@ -2397,6 +2406,15 @@ def _apply_explicit_requirement_guard(
             else "filtered_relation_requirement_mismatch"
         )
         return kept_items, diagnostics
+    if "count" in requested_answer_shapes and "count" in missing_answer_shapes:
+        count_shape_missing_items = tuple(
+            item for item in items if _has_explicit_answer_shape_missing(item)
+        )
+        if len(count_shape_missing_items) == len(items):
+            diagnostics["requirement_guard_items_dropped"] = len(items)
+            diagnostics["requirement_guard_count_answer_shape_missing_drop_count"] = len(items)
+            diagnostics["requirement_guard_status"] = "dropped_missing_count_answer_shape"
+            return (), diagnostics
     diagnostics["requirement_guard_status"] = "satisfied"
     return items, diagnostics
 
@@ -2412,9 +2430,13 @@ def _has_object_kind_mismatch(item: ContextItem) -> bool:
 def _has_relation_requirement_mismatch(item: ContextItem) -> bool:
     reasons = _deterministic_rerank_reasons(item)
     return (
-        _RELATION_REQUIREMENT_MISMATCH_RERANK_REASON in reasons
+        bool(_RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS.intersection(reasons))
         and _RELATION_REQUIREMENT_MATCH_RERANK_REASON not in reasons
     )
+
+
+def _has_explicit_answer_shape_missing(item: ContextItem) -> bool:
+    return _ANSWER_SHAPE_MISSING_RERANK_REASON in _deterministic_rerank_reasons(item)
 
 
 def _deterministic_rerank_reasons(item: ContextItem) -> frozenset[str]:

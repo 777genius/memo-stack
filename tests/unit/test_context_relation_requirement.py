@@ -25,6 +25,28 @@ def test_relation_requirement_penalizes_anchor_only_mention_decoy() -> None:
     assert signal.reason == "relation_requirement_missing_relation"
 
 
+def test_relation_requirement_accepts_named_object_without_generic_descriptor() -> None:
+    signal = relation_requirement_signal(
+        query="Did Alex ever mention Project Atlas?",
+        text="Alex mentioned Atlas during the billing call.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "relation_requirement_match"
+
+
+def test_relation_requirement_penalizes_wrong_named_object() -> None:
+    signal = relation_requirement_signal(
+        query="Did Alex ever mention Project Atlas?",
+        text="Alex mentioned Project Apollo during the billing call.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "relation_requirement_object_mismatch"
+
+
 def test_relation_requirement_accepts_negative_possession_evidence() -> None:
     signal = relation_requirement_signal(
         query="Is there any evidence that Alex has a cat?",

@@ -65,6 +65,28 @@ def test_requirement_guard_drops_relation_requirement_mismatch_evidence() -> Non
     assert diagnostics["requirement_guard_relation_mismatch_drop_count"] == 1
 
 
+def test_requirement_guard_drops_relation_requirement_object_mismatch_evidence() -> None:
+    item = _item(
+        "alex_mentioned_apollo",
+        "Alex mentioned Project Apollo during the billing call.",
+        deterministic_reasons=("relation_requirement_object_mismatch",),
+    )
+    query = "Did Alex ever mention Project Atlas?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == ()
+    assert diagnostics["requirement_guard_status"] == (
+        "dropped_relation_requirement_mismatch"
+    )
+    assert diagnostics["requirement_guard_items_dropped"] == 1
+    assert diagnostics["requirement_guard_relation_mismatch_drop_count"] == 1
+
+
 def test_requirement_guard_keeps_relation_requirement_match_evidence() -> None:
     item = _item(
         "alex_mentioned_atlas",
@@ -72,6 +94,45 @@ def test_requirement_guard_keeps_relation_requirement_match_evidence() -> None:
         deterministic_reasons=("relation_requirement_match",),
     )
     query = "Did Alex ever mention Project Atlas?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == (item,)
+    assert diagnostics["requirement_guard_status"] == "satisfied"
+    assert diagnostics["requirement_guard_items_dropped"] == 0
+
+
+def test_requirement_guard_drops_missing_count_answer_shape_evidence() -> None:
+    item = _item(
+        "generic_pet_note",
+        "Gina loves pets and volunteers at the shelter.",
+        deterministic_reasons=("explicit_answer_shape_missing",),
+    )
+    query = "How many pets does Gina have?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == ()
+    assert diagnostics["requirement_guard_status"] == "dropped_missing_count_answer_shape"
+    assert diagnostics["requirement_guard_items_dropped"] == 1
+    assert diagnostics["requirement_guard_count_answer_shape_missing_drop_count"] == 1
+
+
+def test_requirement_guard_keeps_count_answer_shape_evidence() -> None:
+    item = _item(
+        "enumerated_pet_note",
+        "Gina has a rescue dog, a cat, and a turtle at home.",
+        deterministic_reasons=("explicit_requirement_covered",),
+    )
+    query = "How many pets does Gina have?"
 
     guarded_items, diagnostics = _apply_explicit_requirement_guard(
         query=query,

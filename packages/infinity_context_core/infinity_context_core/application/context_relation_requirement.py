@@ -106,6 +106,17 @@ _OBJECT_STOP_VARIANTS = frozenset(
         "с",
     }
 )
+_OBJECT_DESCRIPTOR_STOP_VARIANTS = frozenset(
+    {
+        "issue",
+        "project",
+        "repo",
+        "repository",
+        "ticket",
+        "задача",
+        "проект",
+    }
+)
 _SPAN_BREAKER_RE = re.compile(
     r"\b(?:and|but|or|then|while|where|when|who|which|"
     r"visited?|went|attended?|joined?|mentioned?|said|told|wrote|"
@@ -198,6 +209,11 @@ def relation_requirement_signal(*, query: str, text: str) -> RelationRequirement
         return RelationRequirementSignal(
             penalty=0.056,
             reason="relation_requirement_missing_relation",
+        )
+    if _text_mentions_subject_relation_without_object(requirement, text):
+        return RelationRequirementSignal(
+            penalty=0.048,
+            reason="relation_requirement_object_mismatch",
         )
     return RelationRequirementSignal()
 
@@ -297,6 +313,22 @@ def _text_mentions_requirement_anchors(requirement: _RelationRequirement, text: 
     )
 
 
+def _text_mentions_subject_relation_without_object(
+    requirement: _RelationRequirement,
+    text: str,
+) -> bool:
+    for sentence_match in _SENTENCE_RE.finditer(text):
+        sentence = sentence_match.group(0)
+        if not _has_token_variants(sentence, requirement.subject.variants):
+            continue
+        if not requirement.group.text_re.search(sentence):
+            continue
+        if all(_has_token_variants(sentence, token.variants) for token in requirement.object_tokens):
+            continue
+        return True
+    return False
+
+
 def _nearest_subject(tokens: tuple[_Token, ...], relation_start: int) -> _Token | None:
     before = [token for token in tokens if token.end <= relation_start]
     for token in reversed(before[-6:]):
@@ -317,7 +349,10 @@ def _object_tokens(tokens: tuple[_Token, ...], relation_end: int) -> tuple[_Toke
         selected.append(token)
         if len(selected) >= 3:
             break
-    return tuple(selected)
+    filtered = tuple(
+        token for token in selected if not _is_stop_token(token, _OBJECT_DESCRIPTOR_STOP_VARIANTS)
+    )
+    return filtered or tuple(selected)
 
 
 def _tokens(text: str) -> tuple[_Token, ...]:
