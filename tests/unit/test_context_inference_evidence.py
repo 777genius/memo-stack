@@ -182,6 +182,20 @@ def test_inference_evidence_signal_boosts_willingness_fit_evidence() -> None:
     assert signal.reason == "inference_willingness_fit_evidence"
 
 
+def test_inference_evidence_signal_boosts_public_office_willingness_fit() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would John be open to moving to another country?",
+        text=(
+            "John wanted to run for office again and was excited about public "
+            "service in local politics."
+        ),
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_willingness_fit_evidence"
+
+
 def test_inference_evidence_signal_penalizes_willingness_topic_only_noise() -> None:
     signal = inference_evidence_rerank_signal(
         query="Would John be open to moving to another country?",

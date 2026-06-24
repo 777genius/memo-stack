@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import re
 
-from infinity_context_core.application.context_answer_evidence_types import (
-    AnswerEvidenceSignal,
-)
 from infinity_context_core.application.context_allergy_condition_inference import (
     allergy_condition_inference_signal,
+)
+from infinity_context_core.application.context_answer_evidence_types import (
+    AnswerEvidenceSignal,
 )
 from infinity_context_core.application.context_community_membership_inference import (
     community_membership_inference_signal,
 )
 from infinity_context_core.application.context_lexical import query_terms
-from infinity_context_core.application.context_preference_inference import (
-    preference_inference_signal,
-)
 from infinity_context_core.application.context_political_inference import (
     political_inference_signal,
+)
+from infinity_context_core.application.context_preference_inference import (
+    preference_inference_signal,
 )
 from infinity_context_core.application.context_query_support_role import (
     support_role_query_variants,
@@ -330,6 +330,18 @@ _WILLINGNESS_TEXT_DOMAIN_TERMS = frozenset(
         "relocation",
         "service",
         "veteran",
+    }
+)
+_PUBLIC_OFFICE_SERVICE_TEXT_TERMS = frozenset(
+    {
+        "campaign",
+        "civic",
+        "elected",
+        "election",
+        "office",
+        "politics",
+        "public",
+        "running",
     }
 )
 _CAREER_INFERENCE_QUERY_TERMS = frozenset(
@@ -978,7 +990,13 @@ def _has_willingness_domain_overlap(
     text_domain = text_tokens & _WILLINGNESS_TEXT_DOMAIN_TERMS
     if query_domain & text_domain:
         return True
-    return bool(query_domain and text_tokens & _MILITARY_SERVICE_TEXT_TERMS)
+    return bool(
+        query_domain
+        and (
+            text_tokens & _MILITARY_SERVICE_TEXT_TERMS
+            or text_tokens & _PUBLIC_OFFICE_SERVICE_TEXT_TERMS
+        )
+    )
 
 
 def _requests_causal_answer(query: str) -> bool:

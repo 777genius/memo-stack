@@ -6804,6 +6804,51 @@ def test_deterministic_rerank_does_not_penalize_exact_source_sibling_speaker_bri
     )
 
 
+def test_deterministic_rerank_does_not_penalize_keyword_turn_speaker_bridge() -> None:
+    query = "Would John be open to moving to another country?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    john_bridge = _item(
+        "john_bridge",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D24:3 John: I heard cool stories from an elderly veteran named Samuel. "
+            "It was inspiring and heartbreaking, but seeing their resilience filled "
+            "me with hope. It reminded me why I wanted to join the military."
+        ),
+    )
+    wrong_speaker = _item(
+        "wrong_speaker",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D24:3 Samuel: I heard cool stories from an elderly veteran named John. "
+            "It was inspiring and heartbreaking, but seeing their resilience filled "
+            "me with hope. It reminded me why I wanted to join the military."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (john_bridge, wrong_speaker),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+    john_reasons = by_id["john_bridge"].diagnostics["provenance"][
+        "deterministic_rerank_reasons"
+    ]
+
+    assert by_id["john_bridge"].score > by_id["wrong_speaker"].score
+    assert "query_anchor_conflict_overridden_by_source_speaker" in john_reasons
+    assert "query_anchor_conflict" not in john_reasons
+    assert (
+        "query_anchor_conflict"
+        in by_id["wrong_speaker"].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_prefers_willingness_evidence_over_relocation_decoy() -> None:
     query = "Would John be open to moving to another country?"
     plan = build_query_expansion_plan(query)
@@ -6823,9 +6868,18 @@ def test_deterministic_rerank_prefers_willingness_evidence_over_relocation_decoy
             "service mission."
         ),
     )
+    public_office = _item(
+        "john_public_office_goal",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D7:2 John wanted to run for public office again and was excited "
+            "about local politics."
+        ),
+    )
 
     reranked = apply_deterministic_rerank_adjustments(
-        (topical_decoy, willingness),
+        (topical_decoy, willingness, public_office),
         query=query,
         plan=plan,
         query_anchor_intent=intent,
@@ -6833,9 +6887,16 @@ def test_deterministic_rerank_prefers_willingness_evidence_over_relocation_decoy
     by_id = {item.item_id: item for item in reranked}
 
     assert by_id["john_military_willingness"].score > by_id["john_relocation_history"].score
+    assert by_id["john_public_office_goal"].score > by_id["john_relocation_history"].score
     assert (
         "inference_willingness_fit_evidence"
         in by_id["john_military_willingness"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_willingness_fit_evidence"
+        in by_id["john_public_office_goal"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
     )

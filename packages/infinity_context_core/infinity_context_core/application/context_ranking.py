@@ -7,10 +7,10 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from infinity_context_core.application.context_action_roles import action_role_rerank_signal
 from infinity_context_core.application.context_activity_companion import (
     activity_companion_signal,
 )
-from infinity_context_core.application.context_action_roles import action_role_rerank_signal
 from infinity_context_core.application.context_conversation_counterparty import (
     conversation_counterparty_evidence_signal,
     conversation_recency_evidence_signal,
@@ -36,15 +36,15 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     commonality_who_else_anchor_override,
     has_multi_evidence_aggregation_candidate,
 )
+from infinity_context_core.application.context_inference_evidence import (
+    answer_evidence_rerank_signal,
+)
 from infinity_context_core.application.context_lexical import (
     LexicalQueryTerm,
     query_term_frequency,
     query_terms,
     text_variant_counts,
     text_variant_sequence,
-)
-from infinity_context_core.application.context_inference_evidence import (
-    answer_evidence_rerank_signal,
 )
 from infinity_context_core.application.context_object_mismatch import (
     object_kind_mismatch_signal,
@@ -90,14 +90,14 @@ from infinity_context_core.application.context_ranking_reason_policy import (
 from infinity_context_core.application.context_ranking_reason_policy import (
     QUERY_REASON_PRIORITY_MIN_DISTINCTIVE_HITS as _QUERY_REASON_PRIORITY_MIN_DISTINCTIVE_HITS,
 )
+from infinity_context_core.application.context_relation_requirement import (
+    relation_requirement_signal,
+)
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     has_project_identity_mismatch,
     is_query_relevance_sufficient,
     score_query_relevance,
-)
-from infinity_context_core.application.context_relation_requirement import (
-    relation_requirement_signal,
 )
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
@@ -105,13 +105,13 @@ from infinity_context_core.application.context_requirement_coverage import (
 from infinity_context_core.application.context_speaker_attribution import (
     speaker_attribution_signal,
 )
+from infinity_context_core.application.context_temporal_metadata import (
+    temporal_hint_code_from_metadata,
+)
 from infinity_context_core.application.context_temporal_query import (
     TemporalQueryIntent,
     build_temporal_query_intent,
     temporal_query_boost_signal,
-)
-from infinity_context_core.application.context_temporal_metadata import (
-    temporal_hint_code_from_metadata,
 )
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import (
@@ -1392,7 +1392,7 @@ def _deterministic_rerank_signals(
     source_speaker_anchor_override = (
         text_anchor_conflict
         and not project_identity_conflict
-        and _source_sibling_speaker_confirms_query_anchor(
+        and _dialogue_speaker_confirms_query_anchor(
             item=item,
             query_anchor_intent=query_anchor_intent,
             relevance=relevance,
@@ -2014,19 +2014,21 @@ def _action_role_confirms_requested_relation(reason: str) -> bool:
     }
 
 
-def _source_sibling_speaker_confirms_query_anchor(
+def _dialogue_speaker_confirms_query_anchor(
     *,
     item: ContextItem,
     query_anchor_intent: QueryAnchorIntent,
     relevance: QueryRelevance,
 ) -> bool:
-    if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
-        return False
-    signals = safe_score_signals(safe_diagnostic_mapping(item.diagnostics).get("score_signals"))
-    if not _positive_signal(signals.get("source_sibling_group_level_seed")):
-        return False
-    if _numeric_signal(signals.get("query_expansion_reason_priority")) < 3:
-        return False
+    sources = diagnostic_retrieval_sources(item.diagnostics)
+    if "keyword_source_sibling_chunks" in sources:
+        signals = safe_score_signals(
+            safe_diagnostic_mapping(item.diagnostics).get("score_signals")
+        )
+        if not _positive_signal(signals.get("source_sibling_group_level_seed")):
+            return False
+        if _numeric_signal(signals.get("query_expansion_reason_priority")) < 3:
+            return False
     if relevance.distinctive_term_hits < 4 or relevance.unique_term_hits < 4:
         return False
     query_people = _query_person_labels(query_anchor_intent)
