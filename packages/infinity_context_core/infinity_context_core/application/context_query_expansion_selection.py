@@ -129,6 +129,29 @@ _POSSESSION_OBJECT_TERMS = frozenset(
         "ring",
     }
 )
+_POST_EVENT_EMOTION_TERMS = frozenset(
+    {
+        "feel",
+        "feeling",
+        "felt",
+    }
+)
+_POST_EVENT_CONTEXT_TERMS = frozenset(
+    {
+        "about",
+        "accident",
+        "after",
+        "because",
+        "family",
+        "grateful",
+        "happy",
+        "inspired",
+        "reaction",
+        "sad",
+        "thankful",
+        "why",
+    }
+)
 
 
 def query_expansion_variant_set(query: str) -> frozenset[str]:
@@ -220,6 +243,8 @@ def should_skip_expansion_rule(
         return not _requests_possession_gift_object(raw_tokens)
     if reason == "family_origin_bridge":
         return not _requests_family_origin(raw_tokens)
+    if reason == "post_event_emotion_bridge":
+        return not _requests_post_event_emotion(raw_tokens)
     if reason == "symbol_importance_bridge":
         return not _requests_symbol_importance(raw_tokens)
     if reason == "after_event_temporal_bridge":
@@ -307,6 +332,15 @@ def _requests_family_origin(raw_tokens: set[str]) -> bool:
     if not raw_tokens.intersection(_FAMILY_RELATIVE_TERMS):
         return False
     return bool(raw_tokens.intersection({"country", "from", "home", "native", "origin"}))
+
+
+def _requests_post_event_emotion(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_TECHNICAL_SUPPORT_CONTEXT_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection(_POST_EVENT_EMOTION_TERMS)
+        and raw_tokens.intersection(_POST_EVENT_CONTEXT_TERMS)
+    )
 
 
 def _requests_symbol_importance_variants(variants: set[str]) -> bool:

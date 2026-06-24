@@ -79,6 +79,16 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "meteor_shower_feeling_bridge",
         ),
     (
+            frozenset({"feel"}),
+            (
+                "felt feel feeling emotion reaction after event accident roadtrip "
+                "family grateful thankful relieved lucky okay scared freaked bad "
+                "start means world important love support inspired proud happy sad "
+                "upset because reason"
+            ),
+            "post_event_emotion_bridge",
+        ),
+    (
             frozenset({"color", "pattern", "pottery"}),
             (
                 "pottery colors patterns catch eye make people smile express feelings "

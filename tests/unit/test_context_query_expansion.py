@@ -410,6 +410,12 @@ def test_query_expansion_does_not_treat_gift_card_api_as_possession_memory() -> 
     }
 
 
+def test_query_expansion_does_not_treat_api_feel_as_emotional_memory() -> None:
+    plan = build_query_expansion_plan("How does the API feel under load?")
+
+    assert "post_event_emotion_bridge" not in {item.reason for item in plan.expansions}
+
+
 def test_query_expansion_is_bounded_and_deduplicated_by_reason() -> None:
     plan = build_query_expansion_plan(
         "Would Melanie support growing up, move from home, choose a national park "
@@ -913,6 +919,11 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             build_query_expansion_plan("How did Caroline feel while watching the meteor shower?"),
             "meteor_shower_feeling_bridge",
             "felt tiny awe universe",
+        ),
+        (
+            build_query_expansion_plan("How did Melanie feel about her family after the accident?"),
+            "post_event_emotion_bridge",
+            "family grateful thankful relieved lucky okay",
         ),
         (
             build_query_expansion_plan(
@@ -1763,6 +1774,24 @@ def test_best_query_relevance_uses_friend_group_duration_bridge() -> None:
     assert query.startswith("Caroline ")
     assert reason == "relationship_duration_bridge"
     assert relevance.distinctive_term_hits >= 6
+
+
+def test_best_query_relevance_uses_post_event_emotion_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "How did Melanie feel about her family after the accident?"
+    )
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D18:5 Melanie: After the accident, I felt grateful and thankful "
+            "for my family. They mean the world to me."
+        ),
+    )
+
+    assert query.startswith("Melanie ")
+    assert reason == "post_event_emotion_bridge"
+    assert relevance.distinctive_term_hits >= 7
 
 
 def test_best_query_relevance_uses_source_evidence_bridge() -> None:

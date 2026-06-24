@@ -111,6 +111,7 @@ _AGE_BIRTHDAY_RERANK_REASONS = frozenset(("age_birthday_bridge",))
 _BIRTHPLACE_RERANK_REASONS = frozenset(("birthplace_origin_bridge",))
 _BEACH_OR_MOUNTAINS_RERANK_REASONS = frozenset(("beach_or_mountains_inference_bridge",))
 _SYMBOL_IMPORTANCE_RERANK_REASONS = frozenset(("symbol_importance_bridge",))
+_POST_EVENT_EMOTION_RERANK_REASONS = frozenset(("post_event_emotion_bridge",))
 _INVENTORY_POTTERY_QUERY_RE = re.compile(
     r"\b(?:pottery|ceramic|clay|pots?|bowls?|cups?|mugs?|plates?)\b",
     re.IGNORECASE,
@@ -559,6 +560,16 @@ _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE = re.compile(
     r"svg|css|ui|interface|variable|operator|code|programming)\b",
     re.IGNORECASE,
 )
+_POST_EVENT_EMOTION_EXACT_RE = re.compile(
+    r"\b(?:felt|feel|feeling|grateful|thankful|relieved|lucky|scared|"
+    r"freaked|inspired|proud|happy|sad|upset|awe|means?\s+the\s+world|"
+    r"important)\b",
+    re.IGNORECASE,
+)
+_POST_EVENT_EMOTION_EVENT_ONLY_RE = re.compile(
+    r"\b(?:accident|roadtrip|trip|event|happened|mentioned|talked|family)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -738,6 +749,11 @@ def positive_preference_rerank_signal(
         item=item,
     ):
         return DomainRerankSignal()
+    if (
+        _POSITIVE_PREFERENCE_WEAK_TOPIC_RE.search(item.text) is not None
+        and _POSITIVE_PREFERENCE_MARKER_RE.search(item.text) is None
+    ):
+        return DomainRerankSignal(penalty=0.046, reason="preference_weak_evidence")
     if (
         _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
         and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None
@@ -1045,6 +1061,24 @@ def symbol_importance_rerank_signal(
     return DomainRerankSignal()
 
 
+def post_event_emotion_rerank_signal(
+    *,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_post_event_emotion_candidate(query_reason=query_reason, item=item):
+        return DomainRerankSignal()
+    if _POST_EVENT_EMOTION_EXACT_RE.search(item.text) is not None:
+        return DomainRerankSignal(boost=0.026, reason="post_event_emotion_exact_evidence")
+    if (
+        _POST_EVENT_EMOTION_EVENT_ONLY_RE.search(item.text) is not None
+        or relevance.distinctive_term_hits < 4
+    ):
+        return DomainRerankSignal(penalty=0.038, reason="post_event_emotion_weak_evidence")
+    return DomainRerankSignal()
+
+
 def _support_network_exact_evidence(*, query_reason: str, item: ContextItem) -> bool:
     if not _is_support_network_candidate(query_reason=query_reason, item=item):
         return False
@@ -1260,6 +1294,12 @@ def _is_symbol_importance_candidate(*, query_reason: str, item: ContextItem) -> 
     if query_reason in _SYMBOL_IMPORTANCE_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _SYMBOL_IMPORTANCE_RERANK_REASONS
+
+
+def _is_post_event_emotion_candidate(*, query_reason: str, item: ContextItem) -> bool:
+    if query_reason in _POST_EVENT_EMOTION_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _POST_EVENT_EMOTION_RERANK_REASONS
 
 
 def _event_sequence_anchor_terms(query: str) -> tuple[str, ...]:

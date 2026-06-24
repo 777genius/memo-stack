@@ -4980,6 +4980,51 @@ def test_deterministic_rerank_prefers_friend_group_duration_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_post_event_emotion_evidence() -> None:
+    query = "How did Melanie feel about her family after the accident?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "melanie_family_accident_generic",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="D18:3 Melanie mentioned an accident during the family roadtrip.",
+    )
+    emotion = _item(
+        "melanie_family_emotion",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D18:5 Melanie: After the accident, I felt grateful and thankful "
+            "for my family. They mean the world to me."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, emotion),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["melanie_family_emotion"].score > by_id[
+        "melanie_family_accident_generic"
+    ].score
+    assert (
+        "post_event_emotion_exact_evidence"
+        in by_id["melanie_family_emotion"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "post_event_emotion_weak_evidence"
+        in by_id["melanie_family_accident_generic"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_relationship_origin_over_generic_relation() -> None:
     query = "Where did Alex meet Maria?"
     plan = build_query_expansion_plan(query)
