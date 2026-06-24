@@ -631,6 +631,29 @@ def test_query_anchor_intent_matches_cross_language_message_event_type() -> None
     assert set(match.matched_keys) >= {"aleks", "atlas", "group:message"}
 
 
+def test_query_anchor_intent_groups_russian_message_event_verbs() -> None:
+    cases = (
+        ("алекс ответил по атласу вчера", "otvetil", "Алекс"),
+        ("мария сообщила по атласу вчера", "soobschila", "Мария"),
+        ("дана скинула по атласу вчера", "skinula", "Дана"),
+        ("сергей прислал по атласу вчера", "prislal", "Сергей"),
+        ("ирина отправила по атласу вчера", "otpravila", "Ирина"),
+    )
+
+    for query, event_key, participant in cases:
+        anchor = _anchor(
+            kind=MemoryAnchorKind.EVENT,
+            label=f"DM with {participant} about Atlas yesterday",
+        )
+        intent = build_query_anchor_intent(query)
+        match = match_query_anchor_intent(intent, anchor)
+
+        assert intent.event_type_keys() == {"group:message", event_key}
+        assert match is not None
+        assert "query_event_type_match" in match.reasons
+        assert "group:message" in match.matched_keys
+
+
 def test_query_anchor_intent_rejects_wrong_project_anchor() -> None:
     intent = build_query_anchor_intent("what did Alex say about project Apollo")
     atlas = _anchor(kind=MemoryAnchorKind.PROJECT, label="Project Atlas")

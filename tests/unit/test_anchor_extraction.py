@@ -650,6 +650,40 @@ def test_anchor_extraction_handles_said_and_told_event_phrasing() -> None:
     assert events["сказал с алекс про атлас вчера"]["event_participant_canonical_key"] == ("aleks")
 
 
+def test_anchor_extraction_handles_russian_message_event_verbs() -> None:
+    anchors = extract_observed_anchors(
+        "алекс ответил по Атласу вчера. "
+        "Мария сообщила по Атласу вчера. "
+        "Дана скинула по Атласу вчера."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "ответил с алекс по атласу вчера" in events
+    assert events["ответил с алекс по атласу вчера"]["event_type_canonical"] == "otvetil"
+    assert events["ответил с алекс по атласу вчера"]["event_participant_canonical_key"] == "aleks"
+    assert events["ответил с алекс по атласу вчера"]["event_project_canonical_key"] == "atlas"
+    assert "сообщила с мария по атласу вчера" in events
+    assert events["сообщила с мария по атласу вчера"]["event_type_canonical"] == "soobschila"
+    assert "скинула с дана по атласу вчера" in events
+    assert events["скинула с дана по атласу вчера"]["event_type_canonical"] == "skinula"
+
+
+def test_anchor_extraction_keeps_russian_message_actor_and_counterparty() -> None:
+    anchors = extract_observed_anchors("Алекс ответил Марии по Атласу вчера.")
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "ответил с алекс по атласу вчера" in events
+    assert events["ответил с алекс по атласу вчера"]["event_participant_canonical_key"] == "aleks"
+    assert "ответил с марии по атласу вчера" in events
+    assert events["ответил с марии по атласу вчера"]["event_participant_canonical_key"] == "mariya"
+
+
 def test_anchor_extraction_handles_chat_handles_and_email_people() -> None:
     anchors = extract_observed_anchors(
         "DM @alex.cooper yesterday about Atlas invoice. "

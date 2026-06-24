@@ -98,7 +98,10 @@ _EVENT_KEYWORDS = (
     r"общался|общалась|общались|созванивался|созванивалась|созванивались|"
     r"переезд|переехал|переехала|переехали|переезжал|переезжала|переезжали|"
     r"дедлайн|срок|задача|поручение|напоминание|майлстоун|"
-    r"написал|написала|сказал|сказала|рассказал|рассказала|"
+    r"написал|написала|написали|ответил|ответила|ответили|"
+    r"сказал|сказала|сказали|сообщил|сообщила|сообщили|"
+    r"скинул|скинула|скинули|прислал|прислала|прислали|"
+    r"отправил|отправила|отправили|рассказал|рассказала|рассказали|"
     r"встретился|встретилась|встречался|встречалась|встречались|"
     r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
     r"интервью|воркшоп|релиз|запуск"
@@ -120,6 +123,27 @@ _LOWERCASE_PREFIX_EVENT_KEYWORDS = frozenset(
         "texted",
         "told",
         "wrote",
+        "написал",
+        "написала",
+        "написали",
+        "ответил",
+        "ответила",
+        "ответили",
+        "отправил",
+        "отправила",
+        "отправили",
+        "прислал",
+        "прислала",
+        "прислали",
+        "сказал",
+        "сказала",
+        "сказали",
+        "сообщил",
+        "сообщила",
+        "сообщили",
+        "скинул",
+        "скинула",
+        "скинули",
     }
 )
 _DIRECT_AFTER_EVENT_KEYWORDS = frozenset(
@@ -140,10 +164,29 @@ _DIRECT_AFTER_EVENT_KEYWORDS = frozenset(
         "звонила",
         "написал",
         "написала",
+        "написали",
+        "ответил",
+        "ответила",
+        "ответили",
+        "отправил",
+        "отправила",
+        "отправили",
         "переписка",
         "позвонил",
         "позвонила",
+        "прислал",
+        "прислала",
+        "прислали",
+        "сказал",
+        "сказала",
+        "сказали",
+        "сообщил",
+        "сообщила",
+        "сообщили",
         "созвон",
+        "скинул",
+        "скинула",
+        "скинули",
         "чат",
     }
 )
@@ -353,11 +396,13 @@ _EVENT_PERSON_STOP_WORDS = (
         "due",
         "duration",
         "format",
+        "for",
         "from",
         "frontend",
         "backend",
         "image",
         "interview",
+        "in",
         "kiev",
         "kyiv",
         "last",
@@ -400,15 +445,18 @@ _EVENT_PERSON_STOP_WORDS = (
         "user",
         "uses",
         "weekly",
+        "with",
         "workshop",
         "yearly",
         "yesterday",
+        "в",
         "встреча",
         "вчера",
         "завтра",
         "запуск",
         "звонок",
         "дедлайн",
+        "для",
         "итог",
         "итоги",
         "киев",
@@ -416,8 +464,17 @@ _EVENT_PERSON_STOP_WORDS = (
         "мы",
         "написал",
         "написала",
+        "написали",
+        "об",
         "неделя",
         "неделю",
+        "ответил",
+        "ответила",
+        "ответили",
+        "от",
+        "отправил",
+        "отправила",
+        "отправили",
         "поручение",
         "он",
         "она",
@@ -426,10 +483,25 @@ _EVENT_PERSON_STOP_WORDS = (
         "планерка",
         "планёрка",
         "проект",
+        "прислал",
+        "прислала",
+        "прислали",
+        "про",
+        "по",
         "разговор",
+        "сказал",
+        "сказала",
+        "сказали",
+        "сообщил",
+        "сообщила",
+        "сообщили",
         "сегодня",
         "созвон",
         "срок",
+        "скинул",
+        "скинула",
+        "скинули",
+        "с",
         "час",
         "часа",
         "часов",
@@ -600,11 +672,36 @@ def event_labels(text: str) -> tuple[str, ...]:
         ).strip()
         label = " ".join(part for part in (event, participant, project, temporal) if part).strip()
         labels.append(label)
+        if (
+            prefix_participant
+            and participant
+            and prefix_participant != participant
+            and not is_activity
+            and not is_workflow
+        ):
+            prefix_label = " ".join(
+                part for part in (event, prefix_participant, project, temporal) if part
+            ).strip()
+            if prefix_label and prefix_label != label:
+                labels.append(prefix_label)
         generic_participant_label = " ".join(
             part for part in (event, participant, temporal) if part
         ).strip()
         if project and generic_participant_label != label:
             labels.append(generic_participant_label)
+        if (
+            project
+            and prefix_participant
+            and participant
+            and prefix_participant != participant
+            and not is_activity
+            and not is_workflow
+        ):
+            prefix_generic_participant_label = " ".join(
+                part for part in (event, prefix_participant, temporal) if part
+            ).strip()
+            if prefix_generic_participant_label not in {label, generic_participant_label}:
+                labels.append(prefix_generic_participant_label)
         generic_temporal_label = f"{event} {temporal}".strip()
         if participant and temporal and generic_temporal_label != label:
             labels.append(generic_temporal_label)
