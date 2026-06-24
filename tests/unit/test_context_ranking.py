@@ -3851,6 +3851,57 @@ def test_deterministic_rerank_prefers_symbol_importance_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_symbol_meaning_evidence() -> None:
+    query = "What does Caroline's necklace symbolize?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    meaning_evidence = _item(
+        "necklace_meaning",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:3 Caroline: This necklace is a gift from my grandma in my home "
+            "country. It stands for love, faith and strength, and reminds me "
+            "of my roots."
+        ),
+    )
+    object_only = _item(
+        "necklace_object_only",
+        score=0.71,
+        retrieval_source="keyword_chunks",
+        text="D8:2 Caroline wore a necklace in the photo and smiled.",
+    )
+    technical_symbol = _item(
+        "technical_symbol",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline documented what the necklace icon symbol means in the UI.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (meaning_evidence, object_only, technical_symbol),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["necklace_meaning"].score > by_id["technical_symbol"].score
+    assert by_id["necklace_meaning"].score > by_id["necklace_object_only"].score
+    assert (
+        "symbol_importance_exact_evidence"
+        in by_id["necklace_meaning"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "symbol_importance_weak_evidence"
+        in by_id["technical_symbol"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_patriotic_service_source_boost_accepts_precise_turn_evidence() -> None:
     plan = build_query_expansion_plan("Would John be considered a patriotic person?")
     _, reason, relevance = best_query_relevance(

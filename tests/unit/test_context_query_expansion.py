@@ -353,6 +353,30 @@ def test_query_expansion_covers_visual_symbol_evidence_terms() -> None:
         plan,
         "symbol_importance_bridge",
     )
+    assert "love faith roots gift grandma" in _expansion_query(
+        plan,
+        "symbol_importance_bridge",
+    )
+
+
+def test_query_expansion_covers_symbolic_meaning_variants() -> None:
+    for query in (
+        "What does Caroline's necklace symbolize?",
+        "What does Caroline's necklace stand for?",
+        "What is the meaning of Caroline's necklace?",
+    ):
+        plan = build_query_expansion_plan(query)
+        symbol = _expansion_query(plan, "symbol_importance_bridge")
+
+        assert symbol.startswith("Caroline ")
+        assert "necklace transgender symbol cross heart" in symbol
+        assert "symbolizes represents meaning means stands for" in symbol
+
+
+def test_query_expansion_does_not_treat_technical_meaning_as_symbol_memory() -> None:
+    plan = build_query_expansion_plan("What does API status code mean?")
+
+    assert "symbol_importance_bridge" not in {item.reason for item in plan.expansions}
 
 
 def test_query_expansion_is_bounded_and_deduplicated_by_reason() -> None:
@@ -1641,6 +1665,23 @@ def test_best_query_relevance_uses_expansion_for_low_overlap_evidence() -> None:
     assert query.startswith("Caroline ")
     assert reason == "relocation_origin_bridge"
     assert relevance.distinctive_term_hits >= 2
+
+
+def test_best_query_relevance_uses_symbol_meaning_bridge() -> None:
+    plan = build_query_expansion_plan("What does Caroline's necklace symbolize?")
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D4:3 Caroline: This necklace is a gift from my grandma in my home "
+            "country, Sweden. It stands for love, faith and strength, and reminds "
+            "me of my roots."
+        ),
+    )
+
+    assert query.startswith("Caroline ")
+    assert reason == "symbol_importance_bridge"
+    assert relevance.distinctive_term_hits >= 4
 
 
 def test_best_query_relevance_uses_source_evidence_bridge() -> None:

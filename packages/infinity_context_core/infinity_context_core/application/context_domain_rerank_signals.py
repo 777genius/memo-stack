@@ -1030,12 +1030,7 @@ def symbol_importance_rerank_signal(
         return DomainRerankSignal()
     has_symbol_object = _SYMBOL_IMPORTANCE_OBJECT_RE.search(item.text) is not None
     has_personal_object = _SYMBOL_IMPORTANCE_PERSONAL_OBJECT_RE.search(item.text) is not None
-    has_meaning = _SYMBOL_IMPORTANCE_MEANING_RE.search(item.text) is not None
-    if (
-        _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE.search(item.text) is not None
-        and not has_personal_object
-        and not has_meaning
-    ):
+    if _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE.search(item.text) is not None:
         return DomainRerankSignal(penalty=0.042, reason="symbol_importance_weak_evidence")
     if has_symbol_object and _SYMBOL_IMPORTANCE_EXACT_RE.search(item.text) is not None:
         return DomainRerankSignal(boost=0.028, reason="symbol_importance_exact_evidence")
@@ -1368,7 +1363,7 @@ def _is_aggregation_context_item(item: ContextItem) -> bool:
     if retrieval_source == _AGGREGATION_RETRIEVAL_SOURCE:
         return True
     sources = diagnostics.get("retrieval_sources")
-    if isinstance(sources, (list, tuple, set)):
+    if isinstance(sources, list | tuple | set):
         return _AGGREGATION_RETRIEVAL_SOURCE in {str(source) for source in sources}
     return False
 

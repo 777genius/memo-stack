@@ -489,7 +489,8 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             (
                 "symbols important rainbow flag mural eagle freedom pride courage "
                 "strength trans community resilience stained glass acceptance pendant "
-                "necklace transgender symbol cross heart"
+                "necklace transgender symbol cross heart symbolizes represents meaning "
+                "means stands for love faith roots gift grandma reminder"
             ),
             "symbol_importance_bridge",
         ),

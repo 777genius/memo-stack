@@ -61,6 +61,31 @@ _TECHNICAL_SUPPORT_CONTEXT_TERMS = frozenset(
         "web",
     }
 )
+_SYMBOL_IMPORTANCE_OBJECT_TERMS = frozenset(
+    {
+        "cross",
+        "eagle",
+        "flag",
+        "heart",
+        "mural",
+        "necklace",
+        "pendant",
+        "symbol",
+        "symbols",
+    }
+)
+_SYMBOL_IMPORTANCE_MEANING_TERMS = frozenset(
+    {
+        "mean",
+        "meaning",
+        "means",
+        "represent",
+        "represented",
+        "represents",
+        "stand",
+        "stands",
+    }
+)
 
 
 def query_expansion_variant_set(query: str) -> frozenset[str]:
@@ -68,6 +93,8 @@ def query_expansion_variant_set(query: str) -> frozenset[str]:
     for term in query_terms(query, min_chars=2, max_terms=24):
         variants.update(term.variants)
     variants.update(_raw_query_tokens(query))
+    if _requests_symbol_importance_variants(variants):
+        variants.add("symbol")
     if _NEGATIVE_EATING_QUERY_RE.search(query):
         variants.update(("not", "cannot", "eat"))
     if any(token.startswith("познаком") for token in variants):
@@ -146,6 +173,8 @@ def should_skip_expansion_rule(
         return not _requests_relationship_origin(raw_tokens)
     if reason == "relationship_status_bridge":
         return not _requests_relationship_status(raw_tokens)
+    if reason == "symbol_importance_bridge":
+        return not _requests_symbol_importance(raw_tokens)
     if reason == "after_event_temporal_bridge":
         return not build_temporal_query_intent(query).after_event
     if reason == "before_event_temporal_bridge":
@@ -198,6 +227,40 @@ def _requests_relationship_status(raw_tokens: set[str]) -> bool:
                 "супруга",
             }
         )
+    )
+
+
+def _requests_symbol_importance(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection({"symbol", "symbols"}) or any(
+        token.startswith(("symbolic", "symbolis", "symboliz")) for token in raw_tokens
+    ):
+        return True
+    if (
+        raw_tokens.intersection(_SYMBOL_IMPORTANCE_OBJECT_TERMS)
+        and raw_tokens.intersection(_SYMBOL_IMPORTANCE_MEANING_TERMS)
+    ):
+        return True
+    return bool(
+        "for" in raw_tokens
+        and raw_tokens.intersection(_SYMBOL_IMPORTANCE_OBJECT_TERMS)
+        and raw_tokens.intersection({"stand", "stands"})
+    )
+
+
+def _requests_symbol_importance_variants(variants: set[str]) -> bool:
+    if variants.intersection({"symbol", "symbols"}) or any(
+        token.startswith(("symbolic", "symbolis", "symboliz")) for token in variants
+    ):
+        return True
+    if (
+        variants.intersection(_SYMBOL_IMPORTANCE_OBJECT_TERMS)
+        and variants.intersection(_SYMBOL_IMPORTANCE_MEANING_TERMS)
+    ):
+        return True
+    return bool(
+        "for" in variants
+        and variants.intersection(_SYMBOL_IMPORTANCE_OBJECT_TERMS)
+        and variants.intersection({"stand", "stands"})
     )
 
 
