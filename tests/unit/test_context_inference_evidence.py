@@ -301,6 +301,17 @@ def test_inference_evidence_signal_penalizes_single_contact_without_likely_marke
     assert signal.reason == "inference_friend_team_single_contact_noise"
 
 
+def test_inference_evidence_signal_penalizes_named_single_contact_generically() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Does Nate have friends other than Alex?",
+        text="Nate played Counter Strike with Alex after school.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_friend_team_single_contact_noise"
+
+
 def test_inference_evidence_signal_boosts_degree_policy_evidence() -> None:
     signal = inference_evidence_rerank_signal(
         query="What might John's degree be in?",

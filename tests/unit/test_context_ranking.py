@@ -1277,6 +1277,43 @@ def test_deterministic_rerank_prefers_friend_team_evidence_without_likely_marker
     )
 
 
+def test_deterministic_rerank_penalizes_named_single_contact_friend_noise() -> None:
+    query = "Does Nate have friends other than Alex?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    team_evidence = _item(
+        "nate_team_friends",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Nate plays Valorant with online teammates and gaming friends "
+            "from tournaments."
+        ),
+    )
+    alex_only = _item(
+        "nate_alex_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Nate played Counter Strike with Alex after school.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (alex_only, team_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["nate_team_friends"].score > by_id["nate_alex_only"].score
+    assert (
+        "inference_friend_team_single_contact_noise"
+        in by_id["nate_alex_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_degree_policy_evidence_over_measurement_noise() -> None:
     query = "What might John's degree be in?"
     plan = build_query_expansion_plan(query)

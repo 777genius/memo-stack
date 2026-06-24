@@ -7,9 +7,13 @@ import re
 from infinity_context_core.application.context_answer_evidence_types import (
     AnswerEvidenceSignal,
 )
-from infinity_context_core.application.context_lexical import query_terms
+from infinity_context_core.application.context_lexical import lexical_variants, query_terms
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+_FRIEND_TEAM_EXCLUDED_PERSON_RE = re.compile(
+    r"\b(?:besides|other\s+than|apart\s+from)\s+([A-Za-zА-Яа-яЁё][\w._-]*)",
+    re.IGNORECASE,
+)
 
 _INFERENCE_QUERY_TERMS = frozenset(
     {
@@ -144,7 +148,8 @@ def _friend_team_inference_signal(*, query: str, text: str) -> AnswerEvidenceSig
             boost=0.03,
             reason="inference_friend_team_evidence",
         )
-    if "besides" in query_tokens and "joanna" in text_tokens and not friend_hits:
+    excluded_person_terms = _excluded_friend_comparator_terms(query)
+    if excluded_person_terms and excluded_person_terms & text_tokens and not friend_hits:
         return AnswerEvidenceSignal(
             penalty=0.035,
             reason="inference_friend_team_single_contact_noise",
@@ -182,6 +187,16 @@ def _requests_friend_team_inference(query: str) -> bool:
         or {"other", "than"} <= query_tokens
         or {"apart", "from"} <= query_tokens
     )
+
+
+def _excluded_friend_comparator_terms(query: str) -> frozenset[str]:
+    match = _FRIEND_TEAM_EXCLUDED_PERSON_RE.search(query)
+    if match is None:
+        return frozenset()
+    raw_name = match.group(1).casefold().strip("_")
+    if len(raw_name) < 2:
+        return frozenset()
+    return frozenset({raw_name, *lexical_variants(raw_name)})
 
 
 def _requests_degree_field_inference(query: str) -> bool:

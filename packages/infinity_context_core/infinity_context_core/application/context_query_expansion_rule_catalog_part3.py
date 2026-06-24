@@ -271,6 +271,22 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "friends_team_inference_bridge",
         ),
     (
+            frozenset({"friend", "other"}),
+            (
+                "friends teammates team video game counter strike global offensive "
+                "played together blast friends besides other than"
+            ),
+            "friends_team_inference_bridge",
+        ),
+    (
+            frozenset({"friend", "apart"}),
+            (
+                "friends teammates team video game counter strike global offensive "
+                "played together blast friends besides apart from"
+            ),
+            "friends_team_inference_bridge",
+        ),
+    (
             frozenset({"medium", "game"}),
             (
                 "medium mediums games play gaming GameCube Gamecube PC Playstation "
