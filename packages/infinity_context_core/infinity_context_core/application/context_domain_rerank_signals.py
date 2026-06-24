@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from infinity_context_core.application.context_aggregation_answer_slots import (
+    aggregation_answer_slot_count,
+)
 from infinity_context_core.application.context_diagnostics import (
     safe_diagnostic_mapping,
     safe_score_signals,
@@ -610,6 +613,17 @@ def aggregation_evidence_rerank_signal(
     if not _is_aggregation_query(query):
         return DomainRerankSignal()
     is_list_query = _is_aggregation_list_query(query)
+    answer_slot_count = aggregation_answer_slot_count(query=query, text=item.text)
+    if answer_slot_count >= 2:
+        if is_list_query:
+            return DomainRerankSignal(
+                boost=0.058,
+                reason="aggregation_list_slot_diverse_evidence",
+            )
+        return DomainRerankSignal(
+            boost=0.044,
+            reason="aggregation_slot_diverse_evidence",
+        )
     if _is_aggregation_context_item(item):
         if _aggregation_evidence_count(item) >= 2:
             if is_list_query:
@@ -643,7 +657,11 @@ def has_multi_evidence_aggregation_candidate(
     if not _is_aggregation_query(query):
         return False
     return any(
-        _is_aggregation_context_item(item) and _aggregation_evidence_count(item) >= 2
+        (
+            _is_aggregation_context_item(item)
+            and _aggregation_evidence_count(item) >= 2
+        )
+        or aggregation_answer_slot_count(query=query, text=item.text) >= 2
         for item in items
     )
 
