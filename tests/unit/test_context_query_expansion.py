@@ -379,6 +379,30 @@ def test_query_expansion_does_not_treat_technical_meaning_as_symbol_memory() -> 
     assert "symbol_importance_bridge" not in {item.reason for item in plan.expansions}
 
 
+def test_query_expansion_covers_possession_gift_and_family_origin() -> None:
+    gift = build_query_expansion_plan("What was grandma's gift to Caroline?")
+    origin = build_query_expansion_plan("What country is Caroline's grandma from?")
+
+    gift_query = _expansion_query(gift, "possession_gift_object_bridge")
+    origin_query = _expansion_query(origin, "family_origin_bridge")
+
+    assert gift_query.startswith("Caroline ")
+    assert "gift present keepsake object item possession" in gift_query
+    assert "grandma grandmother grandpa grandfather" in gift_query
+    assert "necklace pendant ring book camera" in gift_query
+    assert origin_query.startswith("Caroline ")
+    assert "family relative grandma grandmother" in origin_query
+    assert "home country native country origin roots" in origin_query
+
+
+def test_query_expansion_does_not_treat_gift_card_api_as_possession_memory() -> None:
+    plan = build_query_expansion_plan("What does the API gift card status mean?")
+
+    assert "possession_gift_object_bridge" not in {
+        item.reason for item in plan.expansions
+    }
+
+
 def test_query_expansion_is_bounded_and_deduplicated_by_reason() -> None:
     plan = build_query_expansion_plan(
         "Would Melanie support growing up, move from home, choose a national park "
@@ -1682,6 +1706,38 @@ def test_best_query_relevance_uses_symbol_meaning_bridge() -> None:
     assert query.startswith("Caroline ")
     assert reason == "symbol_importance_bridge"
     assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_possession_gift_bridge() -> None:
+    plan = build_query_expansion_plan("What was grandma's gift to Caroline?")
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and reminds me of my roots."
+        ),
+    )
+
+    assert query.startswith("Caroline ")
+    assert reason == "possession_gift_object_bridge"
+    assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_family_origin_bridge() -> None:
+    plan = build_query_expansion_plan("What country is Caroline's grandma from?")
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and reminds me of my roots."
+        ),
+    )
+
+    assert query.startswith("Caroline ")
+    assert reason == "family_origin_bridge"
+    assert relevance.distinctive_term_hits >= 5
 
 
 def test_best_query_relevance_uses_source_evidence_bridge() -> None:

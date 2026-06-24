@@ -7804,6 +7804,66 @@ def test_deterministic_rerank_prefers_possession_gift_source_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_possession_gift_object_evidence() -> None:
+    query = "What was grandma's gift to Caroline?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    gift_object = _item(
+        "caroline_grandma_gift",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and it reminds me of my roots."
+        ),
+    )
+    family_support = _item(
+        "caroline_family_support",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline said her family supports her and gives her strength.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (gift_object, family_support),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].item_id == "caroline_grandma_gift"
+
+
+def test_deterministic_rerank_prefers_family_origin_evidence() -> None:
+    query = "What country is Caroline's grandma from?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    origin = _item(
+        "caroline_grandma_origin",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:3 Caroline: This necklace was a gift from my grandma in my home "
+            "country, Sweden, and it reminds me of my roots."
+        ),
+    )
+    home_decoy = _item(
+        "caroline_home_decoy",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline is building a safe home for her future children.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (origin, home_decoy),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[0].item_id == "caroline_grandma_origin"
+
+
 def test_deterministic_rerank_prefers_got_from_possession_source_evidence() -> None:
     query = "Where did Caroline's necklace come from?"
     plan = build_query_expansion_plan(query)

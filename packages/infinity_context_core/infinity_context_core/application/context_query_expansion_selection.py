@@ -86,6 +86,49 @@ _SYMBOL_IMPORTANCE_MEANING_TERMS = frozenset(
         "stands",
     }
 )
+_FAMILY_RELATIVE_TERMS = frozenset(
+    {
+        "dad",
+        "father",
+        "family",
+        "grandfather",
+        "grandma",
+        "grandmother",
+        "grandpa",
+        "mom",
+        "mother",
+        "parent",
+        "parents",
+        "relative",
+        "relatives",
+    }
+)
+_POSSESSION_GIFT_TERMS = frozenset(
+    {
+        "gave",
+        "gift",
+        "gifted",
+        "given",
+        "got",
+        "keepsake",
+        "present",
+        "receive",
+        "received",
+    }
+)
+_POSSESSION_OBJECT_TERMS = frozenset(
+    {
+        "book",
+        "camera",
+        "item",
+        "necklace",
+        "object",
+        "pendant",
+        "photo",
+        "picture",
+        "ring",
+    }
+)
 
 
 def query_expansion_variant_set(query: str) -> frozenset[str]:
@@ -173,6 +216,10 @@ def should_skip_expansion_rule(
         return not _requests_relationship_origin(raw_tokens)
     if reason == "relationship_status_bridge":
         return not _requests_relationship_status(raw_tokens)
+    if reason == "possession_gift_object_bridge":
+        return not _requests_possession_gift_object(raw_tokens)
+    if reason == "family_origin_bridge":
+        return not _requests_family_origin(raw_tokens)
     if reason == "symbol_importance_bridge":
         return not _requests_symbol_importance(raw_tokens)
     if reason == "after_event_temporal_bridge":
@@ -245,6 +292,21 @@ def _requests_symbol_importance(raw_tokens: set[str]) -> bool:
         and raw_tokens.intersection(_SYMBOL_IMPORTANCE_OBJECT_TERMS)
         and raw_tokens.intersection({"stand", "stands"})
     )
+
+
+def _requests_possession_gift_object(raw_tokens: set[str]) -> bool:
+    if not raw_tokens.intersection(_POSSESSION_GIFT_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection(_FAMILY_RELATIVE_TERMS)
+        or raw_tokens.intersection(_POSSESSION_OBJECT_TERMS)
+    )
+
+
+def _requests_family_origin(raw_tokens: set[str]) -> bool:
+    if not raw_tokens.intersection(_FAMILY_RELATIVE_TERMS):
+        return False
+    return bool(raw_tokens.intersection({"country", "from", "home", "native", "origin"}))
 
 
 def _requests_symbol_importance_variants(variants: set[str]) -> bool:

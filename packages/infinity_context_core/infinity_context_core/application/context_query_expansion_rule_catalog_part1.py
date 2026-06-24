@@ -346,6 +346,25 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "relocation_origin_bridge",
         ),
     (
+            frozenset({"gift"}),
+            (
+                "gift present keepsake object item possession got received gave gifted "
+                "from by source owner recipient grandma grandmother grandpa grandfather "
+                "mother father mom dad family relative necklace pendant ring book camera "
+                "photo picture"
+            ),
+            "possession_gift_object_bridge",
+        ),
+    (
+            frozenset({"from"}),
+            (
+                "family relative grandma grandmother grandpa grandfather mother father "
+                "mom dad parent from country home country native country origin roots "
+                "hometown gift present keepsake source provenance"
+            ),
+            "family_origin_bridge",
+        ),
+    (
             frozenset({"open", "moving", "country"}),
             (
                 "open moving another country relocate relocation abroad willingness "
