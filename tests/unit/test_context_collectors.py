@@ -487,6 +487,45 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
     ]
 
 
+def test_bounded_retrieval_queries_keep_russian_relationship_bridges() -> None:
+    duration = build_query_expansion_plan("Как давно Алекс знает Марию?")
+    status = build_query_expansion_plan("Алекс и Мария друзья?")
+    friends_besides = build_query_expansion_plan("Есть ли у Нейта друзья помимо Жанны?")
+
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            duration,
+            fallback="fallback",
+            limit=4,
+        )
+    ] == [
+        "original_query",
+        "relationship_duration_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            status,
+            fallback="fallback",
+            limit=4,
+        )
+    ] == [
+        "original_query",
+        "decomposition_relationship_status",
+        "relationship_status_bridge",
+        "decomposition_clause",
+    ]
+    assert "relationship_status_bridge" not in {
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            friends_besides,
+            fallback="fallback",
+            limit=4,
+        )
+    }
+
+
 def test_fused_ranked_keys_weights_original_query_over_decomposition_noise() -> None:
     ranked = _fused_ranked_keys(
         {

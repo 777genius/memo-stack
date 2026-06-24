@@ -28,6 +28,14 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "relationship_status_bridge",
         ),
     (
+            frozenset({"друзья"}),
+            (
+                "отношения статус друзья дружба пара партнер супруг семья вместе "
+                "relationship status friends friendship partner dating family together"
+            ),
+            "relationship_status_bridge",
+        ),
+    (
             frozenset({"where", "meet"}),
             (
                 "relationship origin first met meet meeting introduced known since "
@@ -444,6 +452,24 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             (
                 "known each other friends relationship since years months duration met "
                 "school college together anniversary time flies"
+            ),
+            "relationship_duration_bridge",
+        ),
+    (
+            frozenset({"как", "давно", "знает"}),
+            (
+                "как давно знакомы знают друг друга отношения друзья дружба с каких пор "
+                "сколько лет месяцев вместе познакомились школа колледж университет "
+                "known each other relationship since years months duration met"
+            ),
+            "relationship_duration_bridge",
+        ),
+    (
+            frozenset({"как", "давно", "знакомы"}),
+            (
+                "как давно знакомы знают друг друга отношения друзья дружба с каких пор "
+                "сколько лет месяцев вместе познакомились школа колледж университет "
+                "known each other relationship since years months duration met"
             ),
             "relationship_duration_bridge",
         ),

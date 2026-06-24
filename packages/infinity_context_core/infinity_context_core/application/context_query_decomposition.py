@@ -765,12 +765,25 @@ _RELATIONSHIP_STATUS_TERMS = frozenset(
         "breakup",
         "dating",
         "divorced",
+        "friend",
+        "friends",
         "married",
         "partner",
         "relationship",
         "single",
         "spouse",
         "status",
+        "друг",
+        "друга",
+        "друзья",
+        "отношения",
+        "пара",
+        "партнер",
+        "партнеры",
+        "партнёр",
+        "партнёры",
+        "супруг",
+        "супруга",
     }
 )
 _ACTION_ROLE_TERMS = frozenset(
@@ -1418,7 +1431,11 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_identity_attribute",
         )
-    if _requests_relationship_status(variants):
+    if _requests_relationship_status(
+        raw_tokens=raw_tokens,
+        variants=variants,
+        identities=identities,
+    ):
         _append_candidate(
             candidates,
             query=_compose_query(
@@ -1426,7 +1443,8 @@ def build_query_decomposition_plan(
                 (
                     "relationship status single parent partner spouse married "
                     "dating breakup friends family mentors support system kids "
-                    "children challenge make family"
+                    "children challenge make family отношения статус друзья дружба "
+                    "партнер супруг семья вместе"
                 ),
             ),
             reason="decomposition_relationship_status",
@@ -2013,8 +2031,19 @@ def _requests_absence_contrast(query: str) -> bool:
     return bool(_ABSENCE_CONTRAST_RE.search(query))
 
 
-def _requests_relationship_status(variants: frozenset[str]) -> bool:
+def _requests_relationship_status(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+    identities: tuple[str, ...],
+) -> bool:
     if {"relationship", "status"}.issubset(variants):
+        return True
+    if raw_tokens.intersection({"отношения", "статус"}):
+        return True
+    if raw_tokens.intersection({"помимо", "кроме", "besides", "other", "apart"}):
+        return False
+    if len(identities) >= 2 and raw_tokens.intersection(_RELATIONSHIP_STATUS_TERMS):
         return True
     return bool(
         variants.intersection({"single", "married", "dating", "partner", "spouse"})

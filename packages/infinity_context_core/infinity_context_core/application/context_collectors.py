@@ -83,6 +83,7 @@ _HIGH_SIGNAL_DECOMPOSITION_REASONS = frozenset(
         "decomposition_relative_time",
         "decomposition_relocation_context",
         "decomposition_relocation_destination",
+        "decomposition_relationship_status",
         "decomposition_source_evidence",
         "decomposition_temporal_change",
     }
@@ -144,6 +145,9 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "pet_inventory_bridge",
         "public_office_service_bridge",
         "relocation_willingness_inference_bridge",
+        "relationship_duration_bridge",
+        "relationship_origin_bridge",
+        "relationship_status_bridge",
         "religious_inference_bridge",
         "screenplay_count_bridge",
         "shelter_comfort_reason_bridge",
@@ -1033,6 +1037,7 @@ def _protect_query_head_for_reason(reason: str) -> bool:
             "decomposition_lgbtq_pride_event",
             "decomposition_lgbtq_school_speech_event",
             "decomposition_lgbtq_support_group_event",
+            "decomposition_relationship_status",
             "decomposition_source_evidence",
         }
     )

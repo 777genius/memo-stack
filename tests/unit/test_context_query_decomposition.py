@@ -1016,14 +1016,26 @@ def test_query_decomposition_adds_identity_attribute_query() -> None:
 
 def test_query_decomposition_adds_relationship_status_query() -> None:
     plan = build_query_decomposition_plan("What is Caroline's relationship status?")
+    russian = build_query_decomposition_plan("Алекс и Мария друзья?")
+    friend_inventory = build_query_decomposition_plan("Где Мария нашла друзей?")
 
     relationship = next(
         item for item in plan.decompositions if item.reason == "decomposition_relationship_status"
+    )
+    russian_relationship = next(
+        item
+        for item in russian.decompositions
+        if item.reason == "decomposition_relationship_status"
     )
 
     assert relationship.query.casefold().startswith("caroline ")
     assert "relationship status single parent" in relationship.query
     assert "dating breakup friends family mentors" in relationship.query
+    assert russian_relationship.query.casefold().startswith("алекс мария ")
+    assert "отношения статус друзья дружба" in russian_relationship.query
+    assert "decomposition_relationship_status" not in {
+        item.reason for item in friend_inventory.decompositions
+    }
 
 
 def test_query_decomposition_adds_action_role_query() -> None:

@@ -144,6 +144,8 @@ def should_skip_expansion_rule(
         )
     if reason == "relationship_origin_bridge":
         return not _requests_relationship_origin(raw_tokens)
+    if reason == "relationship_status_bridge":
+        return not _requests_relationship_status(raw_tokens)
     if reason == "after_event_temporal_bridge":
         return not build_temporal_query_intent(query).after_event
     if reason == "before_event_temporal_bridge":
@@ -167,6 +169,32 @@ def _requests_relationship_origin(raw_tokens: set[str]) -> bool:
     return any(
         token.startswith(("познаком", "встрет"))
         for token in raw_tokens
+    )
+
+
+def _requests_relationship_status(raw_tokens: set[str]) -> bool:
+    if {"relationship", "status"}.issubset(raw_tokens):
+        return True
+    if raw_tokens.intersection({"single", "married", "dating", "partner", "spouse"}):
+        return True
+    if raw_tokens.intersection({"помимо", "кроме", "besides", "other", "apart"}):
+        return False
+    return bool(
+        raw_tokens.intersection(
+            {
+                "друг",
+                "друга",
+                "друзья",
+                "отношения",
+                "пара",
+                "партнер",
+                "партнёр",
+                "партнеры",
+                "партнёры",
+                "супруг",
+                "супруга",
+            }
+        )
     )
 
 
