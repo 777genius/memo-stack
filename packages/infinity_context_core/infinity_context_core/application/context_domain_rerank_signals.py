@@ -99,6 +99,7 @@ _CURRENT_STATE_RERANK_REASONS = frozenset(
 _STALE_STATE_RERANK_REASONS = frozenset(("stale_state_temporal_bridge",))
 _AGE_BIRTHDAY_RERANK_REASONS = frozenset(("age_birthday_bridge",))
 _BIRTHPLACE_RERANK_REASONS = frozenset(("birthplace_origin_bridge",))
+_BEACH_OR_MOUNTAINS_RERANK_REASONS = frozenset(("beach_or_mountains_inference_bridge",))
 _SYMBOL_IMPORTANCE_RERANK_REASONS = frozenset(("symbol_importance_bridge",))
 _INVENTORY_POTTERY_QUERY_RE = re.compile(
     r"\b(?:pottery|ceramic|clay|pots?|bowls?|cups?|mugs?|plates?)\b",
@@ -468,6 +469,32 @@ _BIRTHPLACE_BIRTHDATE_NOISE_RE = re.compile(
     r"\bborn\s+in\s+\d{4}\b|\b(?:birthday|date\s+of\s+birth|birthdate)\b|"
     r"\bродил(?:ся|ась|ись)\s+в\s+\d{4}\b|\b(?:дата\s+рождения|день\s+рождения)\b",
     re.IGNORECASE,
+)
+_BEACH_OR_MOUNTAINS_QUERY_RE = re.compile(
+    r"\b(?:beach|beaches|ocean|shore|coast|mountain|mountains)\b"
+    r"(?=.{0,120}\b(?:close|near|nearby|live|lives|living|by|next\s+to)\b)|"
+    r"\b(?:close|near|nearby|live|lives|living|by|next\s+to)\b"
+    r"(?=.{0,120}\b(?:beach|beaches|ocean|shore|coast|mountain|mountains)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_BEACH_OR_MOUNTAINS_DOMAIN_RE = re.compile(
+    r"\b(?:beach|beaches|ocean|shore|coast|coastal|sailboat|sand|sunset|"
+    r"mountain|mountains|trail|hiking|hike)\b",
+    re.IGNORECASE,
+)
+_BEACH_OR_MOUNTAINS_PROXIMITY_RE = re.compile(
+    r"\b(?:close|near|nearby|by|next\s+to|weekly\s+walks?|walks?|goes?\s+on\s+"
+    r"walks?|lives?\s+close|lives?\s+near|from\s+home|local)\b",
+    re.IGNORECASE,
+)
+_BEACH_OR_MOUNTAINS_TOPIC_ONLY_RE = re.compile(
+    r"\b(?:whether|sounded\s+nice|someday|maybe|vacation|wallpaper|poster|"
+    r"preference|would\s+like|dream(?:ed)?\s+of)\b"
+    r"(?=.{0,120}\b(?:beach|beaches|ocean|mountains?)\b)|"
+    r"\b(?:beach|beaches|ocean|mountains?)\b"
+    r"(?=.{0,120}\b(?:whether|sounded\s+nice|someday|maybe|vacation|"
+    r"wallpaper|poster|preference|would\s+like|dream(?:ed)?\s+of)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _SYMBOL_IMPORTANCE_EXACT_RE = re.compile(
     r"\b(?:symboli[sz](?:e|es|ed|ing)|represents?|meaning|means|stands?\s+for|"
@@ -910,6 +937,38 @@ def birthplace_rerank_signal(
     return DomainRerankSignal()
 
 
+def beach_or_mountains_rerank_signal(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_beach_or_mountains_candidate(
+        query=query,
+        query_reason=query_reason,
+        item=item,
+    ):
+        return DomainRerankSignal()
+    has_domain = _BEACH_OR_MOUNTAINS_DOMAIN_RE.search(item.text) is not None
+    has_proximity = _BEACH_OR_MOUNTAINS_PROXIMITY_RE.search(item.text) is not None
+    if has_domain and has_proximity:
+        return DomainRerankSignal(
+            boost=0.026,
+            reason="beach_mountains_proximity_evidence",
+        )
+    if (
+        _BEACH_OR_MOUNTAINS_TOPIC_ONLY_RE.search(item.text) is not None
+        or not has_domain
+        or relevance.distinctive_term_hits < 3
+    ):
+        return DomainRerankSignal(
+            penalty=0.038,
+            reason="beach_mountains_topic_only_noise",
+        )
+    return DomainRerankSignal()
+
+
 def symbol_importance_rerank_signal(
     *,
     query_reason: str,
@@ -1129,6 +1188,19 @@ def _is_birthplace_candidate(*, query_reason: str, item: ContextItem) -> bool:
     if query_reason in _BIRTHPLACE_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _BIRTHPLACE_RERANK_REASONS
+
+
+def _is_beach_or_mountains_candidate(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    if _BEACH_OR_MOUNTAINS_QUERY_RE.search(query) is not None:
+        return True
+    if query_reason in _BEACH_OR_MOUNTAINS_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _BEACH_OR_MOUNTAINS_RERANK_REASONS
 
 
 def _is_symbol_importance_candidate(*, query_reason: str, item: ContextItem) -> bool:

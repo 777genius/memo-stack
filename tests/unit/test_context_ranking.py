@@ -5403,7 +5403,17 @@ def test_deterministic_rerank_prefers_choice_answer_shape_over_option_echo() -> 
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
     assert (
+        "beach_mountains_proximity_evidence"
+        in by_id["john_beach_evidence"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
         "explicit_answer_shape_missing"
+        in by_id["john_option_echo"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "beach_mountains_topic_only_noise"
         in by_id["john_option_echo"]
         .diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
