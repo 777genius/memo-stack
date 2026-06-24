@@ -668,6 +668,8 @@ def test_query_expansion_covers_locomo_inference_bridges() -> None:
     direct_friends = build_query_expansion_plan("Does Nate have friends besides Joanna?")
     other_friends = build_query_expansion_plan("Does Nate have friends other than Alex?")
     apart_friends = build_query_expansion_plan("Does Nate have friends apart from Maria?")
+    russian_friends = build_query_expansion_plan("Есть ли у Нейта друзья кроме Жанны?")
+    russian_apart_friends = build_query_expansion_plan("Есть ли у Нейта друзья помимо Жанны?")
 
     assert "therapeutic methods trans people" in _expansion_query(
         workshop,
@@ -691,6 +693,14 @@ def test_query_expansion_covers_locomo_inference_bridges() -> None:
     )
     assert "teammates team video game" in _expansion_query(
         apart_friends,
+        "friends_team_inference_bridge",
+    )
+    assert "тиммейты онлайн игры" in _expansion_query(
+        russian_friends,
+        "friends_team_inference_bridge",
+    )
+    assert "тиммейты онлайн игры" in _expansion_query(
+        russian_apart_friends,
         "friends_team_inference_bridge",
     )
 

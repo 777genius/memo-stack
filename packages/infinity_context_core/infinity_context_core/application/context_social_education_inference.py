@@ -11,7 +11,8 @@ from infinity_context_core.application.context_lexical import lexical_variants, 
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 _FRIEND_TEAM_EXCLUDED_PERSON_RE = re.compile(
-    r"\b(?:besides|other\s+than|apart\s+from)\s+([A-Za-zА-Яа-яЁё][\w._-]*)",
+    r"\b(?:besides|other\s+than|apart\s+from|кроме|помимо)\s+"
+    r"([A-Za-zА-Яа-яЁё][\w._-]*)",
     re.IGNORECASE,
 )
 
@@ -42,6 +43,11 @@ _FRIEND_TEAM_QUERY_TERMS = frozenset(
         "teammates",
         "team",
         "than",
+        "друг",
+        "друзей",
+        "друзья",
+        "кроме",
+        "помимо",
     }
 )
 _FRIEND_TEAM_PERSON_QUERY_TERMS = frozenset(
@@ -50,6 +56,9 @@ _FRIEND_TEAM_PERSON_QUERY_TERMS = frozenset(
         "friends",
         "teammate",
         "teammates",
+        "друг",
+        "друзей",
+        "друзья",
     }
 )
 _FRIEND_TEAM_TEXT_TERMS = frozenset(
@@ -64,6 +73,15 @@ _FRIEND_TEAM_TEXT_TERMS = frozenset(
         "team",
         "teammate",
         "teammates",
+        "друг",
+        "друзей",
+        "друзья",
+        "друзьями",
+        "команда",
+        "команде",
+        "командой",
+        "тиммейт",
+        "тиммейты",
     }
 )
 _FRIEND_TEAM_ACTIVITY_TERMS = frozenset(
@@ -80,6 +98,19 @@ _FRIEND_TEAM_ACTIVITY_TERMS = frozenset(
         "tournaments",
         "valorant",
         "video",
+        "видеоигра",
+        "игра",
+        "играл",
+        "играла",
+        "играет",
+        "играют",
+        "команда",
+        "командой",
+        "онлайн",
+        "турнир",
+        "турнирах",
+        "турнирам",
+        "турниры",
     }
 )
 _DEGREE_FIELD_QUERY_TERMS = frozenset(
@@ -186,6 +217,8 @@ def _requests_friend_team_inference(query: str) -> bool:
         "besides" in query_tokens
         or {"other", "than"} <= query_tokens
         or {"apart", "from"} <= query_tokens
+        or "кроме" in query_tokens
+        or "помимо" in query_tokens
     )
 
 
@@ -196,7 +229,23 @@ def _excluded_friend_comparator_terms(query: str) -> frozenset[str]:
     raw_name = match.group(1).casefold().strip("_")
     if len(raw_name) < 2:
         return frozenset()
-    return frozenset({raw_name, *lexical_variants(raw_name)})
+    variants = {raw_name, *lexical_variants(raw_name)}
+    if re.search(r"[а-яё]", raw_name, re.IGNORECASE):
+        variants.update(_russian_name_case_variants(raw_name))
+    return frozenset(variants)
+
+
+def _russian_name_case_variants(name: str) -> set[str]:
+    variants: set[str] = set()
+    if len(name) < 3:
+        return variants
+    if name.endswith(("ы", "и")):
+        stem = name[:-1]
+        variants.update({stem, f"{stem}а", f"{stem}ой", f"{stem}ей"})
+    if name.endswith("а"):
+        stem = name[:-1]
+        variants.update({stem, f"{stem}ом", f"{stem}ой", f"{stem}у"})
+    return variants
 
 
 def _requests_degree_field_inference(query: str) -> bool:

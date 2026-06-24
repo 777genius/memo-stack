@@ -1314,6 +1314,46 @@ def test_deterministic_rerank_penalizes_named_single_contact_friend_noise() -> N
     )
 
 
+def test_deterministic_rerank_prefers_russian_friend_team_evidence() -> None:
+    query = "Есть ли у Нейта друзья помимо Жанны?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    team_evidence = _item(
+        "nate_team_friends_ru",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Нейт играет в Valorant с онлайн-командой и друзьями по турнирам.",
+    )
+    single_contact = _item(
+        "nate_zhanna_only",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Нейт играл в видеоигру с Жанной после школы.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (single_contact, team_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["nate_team_friends_ru"].score > by_id["nate_zhanna_only"].score
+    assert (
+        "inference_friend_team_evidence"
+        in by_id["nate_team_friends_ru"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_friend_team_single_contact_noise"
+        in by_id["nate_zhanna_only"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_degree_policy_evidence_over_measurement_noise() -> None:
     query = "What might John's degree be in?"
     plan = build_query_expansion_plan(query)

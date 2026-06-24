@@ -312,6 +312,28 @@ def test_inference_evidence_signal_penalizes_named_single_contact_generically() 
     assert signal.reason == "inference_friend_team_single_contact_noise"
 
 
+def test_inference_evidence_signal_boosts_russian_friend_team_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Есть ли у Нейта друзья кроме Жанны?",
+        text="Нейт играет в Valorant с онлайн-командой и друзьями по турнирам.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_friend_team_evidence"
+
+
+def test_inference_evidence_signal_penalizes_russian_single_contact_noise() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Есть ли у Нейта друзья помимо Жанны?",
+        text="Нейт играл в видеоигру с Жанной после школы.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_friend_team_single_contact_noise"
+
+
 def test_inference_evidence_signal_boosts_degree_policy_evidence() -> None:
     signal = inference_evidence_rerank_signal(
         query="What might John's degree be in?",
