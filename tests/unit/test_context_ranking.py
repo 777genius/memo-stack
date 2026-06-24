@@ -1141,6 +1141,46 @@ def test_deterministic_rerank_prefers_animal_career_evidence_over_gaming_noise()
     )
 
 
+def test_deterministic_rerank_penalizes_gaming_only_goal_for_animal_career() -> None:
+    query = "What alternative career might Nate consider after gaming?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    animal_fit = _item(
+        "nate_turtle_diet",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D25:19 Nate says the turtles eat vegetables, fruits, and insects "
+            "and have a varied diet."
+        ),
+    )
+    gaming_only_goal = _item(
+        "nate_gaming_goal",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Nate wants to become a champion streamer after gaming tournaments "
+            "and bought another console."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (gaming_only_goal, animal_fit),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["nate_turtle_diet"].score > by_id["nate_gaming_goal"].score
+    assert (
+        "current_goal_animal_career_mismatch"
+        in by_id["nate_gaming_goal"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_career_field_decision_evidence() -> None:
     query = "What fields would Caroline be likely to pursue in her educaton?"
     plan = build_query_expansion_plan(query)

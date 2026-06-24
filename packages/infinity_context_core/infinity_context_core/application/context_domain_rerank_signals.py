@@ -243,6 +243,22 @@ _CURRENT_GOAL_WEAK_RE = re.compile(
     r"\b(?:скуча\w*|когда-нибудь\s+верн\w*|общие\s+планы)\b",
     re.IGNORECASE,
 )
+_ANIMAL_CAREER_QUERY_RE = re.compile(
+    r"\b(?:alternative\s+career|career)\b(?=.{0,80}\bgaming\b)|"
+    r"\bgaming\b(?=.{0,80}\bcareer\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ANIMAL_CAREER_EVIDENCE_RE = re.compile(
+    r"\b(?:animals?|pets?|reptiles?|turtles?|zoo|zookeeper|keeper|habitat|"
+    r"tank|feed|feeding|eat|eating|diet|vegetables|fruits|insects|clean|"
+    r"light|care|caring|joy|peace|companions?|pet\s+store)\b",
+    re.IGNORECASE,
+)
+_ANIMAL_CAREER_GAMING_ONLY_RE = re.compile(
+    r"\b(?:gaming|games?|gamer|tournament|tournaments|console|streamer|"
+    r"streaming|esports?|champion|championship)\b",
+    re.IGNORECASE,
+)
 _POSITIVE_PREFERENCE_QUERY_RE = re.compile(
     r"\b(?:what|which)\b(?=.{0,120}\b(?:like|likes|liked|love|loves|"
     r"enjoy|enjoys|prefer|prefers|favorite|favourite|food|meal|music|song|"
@@ -279,6 +295,11 @@ _POSITIVE_PREFERENCE_WEAK_TOPIC_RE = re.compile(
 _OUTDOOR_NATURE_EVIDENCE_RE = re.compile(
     r"\b(?:camp(?:ing|fire)|hikes?|hiking|trail|forest|mountains?|nature|"
     r"outdoors?|national\s+park|meteor\s+shower|perseid|sky|universe)\b",
+    re.IGNORECASE,
+)
+_OUTDOOR_STRONG_NATURE_EVIDENCE_RE = re.compile(
+    r"\b(?:camp(?:ing|fire)|hikes?|hiking|trail|forest|mountains?|nature|"
+    r"outdoors?|meteor\s+shower|perseid|sky|universe)\b",
     re.IGNORECASE,
 )
 _COMMONALITY_QUERY_RE = re.compile(
@@ -720,12 +741,22 @@ def event_sequence_rerank_signal(
 
 def current_goal_rerank_signal(
     *,
+    query: str = "",
     query_reason: str,
     item: ContextItem,
     relevance: QueryRelevance,
 ) -> DomainRerankSignal:
     if not _is_current_goal_candidate(query_reason=query_reason, item=item):
         return DomainRerankSignal()
+    if (
+        _ANIMAL_CAREER_QUERY_RE.search(query) is not None
+        and _ANIMAL_CAREER_EVIDENCE_RE.search(item.text) is None
+        and _ANIMAL_CAREER_GAMING_ONLY_RE.search(item.text) is not None
+    ):
+        return DomainRerankSignal(
+            penalty=0.05,
+            reason="current_goal_animal_career_mismatch",
+        )
     if _CURRENT_GOAL_EVIDENCE_RE.search(item.text) is not None:
         return DomainRerankSignal(boost=0.03, reason="current_goal_exact_evidence")
     if (
@@ -750,16 +781,20 @@ def positive_preference_rerank_signal(
     ):
         return DomainRerankSignal()
     if (
+        _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
+        and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None
+        and (
+            _OUTDOOR_STRONG_NATURE_EVIDENCE_RE.search(item.text) is not None
+            or _POSITIVE_PREFERENCE_MARKER_RE.search(item.text) is not None
+        )
+        and relevance.distinctive_term_hits >= 3
+    ):
+        return DomainRerankSignal(boost=0.026, reason="outdoor_preference_exact_evidence")
+    if (
         _POSITIVE_PREFERENCE_WEAK_TOPIC_RE.search(item.text) is not None
         and _POSITIVE_PREFERENCE_MARKER_RE.search(item.text) is None
     ):
         return DomainRerankSignal(penalty=0.046, reason="preference_weak_evidence")
-    if (
-        _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
-        and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None
-        and relevance.distinctive_term_hits >= 3
-    ):
-        return DomainRerankSignal(boost=0.026, reason="outdoor_preference_exact_evidence")
     if (
         _POSITIVE_PREFERENCE_MARKER_RE.search(item.text) is not None
         and relevance.distinctive_term_hits >= 3

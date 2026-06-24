@@ -108,6 +108,7 @@ def _domain_rerank_signals(
             relevance=relevance,
         ),
         current_goal_rerank_signal(
+            query=query,
             query_reason=query_reason,
             item=item,
             relevance=relevance,
