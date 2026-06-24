@@ -3934,6 +3934,43 @@ def test_deterministic_rerank_prefers_symbol_importance_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_boosts_visual_symbol_object_evidence() -> None:
+    query = "What symbols are important to Caroline?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    visual_object = _item(
+        "visual_symbol_object",
+        score=0.69,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:1 Caroline shared an image. visual query: pendant necklace "
+            "with transgender symbol, cross, and heart."
+        ),
+    )
+    topic_only = _item(
+        "technical_symbol",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline documented an important unicode symbol icon in the UI interface.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_only, visual_object),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["visual_symbol_object"].score > by_id["technical_symbol"].score
+    assert (
+        "symbol_importance_visual_object"
+        in by_id["visual_symbol_object"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_symbol_meaning_evidence() -> None:
     query = "What does Caroline's necklace symbolize?"
     plan = build_query_expansion_plan(query)

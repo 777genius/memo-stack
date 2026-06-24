@@ -611,6 +611,12 @@ _SYMBOL_IMPORTANCE_PERSONAL_OBJECT_RE = re.compile(
     r"\b(?:symbol|cross|heart|transgender)\b(?=.{0,100}\b(?:pendant|necklace)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_SYMBOL_IMPORTANCE_VISUAL_OBJECT_RE = re.compile(
+    r"\b(?:visual\s+query|image\s+caption|caption)\b"
+    r"(?=.{0,140}\b(?:pendant|necklace)\b)"
+    r"(?=.{0,140}\b(?:transgender\s+symbol|cross|heart|symbol)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE = re.compile(
     r"\b(?:unicode|currency|math(?:ematical)?|keyboard|font|icon|icons|"
     r"svg|css|ui|interface|variable|operator|code|programming)\b",
@@ -1184,6 +1190,8 @@ def symbol_importance_rerank_signal(
         return DomainRerankSignal(penalty=0.042, reason="symbol_importance_weak_evidence")
     if has_symbol_object and _SYMBOL_IMPORTANCE_EXACT_RE.search(item.text) is not None:
         return DomainRerankSignal(boost=0.028, reason="symbol_importance_exact_evidence")
+    if has_personal_object and _SYMBOL_IMPORTANCE_VISUAL_OBJECT_RE.search(item.text):
+        return DomainRerankSignal(boost=0.036, reason="symbol_importance_visual_object")
     if has_personal_object:
         return DomainRerankSignal(boost=0.02, reason="symbol_importance_personal_object")
     if (
