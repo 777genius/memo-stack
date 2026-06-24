@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from infinity_context_core.application import BuildContextQuery
 from infinity_context_core.application.context_query_expansion import build_query_expansion_plan
 from infinity_context_core.application.context_relevance import score_query_relevance
+from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.application.use_cases.build_context import (
     _aggregation_evidence_text,
     _aggregation_source_kind_rank,
@@ -15,26 +16,25 @@ from infinity_context_core.application.use_cases.build_context import (
     _prioritized_chunks_for_source_groups,
     _ranked_keyword_chunk_scores,
     _selected_keyword_prompt_items,
-    _strict_query_window_match_counts,
     _source_group_seed_turns,
     _source_sibling_candidate_rank_key,
-    _source_sibling_marker_coverage_count,
     _source_sibling_companion_extra_slot,
+    _source_sibling_marker_coverage_count,
     _source_sibling_rank,
     _source_sibling_relevance_allowed,
     _source_sibling_score,
-    _weighted_aggregation_query_variant_sets,
     _SourceSiblingRank,
+    _strict_query_window_match_counts,
+    _weighted_aggregation_query_variant_sets,
 )
-from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import (
     MemoryChunk,
     MemoryChunkId,
     MemoryChunkKind,
     MemoryDocumentId,
     MemoryScopeId,
-    SpaceId,
     SourceRef,
+    SpaceId,
 )
 
 
@@ -632,6 +632,46 @@ def test_source_sibling_allows_frequency_recurrence_answer_turn_only() -> None:
             text=strong_text,
         )
         > 0.974
+    )
+
+
+def test_source_sibling_allows_count_activity_subject_followup_turn() -> None:
+    query = (
+        "Joanna hikes hike hiking trail waterfall loved spot rush water soothing "
+        "sunset saw gorgeous other day buddies weekend new summer fort wayne "
+        "photo pic took count times"
+    )
+    followup = "D14:21 Joanna: Oh? Are you going to invite your tournament friends?"
+    wrong_speaker = (
+        "D14:20 Nate: Sounds great! Have fun with that. I'm organizing a gaming party."
+    )
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=2, turn_delta=2)
+    followup_relevance = score_query_relevance(query=query, text=followup)
+    wrong_speaker_relevance = score_query_relevance(query=query, text=wrong_speaker)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=followup_relevance,
+        expansion_query=query,
+        expansion_reason="hike_count_activity_bridge",
+        text=followup,
+    )
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=wrong_speaker_relevance,
+        expansion_query=query,
+        expansion_reason="hike_count_activity_bridge",
+        text=wrong_speaker,
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=followup_relevance,
+            expansion_query=query,
+            expansion_reason="hike_count_activity_bridge",
+            text=followup,
+        )
+        > rank.score
     )
 
 

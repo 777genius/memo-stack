@@ -119,6 +119,12 @@ _ACTIVITY_DURATION_SOURCE_SIBLING_REASONS = frozenset({"decomposition_activity_d
 _FREQUENCY_RECURRENCE_SOURCE_SIBLING_REASONS = frozenset(
     {"decomposition_frequency_recurrence"}
 )
+_COUNT_ACTIVITY_FOLLOWUP_SOURCE_SIBLING_REASONS = frozenset(
+    {
+        "hike_count_activity_bridge",
+        "hiking_trail_count_bridge",
+    }
+)
 _STATE_ACTIVITY_SOURCE_SIBLING_CONTEXT_RE = re.compile(
     r"\b("
     r"volunteer(?:ed|ing|s)?|shelter|homeless|work(?:ed|ing|s)?|"
@@ -219,7 +225,18 @@ def source_sibling_score(
         expansion_reason=expansion_reason,
         text=text,
     )
-    if not relevance_specific and not visual_referent and not temporal_state_companion:
+    count_activity_followup = _is_count_activity_followup_source_sibling(
+        rank=rank,
+        expansion_reason=expansion_reason,
+        expansion_query=expansion_query,
+        text=text,
+    )
+    if (
+        not relevance_specific
+        and not visual_referent
+        and not temporal_state_companion
+        and not count_activity_followup
+    ):
         return rank.score
     relevance_boost = min(
         0.04,
@@ -399,6 +416,13 @@ def source_sibling_relevance_allowed(
         return _is_activity_duration_source_sibling_strong(text)
     if expansion_reason in _FREQUENCY_RECURRENCE_SOURCE_SIBLING_REASONS:
         return _is_frequency_recurrence_source_sibling_strong(text)
+    if _is_count_activity_followup_source_sibling(
+        rank=rank,
+        expansion_reason=expansion_reason,
+        expansion_query=expansion_query,
+        text=text,
+    ):
+        return True
     return is_chunk_candidate_relevance_sufficient(
         query=expansion_query,
         text=text,
@@ -690,6 +714,28 @@ def _is_frequency_recurrence_source_sibling_strong(text: str) -> bool:
         _STATE_ACTIVITY_SOURCE_SIBLING_CONTEXT_RE.search(text) is not None
         and _FREQUENCY_RECURRENCE_SOURCE_SIBLING_SIGNAL_RE.search(text) is not None
     )
+
+
+def _is_count_activity_followup_source_sibling(
+    *,
+    rank: _SourceSiblingRank,
+    expansion_reason: str,
+    expansion_query: str,
+    text: str,
+) -> bool:
+    if expansion_reason not in _COUNT_ACTIVITY_FOLLOWUP_SOURCE_SIBLING_REASONS:
+        return False
+    if rank.turn_delta <= 0 or rank.turn_distance > 2:
+        return False
+    subject = _query_subject_name(expansion_query)
+    if not subject:
+        return False
+    return re.search(rf"\b{re.escape(subject)}\b", text, re.IGNORECASE) is not None
+
+
+def _query_subject_name(query: str) -> str:
+    match = re.match(r"\s*([A-Z][A-Za-z][A-Za-z'-]*)\b", query)
+    return match.group(1) if match is not None else ""
 
 
 def _is_visual_referent_source_sibling(
