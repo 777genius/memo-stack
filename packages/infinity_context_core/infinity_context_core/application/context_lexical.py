@@ -8,6 +8,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 _TERM_RE = re.compile(r"\w+", re.UNICODE)
+_ISO_DATE_RE = re.compile(
+    r"(?<!\d)(?P<year>(?:19|20)\d{2})[-/.](?P<month>\d{1,2})[-/.](?P<day>\d{1,2})(?!\d)"
+)
+_LOCAL_DATE_RE = re.compile(
+    r"(?<!\d)(?P<first>\d{1,2})[-/.](?P<second>\d{1,2})[-/.](?P<year>(?:19|20)\d{2})(?!\d)"
+)
 _CYRILLIC_RE = re.compile(r"[а-яё]", re.IGNORECASE)
 _LATIN_RE = re.compile(r"[a-z]", re.IGNORECASE)
 _RUSSIAN_SUFFIXES = (
@@ -54,11 +60,16 @@ _CROSS_LANGUAGE_ALIASES = {
     "activity": ("hobby", "camping", "hiking", "painting", "pottery", "swimming"),
     "adopt": ("adoption", "family", "kids", "children", "mom", "agency"),
     "adoption": ("adopt", "family", "kids", "children", "mom", "agency"),
+    "ago": ("назад",),
+    "agree": ("agreed", "commitment"),
+    "agreed": ("agree", "commitment"),
     "alex": ("aleks", "алекс"),
     "aleks": ("alex", "алекс"),
     "art": ("painting",),
+    "artifact": ("file", "document", "attachment", "артефакт"),
     "atlas": ("атлас",),
     "audio": ("аудио",),
+    "attachment": ("file", "artifact", "document", "вложение", "файл"),
     "bill": ("invoice", "счет", "счёт"),
     "billing": ("биллинг",),
     "call": ("созвон", "звонок", "встреч"),
@@ -72,13 +83,18 @@ _CROSS_LANGUAGE_ALIASES = {
     "demo": ("демо",),
     "destress": ("therapy", "therapeutic", "relax", "calm", "running", "pottery"),
     "decision": ("choice", "plan", "goal"),
-    "document": ("документ",),
+    "discuss": ("discussed", "обсудил", "обсудила", "обсудили"),
+    "discussed": ("discuss", "обсудил", "обсудила", "обсудили"),
+    "document": ("file", "attachment", "artifact", "документ", "файл", "вложение"),
+    "event": ("meeting", "call", "conversation", "событие", "встреч", "созвон"),
     "education": ("school", "study", "studies", "learning", "counseling"),
     "explore": ("consider", "considering", "pursue", "looking", "interest"),
+    "file": ("document", "attachment", "artifact", "файл", "документ", "вложение"),
     "faith": ("religious", "church"),
     "family": ("children", "kids", "husband"),
     "health": ("mental", "counseling"),
     "hobby": ("activity", "camping", "hiking", "painting", "pottery", "swimming"),
+    "hour": ("час",),
     "image": ("изображение", "картинка", "фото"),
     "identity": ("gender", "transgender"),
     "invoice": ("инвойс", "счет", "счёт", "bill"),
@@ -91,6 +107,7 @@ _CROSS_LANGUAGE_ALIASES = {
     "look": ("consider", "explore", "pursue", "interested", "interest"),
     "looking": ("consider", "explore", "pursue", "interested", "interest"),
     "meeting": ("встреч", "созвон"),
+    "mentioned": ("said", "told", "упомянул", "упомянула", "сказал", "сказала"),
     "mental": ("health", "counseling"),
     "move": ("moved", "home", "country", "roots"),
     "moved": ("move", "home", "country", "roots"),
@@ -107,6 +124,8 @@ _CROSS_LANGUAGE_ALIASES = {
     "pursu": ("consider", "explore", "look", "looking", "interested", "interest"),
     "pursue": ("consider", "explore", "look", "looking", "interested", "interest"),
     "project": ("проект",),
+    "said": ("told", "mentioned", "сказал", "сказала", "упомянул", "упомянула"),
+    "say": ("said", "told", "mentioned", "сказал", "сказала"),
     "recording": ("запись", "транскрипт", "transcript"),
     "religious": ("church", "faith", "conservative", "conservatives"),
     "relationship": ("single", "partner", "breakup", "dating", "married"),
@@ -114,17 +133,21 @@ _CROSS_LANGUAGE_ALIASES = {
     "support": ("supportive", "supported", "accept", "accepted", "acceptance"),
     "supportive": ("support", "supported", "accept", "accepted", "acceptance"),
     "summary": ("резюме", "саммари"),
+    "told": ("said", "mentioned", "сказал", "сказала", "рассказал", "рассказала"),
     "transcript": ("транскрипт", "запись", "recording"),
     "transgender": ("identity", "gender"),
     "video": ("видео", "видеозапись", "видеофрагмент"),
+    "week": ("недел",),
     "work": ("career", "job", "jobs", "profession", "occupation"),
     "алекс": ("alex", "aleks"),
+    "артефакт": ("artifact", "file", "document", "attachment"),
     "атлас": ("atlas",),
     "аудио": ("audio",),
     "биллинг": ("billing",),
     "видео": ("video",),
     "видеозапись": ("video",),
     "видеофрагмент": ("video",),
+    "вложение": ("attachment", "file", "document", "artifact"),
     "владелец": ("owner",),
     "владельц": ("owner",),
     "встреч": ("meeting", "call"),
@@ -137,8 +160,13 @@ _CROSS_LANGUAGE_ALIASES = {
     "идентичность": ("identity", "gender"),
     "инвойс": ("invoice", "bill"),
     "картинка": ("image",),
+    "обсудил": ("discussed", "discuss"),
+    "обсудила": ("discussed", "discuss"),
+    "обсудили": ("discussed", "discuss"),
     "отношения": ("relationship", "single", "partner", "breakup"),
     "проект": ("project",),
+    "рассказал": ("told", "said"),
+    "рассказала": ("told", "said"),
     "резюме": ("summary",),
     "саммари": ("summary",),
     "снимок": ("screenshot",),
@@ -148,6 +176,15 @@ _CROSS_LANGUAGE_ALIASES = {
     "счёт": ("invoice", "bill"),
     "транскрипт": ("transcript", "recording"),
     "фото": ("image",),
+    "файл": ("file", "document", "attachment", "artifact"),
+    "час": ("hour",),
+    "недел": ("week",),
+    "назад": ("ago",),
+    "сказал": ("said", "told", "mentioned"),
+    "сказала": ("said", "told", "mentioned"),
+    "событие": ("event", "meeting", "call"),
+    "упомянул": ("mentioned", "said", "told"),
+    "упомянула": ("mentioned", "said", "told"),
 }
 _QUERY_STOPWORDS = frozenset(
     {
@@ -169,6 +206,7 @@ _QUERY_STOPWORDS = frozenset(
         "does",
         "doing",
         "done",
+        "find",
         "for",
         "from",
         "had",
@@ -187,7 +225,10 @@ _QUERY_STOPWORDS = frozenset(
         "might",
         "our",
         "ours",
+        "please",
+        "search",
         "she",
+        "show",
         "should",
         "that",
         "the",
@@ -199,6 +240,7 @@ _QUERY_STOPWORDS = frozenset(
         "they",
         "this",
         "those",
+        "tell",
         "was",
         "were",
         "what",
@@ -227,17 +269,24 @@ _QUERY_STOPWORDS = frozenset(
         "какой",
         "когда",
         "кто",
+        "найти",
         "мне",
         "надо",
         "наш",
         "наша",
         "наше",
         "наши",
+        "найди",
         "нужно",
         "она",
         "они",
         "оно",
+        "показать",
+        "покажи",
+        "пожалуйста",
         "про",
+        "расскажи",
+        "скажи",
         "там",
         "тебе",
         "тут",
@@ -331,13 +380,12 @@ def lexical_variants(token: str) -> tuple[str, ...]:
         variants.extend(_russian_variants(normalized))
     elif _has_latin(normalized):
         variants.extend(_english_variants(normalized))
-    return _expand_cross_language_aliases(
-        variant for variant in variants if len(variant) >= 2
-    )
+    return _expand_cross_language_aliases(variant for variant in variants if len(variant) >= 2)
 
 
 def _tokens(text: str, *, split_underscores: bool) -> tuple[str, ...]:
     tokens: list[str] = []
+    tokens.extend(date_tokens(text))
     for match in _TERM_RE.finditer(text):
         token = _normalize_token(match.group(0))
         if token:
@@ -349,6 +397,35 @@ def _tokens(text: str, *, split_underscores: bool) -> tuple[str, ...]:
                 if part and part != token
             )
     return tuple(tokens)
+
+
+def date_tokens(text: str) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for match in _ISO_DATE_RE.finditer(text):
+        _append_date_token(
+            tokens,
+            year=int(match.group("year")),
+            month=int(match.group("month")),
+            day=int(match.group("day")),
+        )
+    for match in _LOCAL_DATE_RE.finditer(text):
+        first = int(match.group("first"))
+        second = int(match.group("second"))
+        year = int(match.group("year"))
+        if first > 12 >= second:
+            _append_date_token(tokens, year=year, month=second, day=first)
+        elif second > 12 >= first:
+            _append_date_token(tokens, year=year, month=first, day=second)
+        else:
+            _append_date_token(tokens, year=year, month=first, day=second)
+            _append_date_token(tokens, year=year, month=second, day=first)
+    return tuple(dict.fromkeys(tokens))
+
+
+def _append_date_token(tokens: list[str], *, year: int, month: int, day: int) -> None:
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return
+    tokens.append(f"date_{year:04d}_{month:02d}_{day:02d}")
 
 
 def _text_token_variants(token: str) -> tuple[str, ...]:
@@ -437,7 +514,9 @@ def _approximate_term_frequency(
     variants: tuple[str, ...],
     text_counts: Counter[str],
 ) -> int:
-    long_variants = tuple(variant for variant in variants if len(variant) >= 6)
+    long_variants = tuple(
+        variant for variant in variants if len(variant) >= 6 and not variant.startswith("date_")
+    )
     if not long_variants:
         return 0
     for variant in long_variants:

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
+from infinity_context_core.application.anchor_creative_work_filters import (
+    is_creative_work_person_false_positive,
+)
 from infinity_context_core.application.anchor_event_extraction import (
     canonical_event_key,
     event_labels,
@@ -73,8 +77,21 @@ _ORGANIZATION_SUFFIX_PATTERN = re.compile(
 _IMPLICIT_PROJECT_CONTEXT_PATTERN = re.compile(
     r"\b(?P<label>[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9][\w.-]{1,80})\s+"
     r"(?P<context>billing|dashboard|document|documents|docs|invoice|memo|notes|pricing|"
+    r"deadline|manifest|manifests|migration|overlay|overlays|"
     r"retrieval|screenshot|storage|transcript|video|документ|документы|заметка|заметки|"
     r"инвойс|поиск|скриншот|транскрипт)\b"
+)
+_IMPLICIT_PROJECT_CONTEXT_TAIL_PATTERN = re.compile(
+    r"\s+(?:billing|dashboard|deadline|document|documents|docs|invoice|manifest|"
+    r"manifests|memo|migration|notes|overlay|overlays|pricing|retrieval|"
+    r"screenshot|storage|transcript|video)\b",
+    re.IGNORECASE,
+)
+_RELOCATION_ORIGIN_PREFIX_PATTERN = re.compile(
+    r"(?:\b(?:move|moved|moving|relocate|relocated|relocation)\b[\w\s.,:;!?-]{0,48}\bfrom\s*$)"
+    r"|(?:\b(?:переезд|переехал|переехала|переехали|переезжал|переезжала|переезжали)"
+    r"\b[\w\s.,:;!?-]{0,48}\bиз\s*$)",
+    re.IGNORECASE,
 )
 _PERSON_STOP_WORDS = {
     "a",
@@ -91,6 +108,8 @@ _PERSON_STOP_WORDS = {
     "did",
     "does",
     "e2e",
+    "email",
+    "from",
     "frontend",
     "backend",
     "docker",
@@ -99,6 +118,7 @@ _PERSON_STOP_WORDS = {
     "memory",
     "project",
     "meeting",
+    "monday",
     "review",
     "sync",
     "demo",
@@ -109,6 +129,8 @@ _PERSON_STOP_WORDS = {
     "is",
     "may",
     "might",
+    "new york",
+    "nintendo switch",
     "standup",
     "planning",
     "next",
@@ -118,14 +140,42 @@ _PERSON_STOP_WORDS = {
     "retrospective",
     "workshop",
     "interview",
+    "kiev",
+    "kyiv",
     "last",
     "presentation",
     "release",
     "launch",
     "dm",
     "direct",
+    "chto",
+    "gde",
+    "kak",
+    "kakaya",
+    "kakie",
+    "kakoe",
+    "kakoi",
+    "kogda",
+    "kto",
+    "pochemu",
+    "zachem",
+    "где",
+    "зачем",
+    "как",
+    "какая",
+    "какие",
+    "какое",
+    "какой",
+    "когда",
+    "кто",
+    "почему",
+    "что",
     "позвонил",
     "позвонила",
+    "переезд",
+    "переехал",
+    "переехала",
+    "переехали",
     "звонил",
     "звонила",
     "написал",
@@ -140,6 +190,8 @@ _PERSON_STOP_WORDS = {
     "discussed",
     "duration",
     "format",
+    "fort wayne",
+    "friday",
     "screenshot",
     "stack",
     "stream",
@@ -173,9 +225,14 @@ _PERSON_STOP_WORDS = {
     "says",
     "sent",
     "shared",
+    "sweden",
+    "saturday",
+    "sunday",
     "today",
     "tomorrow",
+    "tuesday",
     "the",
+    "thursday",
     "was",
     "were",
     "what",
@@ -188,16 +245,22 @@ _PERSON_STOP_WORDS = {
     "would",
     "this",
     "that",
+    "them",
     "tracks",
     "yesterday",
+    "yep",
     "user",
     "uses",
     "weekly",
+    "wednesday",
     "monthly",
     "yearly",
+    "xenoblade chronicles",
     "anthropic",
     "github",
     "google",
+    "her",
+    "him",
     "microsoft",
     "notion",
     "linear",
@@ -206,6 +269,8 @@ _PERSON_STOP_WORDS = {
     "figma",
     "скриншот",
     "проект",
+    "киев",
+    "киева",
     "час",
     "часа",
     "часов",
@@ -232,6 +297,8 @@ _PERSON_STOP_WORDS = {
     "воркшоп",
     "релиз",
     "запуск",
+    "куда",
+    "откуда",
     "я",
     "мы",
 }
@@ -343,12 +410,15 @@ _ORGANIZATION_HINTS = {
     "github": "GitHub",
     "google": "Google",
     "microsoft": "Microsoft",
+    "nintendo": "Nintendo",
     "notion": "Notion",
     "linear": "Linear",
     "slack": "Slack",
     "stripe": "Stripe",
     "figma": "Figma",
 }
+_OBSERVED_ANCHOR_CACHE_MAX_SIZE = 2048
+_OBSERVED_ANCHOR_CACHE_MAX_TEXT_CHARS = 16000
 
 
 @dataclass(frozen=True)
@@ -363,6 +433,17 @@ class ObservedAnchor:
 
 
 def extract_observed_anchors(text: str) -> tuple[ObservedAnchor, ...]:
+    if len(text) > _OBSERVED_ANCHOR_CACHE_MAX_TEXT_CHARS:
+        return _extract_observed_anchors_uncached(text)
+    return _extract_observed_anchors_cached(text)
+
+
+@lru_cache(maxsize=_OBSERVED_ANCHOR_CACHE_MAX_SIZE)
+def _extract_observed_anchors_cached(text: str) -> tuple[ObservedAnchor, ...]:
+    return _extract_observed_anchors_uncached(text)
+
+
+def _extract_observed_anchors_uncached(text: str) -> tuple[ObservedAnchor, ...]:
     seen: set[tuple[str, str]] = set()
     anchors: list[ObservedAnchor] = []
     for kind, label, aliases, reason, score_boost in _explicit_alias_observations(text):
@@ -735,6 +816,12 @@ def _person_labels(text: str) -> tuple[str, ...]:
                 continue
             if _is_project_preposition_person_false_positive(text, match.start()):
                 continue
+            if _is_relocation_origin_person_false_positive(text, match.start()):
+                continue
+            if _is_implicit_project_context_person_false_positive(text, match.end()):
+                continue
+            if is_creative_work_person_false_positive(text, match.start(), match.end()):
+                continue
             label = " ".join(parts).strip()
             if _is_probable_person_label(label):
                 labels.append(label)
@@ -747,6 +834,12 @@ def _person_labels(text: str) -> tuple[str, ...]:
             if _is_project_qualified_person_match(text, match.start()):
                 continue
             if _is_project_preposition_person_false_positive(text, match.start()):
+                continue
+            if _is_relocation_origin_person_false_positive(text, match.start()):
+                continue
+            if _is_implicit_project_context_person_false_positive(text, match.end()):
+                continue
+            if is_creative_work_person_false_positive(text, match.start(), match.end()):
                 continue
             if _is_followed_by_organization_suffix(text, match.end()):
                 continue
@@ -798,6 +891,15 @@ def _is_project_qualifier(value: str) -> bool:
 def _is_project_preposition_person_false_positive(text: str, start: int) -> bool:
     prefix = text[max(0, start - 16) : start].casefold()
     return bool(re.search(r"\b(?:about|for|in|по|про|для|в)\s+$", prefix))
+
+
+def _is_relocation_origin_person_false_positive(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 96) : start]
+    return bool(_RELOCATION_ORIGIN_PREFIX_PATTERN.search(prefix))
+
+
+def _is_implicit_project_context_person_false_positive(text: str, end: int) -> bool:
+    return bool(_IMPLICIT_PROJECT_CONTEXT_TAIL_PATTERN.match(text[end : end + 48]))
 
 
 def _is_followed_by_organization_suffix(text: str, end: int) -> bool:
@@ -892,6 +994,8 @@ def _clean_project_label(label: str) -> str:
         normalized = normalize_anchor_key(token)
         if not normalized:
             continue
+        if index == 0 and normalized in _PROJECT_LABEL_STOP_WORDS:
+            return ""
         if index > 0 and (
             normalized in _PROJECT_LABEL_STOP_WORDS
             or not _looks_like_project_label_continuation(token)
@@ -930,8 +1034,6 @@ def _canonical_project_key(label: str) -> str:
     normalized = normalize_anchor_key(label)
     parts = [normalize_cyrillic_project_case(part) for part in normalized.split()]
     return " ".join(canonical_token(part) for part in parts if part)
-
-
 
 
 def _terms(text: str) -> tuple[str, ...]:

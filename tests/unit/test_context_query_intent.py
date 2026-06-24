@@ -7,6 +7,7 @@ from infinity_context_core.application.context_query_intent import (
     build_query_anchor_intent,
     match_query_anchor_intent,
     match_query_anchor_intent_to_text,
+    query_anchor_intent_text_conflicts,
     query_anchor_lookup_keys,
 )
 from infinity_context_core.domain.entities import (
@@ -49,12 +50,203 @@ def test_query_anchor_intent_extracts_lowercase_ru_event_hints() -> None:
     assert intent.event_type_keys() == {"group:call", "sozvon"}
 
 
+def test_query_anchor_intent_extracts_word_number_relative_week_hints() -> None:
+    english = build_query_anchor_intent("call with Alex about Atlas two weeks ago")
+    russian = build_query_anchor_intent("созвон с Алексом по Атласу две недели назад")
+    month = build_query_anchor_intent("call with Alex about Atlas two months ago")
+    russian_month = build_query_anchor_intent("созвон с Алексом по Атласу два месяца назад")
+    year = build_query_anchor_intent("call with Alex about Atlas four years ago")
+    russian_year = build_query_anchor_intent("созвон с Алексом по Атласу четыре года назад")
+
+    assert english.temporal_keys() == {"weeks_ago", "weeks_ago:2:week"}
+    assert russian.temporal_keys() == {"weeks_ago", "weeks_ago:2:week"}
+    assert month.temporal_keys() == {"months_ago", "months_ago:2:month"}
+    assert russian_month.temporal_keys() == {"months_ago", "months_ago:2:month"}
+    assert year.temporal_keys() == {"years_ago", "years_ago:4:year"}
+    assert russian_year.temporal_keys() == {"years_ago", "years_ago:4:year"}
+
+
+def test_query_anchor_intent_extracts_future_relative_time_hints() -> None:
+    tomorrow = build_query_anchor_intent("Project Atlas deadline tomorrow")
+    next_week = build_query_anchor_intent("Which Atlas task is due next week?")
+    next_month = build_query_anchor_intent("Что назначено по Атласу в следующем месяце?")
+
+    assert tomorrow.temporal_keys() == {"tomorrow", "tomorrow:1:day"}
+    assert next_week.temporal_keys() == {"next_week", "next_week:1:week"}
+    assert next_month.temporal_keys() == {"next_month", "next_month:1:month"}
+    assert "atlas" not in next_week.keys_for_kind(MemoryAnchorKind.PERSON)
+
+
+def test_query_anchor_intent_does_not_promote_relative_time_words_as_people() -> None:
+    english = build_query_anchor_intent("call with two weeks ago about Atlas")
+    russian = build_query_anchor_intent("созвон с две недели назад по Атласу")
+
+    assert "two" not in english.keys_for_kind(MemoryAnchorKind.PERSON)
+    assert "dve" not in russian.keys_for_kind(MemoryAnchorKind.PERSON)
+    assert english.temporal_keys() == {"weeks_ago", "weeks_ago:2:week"}
+    assert russian.temporal_keys() == {"weeks_ago", "weeks_ago:2:week"}
+
+
+def test_query_anchor_intent_groups_conversational_event_synonyms() -> None:
+    english = build_query_anchor_intent("alex spoke about atlas two weeks ago")
+    english_anchor = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Chatted with Alex about Atlas 2 weeks ago",
+    )
+
+    english_match = match_query_anchor_intent(english, english_anchor)
+
+    assert english.keys_for_kind(MemoryAnchorKind.PERSON) == {"aleks"}
+    assert english.keys_for_kind(MemoryAnchorKind.PROJECT) == {"atlas"}
+    assert english.event_type_keys() == {"group:message", "spoke"}
+    assert english_match is not None
+    assert "query_event_type_match" in english_match.reasons
+    assert "group:message" in english_match.matched_keys
+
+    russian = build_query_anchor_intent("мария общалась с сергеем по атласу час назад")
+    russian_anchor = _anchor(
+        kind=MemoryAnchorKind.EVENT,
+        label="Переписывалась с Сергеем по Атласу час назад",
+    )
+
+    russian_match = match_query_anchor_intent(russian, russian_anchor)
+
+    assert russian.keys_for_kind(MemoryAnchorKind.PERSON) == {"sergei"}
+    assert russian.keys_for_kind(MemoryAnchorKind.PROJECT) == {"atlas"}
+    assert russian.event_type_keys() == {"group:message", "obschalas"}
+    assert russian_match is not None
+    assert "query_event_type_match" in russian_match.reasons
+    assert "group:message" in russian_match.matched_keys
+
+
+def test_query_anchor_intent_groups_relocation_life_events() -> None:
+    english = build_query_anchor_intent("Where did Caroline move from 4 years ago?")
+    english_match = match_query_anchor_intent_to_text(
+        english,
+        "Caroline moved from Sweden 4 years ago before settling in Canada.",
+    )
+
+    assert english.keys_for_kind(MemoryAnchorKind.PERSON) == {"caroline"}
+    assert english.event_type_keys() == {"group:relocation", "move"}
+    assert english.temporal_keys() == {"years_ago", "years_ago:4:year"}
+    assert english_match is not None
+    assert set(english_match.reasons) >= {
+        "query_event_participant_match",
+        "query_event_type_match",
+        "query_event_temporal_match",
+    }
+    assert "group:relocation" in english_match.matched_keys
+
+    russian = build_query_anchor_intent("Откуда Мария переехала четыре года назад?")
+    russian_match = match_query_anchor_intent_to_text(
+        russian,
+        "Мария переехала из Киева четыре года назад и потом жила в Варшаве.",
+    )
+
+    assert russian.keys_for_kind(MemoryAnchorKind.PERSON) == {"mariya"}
+    assert "otkuda mariya" not in russian.keys_for_kind(MemoryAnchorKind.PERSON)
+    assert russian.event_type_keys() == {"group:relocation", "pereehala"}
+    assert russian.temporal_keys() == {"years_ago", "years_ago:4:year"}
+    assert russian_match is not None
+    assert "group:relocation" in russian_match.matched_keys
+
+
+def test_query_anchor_intent_keeps_relocation_origin_without_exact_temporal_anchor() -> None:
+    intent = build_query_anchor_intent("Where did Caroline move from 4 years ago?")
+    origin_text = (
+        "D3:13 Caroline: My friends, family and mentors are my rocks and "
+        "have made all the difference. I have known these friends for 4 years, "
+        "since I moved from my home country."
+    )
+    roots_text = (
+        "D4:3 Caroline: This necklace is super special to me - a gift from my "
+        "grandma in my home country, Sweden. It is like a reminder of my roots."
+    )
+    decoy_text = (
+        "D17:3 Caroline: I started looking into adoption agencies and reading "
+        "about what it takes to adopt a child. I talked to my family and friends "
+        "about it, and they were all very supportive."
+    )
+
+    assert query_anchor_intent_text_conflicts(intent, origin_text) is False
+    assert query_anchor_intent_text_conflicts(intent, roots_text) is False
+    assert query_anchor_intent_text_conflicts(intent, decoy_text) is True
+
+
+def test_query_anchor_intent_groups_plural_interviews_and_last_weekday() -> None:
+    intent = build_query_anchor_intent("interviews last Friday")
+
+    assert intent.event_type_keys() == {"group:workshop", "interviews"}
+    assert intent.temporal_keys() == {"last_friday", "last_friday:1:weekday"}
+
+
+def test_query_anchor_intent_groups_activity_life_events() -> None:
+    intent = build_query_anchor_intent("What LGBTQ+ events has Caroline participated in?")
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "D1:3 Caroline: I went to a LGBTQ support group yesterday and felt powerful.",
+    )
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == {"caroline"}
+    assert intent.event_type_keys() == {"group:activity", "participated"}
+    assert match is not None
+    assert set(match.reasons) >= {
+        "query_event_type_match",
+        "query_person_identity_match",
+    }
+    assert "group:activity" in match.matched_keys
+
+
+def test_query_anchor_intent_accepts_activity_event_paraphrase_text() -> None:
+    intent = build_query_anchor_intent("What LGBTQ+ events has Caroline participated in?")
+    text = (
+        "D3:1 Caroline: I wanted to tell you about my school event last week. "
+        "I talked about my transgender journey and encouraged students to get "
+        "involved in the LGBTQ community."
+    )
+
+    assert query_anchor_intent_text_conflicts(intent, text) is False
+    assert match_query_anchor_intent_to_text(intent, text) is not None
+
+
+def test_query_anchor_intent_does_not_promote_to_as_project() -> None:
+    intent = build_query_anchor_intent(
+        "What events has Caroline participated in to help children?"
+    )
+    text = (
+        "D9:2 Caroline: Last weekend I joined a mentorship program for LGBTQ youth. "
+        "It is rewarding to help the community."
+    )
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PROJECT) == frozenset()
+    assert query_anchor_intent_text_conflicts(intent, text) is False
+    assert match_query_anchor_intent_to_text(intent, text) is not None
+
+
+def test_query_anchor_intent_groups_plural_activity_questions() -> None:
+    intent = build_query_anchor_intent("How many hikes has Joanna been on?")
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "D14:19 Joanna: Yep, I'm hiking with buddies this weekend.",
+    )
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == {"joanna"}
+    assert intent.event_type_keys() == {"group:activity", "hikes"}
+    assert match is not None
+    assert "group:activity" in match.matched_keys
+
+
+def test_query_anchor_intent_does_not_promote_pronoun_participant_hints() -> None:
+    intent = build_query_anchor_intent("What does Melanie do with her family on hikes?")
+
+    assert intent.keys_for_kind(MemoryAnchorKind.PERSON) == {"melanie"}
+
+
 def test_query_anchor_lookup_keys_include_storage_and_canonical_variants() -> None:
     intent = build_query_anchor_intent("созвон с алексом в атласе час назад")
 
     keys = {
-        (lookup.kind.value, lookup.normalized_key)
-        for lookup in query_anchor_lookup_keys(intent)
+        (lookup.kind.value, lookup.normalized_key) for lookup in query_anchor_lookup_keys(intent)
     }
 
     assert ("person", "алекс") in keys
@@ -75,6 +267,13 @@ def test_query_anchor_intent_strips_question_modal_prefix_from_person() -> None:
         for hint in intent.hints
         if hint.kind == MemoryAnchorKind.PERSON
     )
+
+
+def test_query_anchor_intent_ignores_russian_question_words_as_people() -> None:
+    intent = build_query_anchor_intent("Что сказано про V1_DOCUMENT_SCOPE_MARKER?")
+
+    assert "chto" not in intent.keys_for_kind(MemoryAnchorKind.PERSON)
+    assert "что" not in intent.keys_for_kind(MemoryAnchorKind.PERSON)
 
 
 def test_query_anchor_intent_matches_text_entity_evidence() -> None:
@@ -233,6 +432,34 @@ def test_query_anchor_intent_matches_previous_week_temporal_phrase() -> None:
     assert match is not None
     assert "query_event_temporal_match" in match.reasons
     assert "last_week:1:week" in match.matched_keys
+
+
+def test_query_anchor_intent_matches_future_workflow_temporal_phrase() -> None:
+    intent = build_query_anchor_intent("Which Atlas task is due next week?")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Project Atlas deadline next week is to send the launch checklist.",
+    )
+
+    assert intent.temporal_keys() == {"next_week", "next_week:1:week"}
+    assert match is not None
+    assert "query_event_temporal_match" in match.reasons
+    assert "query_event_project_match" in match.reasons
+
+
+def test_query_anchor_intent_matches_absolute_date_workflow_temporal_phrase() -> None:
+    intent = build_query_anchor_intent("Which Atlas deadline is on 15.08.2026?")
+
+    match = match_query_anchor_intent_to_text(
+        intent,
+        "Project Atlas deadline 2026-08-15 is to send the launch checklist.",
+    )
+
+    assert intent.temporal_keys() == {"date_2026_08_15"}
+    assert match is not None
+    assert "query_event_temporal_match" in match.reasons
+    assert "query_event_project_match" in match.reasons
 
 
 def test_query_anchor_intent_matches_lowercase_actor_before_said_event() -> None:

@@ -188,7 +188,66 @@ def test_chunk_source_refs_fall_back_for_legacy_chunk_metadata() -> None:
     )
 
 
-def _chunk(*, metadata: dict[str, object]) -> MemoryChunk:
+def test_chunk_source_refs_add_dialogue_turn_refs_for_visible_session_markers() -> None:
+    chunk = _chunk(
+        metadata={},
+        source_type="locomo_observation",
+        source_external_id="locomo:conv-26:session_7:observation",
+        text=(
+            "D7:2 Melanie supports Caroline. "
+            "D7:4 Melanie praises Caroline's drive to help. "
+            "D8:1 Different session marker should not be linked."
+        ),
+    )
+
+    refs = chunk_source_refs(chunk, text_preview=chunk.text)
+
+    assert [ref.source_id for ref in refs] == [
+        "locomo:conv-26:session_7:observation",
+        "locomo:conv-26:session_7:D7:2:turn",
+        "locomo:conv-26:session_7:D7:4:turn",
+    ]
+    assert refs[1].source_type == "locomo_observation"
+    assert refs[2].quote_preview is not None
+    assert refs[2].quote_preview.startswith("D7:4 Melanie praises")
+
+
+def test_chunk_source_refs_do_not_infer_dialogue_refs_over_structured_metadata() -> None:
+    chunk = _chunk(
+        metadata={
+            "source_refs": [
+                {
+                    "source_type": "asset_extraction",
+                    "source_id": "extract-1",
+                    "quote_preview": "D7:4 OCR text",
+                }
+            ]
+        },
+        source_external_id="locomo:conv-26:session_7:observation",
+        text="D7:4 Melanie praises Caroline's drive.",
+    )
+
+    refs = chunk_source_refs(chunk, text_preview=chunk.text)
+
+    assert refs == (
+        SourceRef(
+            source_type="asset_extraction",
+            source_id="extract-1",
+            chunk_id="chunk-1",
+            char_start=10,
+            char_end=80,
+            quote_preview="D7:4 OCR text",
+        ),
+    )
+
+
+def _chunk(
+    *,
+    metadata: dict[str, object],
+    source_type: str = "document",
+    source_external_id: str = "doc-external",
+    text: str = "Atlas screenshot text for context.",
+) -> MemoryChunk:
     return MemoryChunk(
         id=MemoryChunkId("chunk-1"),
         space_id=SpaceId("space-1"),
@@ -196,12 +255,12 @@ def _chunk(*, metadata: dict[str, object]) -> MemoryChunk:
         thread_id=ThreadId("thread-1"),
         document_id=MemoryDocumentId("doc-1"),
         episode_id=None,
-        source_type="document",
-        source_external_id="doc-external",
+        source_type=source_type,
+        source_external_id=source_external_id,
         source_hash="hash",
         kind=MemoryChunkKind.DOCUMENT_SECTION,
-        text="Atlas screenshot text for context.",
-        normalized_text="atlas screenshot text for context.",
+        text=text,
+        normalized_text=text.casefold(),
         status=LifecycleStatus.ACTIVE,
         sequence=1,
         char_start=10,

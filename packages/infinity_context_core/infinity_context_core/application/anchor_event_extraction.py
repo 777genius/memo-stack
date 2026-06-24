@@ -10,53 +10,198 @@ from infinity_context_core.application.anchor_identity_normalization import (
     normalize_cyrillic_person_case,
     normalize_cyrillic_project_case,
 )
+from infinity_context_core.application.context_lexical import date_tokens
 
 _TERM_PATTERN = re.compile(r"[\w.@:/#-]+", re.UNICODE)
 _HANDLE_PERSON_TOKEN = r"@[A-Za-z][A-Za-z0-9._-]{2,39}"
 _EN_NUMBER_WORD = r"one|two|three|four|five|six"
+_RU_NUMBER_WORD = r"один|одна|два|две|три|четыре|пять|шесть"
+_EN_WEEKDAY = r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
 _NUMBER_WORDS = {
+    "один": 1,
+    "одна": 1,
     "one": 1,
+    "два": 2,
+    "две": 2,
     "two": 2,
+    "три": 3,
     "three": 3,
+    "четыре": 4,
     "four": 4,
+    "пять": 5,
     "five": 5,
+    "шесть": 6,
     "six": 6,
 }
 _TEMPORAL_PHRASE = (
     r"earlier today|this morning|this afternoon|this evening|"
+    r"this week(?!end)|current week(?!end)|earlier this week|"
+    r"next week|upcoming week|following week|"
+    r"this quarter|current quarter|last quarter|previous quarter|"
+    r"next quarter|upcoming quarter|following quarter|"
+    r"this month|current month|this year|current year|"
+    r"next month|upcoming month|following month|next year|upcoming year|following year|"
+    r"(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}|"
+    r"\d{1,2}[-/.]\d{1,2}[-/.](?:19|20)\d{2}|"
     r"last week|previous week|yesterday|today|tomorrow|an hour ago|hour ago|"
+    r"this weekend|current weekend|last weekend|previous weekend|weekend ago|"
+    rf"last\s+(?:{_EN_WEEKDAY})|previous\s+(?:{_EN_WEEKDAY})|"
+    r"last month|previous month|month ago|last year|previous year|year ago|"
     rf"(?:\d{{1,3}}|{_EN_NUMBER_WORD})\s+hours?\s+ago|"
-    r"\d{1,3}\s+days?\s+ago|\d{1,2}\s+weeks?\s+ago|"
+    rf"(?:\d{{1,3}}|{_EN_NUMBER_WORD})\s+days?\s+ago|"
+    rf"(?:\d{{1,2}}|{_EN_NUMBER_WORD})\s+weeks?\s+ago|"
+    rf"(?:\d{{1,2}}|{_EN_NUMBER_WORD})\s+weekends?\s+ago|"
+    rf"(?:\d{{1,2}}|{_EN_NUMBER_WORD})\s+months?\s+ago|"
+    rf"(?:\d{{1,2}}|{_EN_NUMBER_WORD})\s+years?\s+ago|"
     r"ранее сегодня|сегодня утром|утром сегодня|"
     r"сегодня д[нн]ём|д[нн]ём сегодня|сегодня днем|днем сегодня|"
     r"сегодня вечером|вечером сегодня|"
+    r"на этой неделе|в эту неделю|эта неделя|"
+    r"на следующей неделе|в следующую неделю|следующая неделя|"
+    r"в этом квартале|этот квартал|в прошлом квартале|прошлый квартал|прошлом квартале|"
+    r"в следующем квартале|на следующий квартал|следующий квартал|"
+    r"в этом месяце|этот месяц|в этом году|этот год|"
+    r"в следующем месяце|на следующий месяц|следующий месяц|"
+    r"в следующем году|на следующий год|следующий год|"
     r"неделю назад|на прошлой неделе|прошлой неделе|прошлую неделю|"
+    r"в эти выходные|на этих выходных|на прошлых выходных|"
+    r"прошлые выходные|прошлых выходных|"
+    r"месяц назад|в прошлом месяце|прошлый месяц|прошлом месяце|"
+    r"год назад|в прошлом году|прошлый год|прошлом году|"
     r"вчера|сегодня|завтра|час назад|"
-    r"\d{1,3}\s+час(?:а|ов)?\s+назад|"
-    r"\d{1,3}\s+д(?:ень|ня|ней)\s+назад|"
-    r"\d{1,2}\s+недел[юи]\s+назад"
+    rf"(?:\d{{1,3}}|{_RU_NUMBER_WORD})\s+час(?:а|ов)?\s+назад|"
+    rf"(?:\d{{1,3}}|{_RU_NUMBER_WORD})\s+д(?:ень|ня|ней)\s+назад|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+недел[юи]\s+назад|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+выходн(?:ые|ых)\s+назад|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+месяц(?:а|ев)?\s+назад|"
+    rf"(?:\d{{1,2}}|{_RU_NUMBER_WORD})\s+(?:год(?:а)?|лет)\s+назад"
 )
 _EVENT_PERSON_TOKEN = (
     rf"{_HANDLE_PERSON_TOKEN}|"
     r"[A-Z][a-z][A-Za-z]{1,40}|[А-ЯЁ][а-яё]{2,40}|"
     r"[a-z][a-z0-9._-]{2,39}|[а-яё][а-яё0-9._-]{2,39}"
 )
+_EVENT_SUBJECT_PERSON_TOKEN = (
+    rf"{_HANDLE_PERSON_TOKEN}|[A-Z][a-z][A-Za-z]{{1,40}}|[А-ЯЁ][а-яё]{{2,40}}"
+)
 _EVENT_KEYWORDS = (
     r"call|meeting|review|sync|demo|chat|dm|direct message|message|conversation|"
     r"meet|met|wrote|sent|messaged|texted|said|told|"
-    r"standup|planning|retro|retrospective|workshop|interview|presentation|release|launch|"
-    r"звонок|созвон|позвонил|позвонила|звонил|звонила|"
-    r"встреча|ревью|демо|переписка|переписывался|"
+    r"talked|spoke|chatted|discussed|"
+    r"move|moved|moving|relocate|relocated|relocation|"
+    r"attend|attended|join|joined|participate|participated|went|hike|hiked|hikes|hiking|"
+    r"standup|planning|retro|retrospective|workshop|interview|interviews|presentation|release|launch|"
+    r"deadline|due|task|todo|reminder|milestone|deliverable|"
+    r"звонок|созвона|созвон|позвонил|позвонила|звонил|звонила|"
+    r"встреча|ревью|демо|переписк(?:а|е|и|ой|у)|"
+    r"переписывался|переписывалась|переписывались|"
+    r"общался|общалась|общались|созванивался|созванивалась|созванивались|"
+    r"переезд|переехал|переехала|переехали|переезжал|переезжала|переезжали|"
+    r"дедлайн|срок|задача|поручение|напоминание|майлстоун|"
     r"написал|написала|сказал|сказала|рассказал|рассказала|"
     r"встретился|встретилась|встречался|встречалась|встречались|"
     r"разговор(?:а|е|ом)?|чат|планерка|планёрка|стендап|ретро|"
     r"интервью|воркшоп|релиз|запуск"
 )
 _LOWERCASE_PREFIX_EVENT_KEYWORDS = frozenset(
-    {"dm", "message", "messaged", "said", "sent", "texted", "told", "wrote"}
+    {
+        "chatted",
+        "discussed",
+        "dm",
+        "message",
+        "messaged",
+        "moved",
+        "moving",
+        "relocated",
+        "said",
+        "sent",
+        "spoke",
+        "talked",
+        "texted",
+        "told",
+        "wrote",
+    }
 )
+_DIRECT_AFTER_EVENT_KEYWORDS = frozenset(
+    {
+        "call",
+        "chat",
+        "chatted",
+        "discussed",
+        "dm",
+        "message",
+        "messaged",
+        "sent",
+        "spoke",
+        "talked",
+        "texted",
+        "wrote",
+        "звонил",
+        "звонила",
+        "написал",
+        "написала",
+        "переписка",
+        "позвонил",
+        "позвонила",
+        "созвон",
+        "чат",
+    }
+)
+_RELOCATION_EVENT_KEYWORDS = frozenset(
+    {
+        "move",
+        "moved",
+        "moving",
+        "relocate",
+        "relocated",
+        "relocation",
+        "переезд",
+        "переехал",
+        "переехала",
+        "переехали",
+        "переезжал",
+        "переезжала",
+        "переезжали",
+    }
+)
+_ACTIVITY_EVENT_KEYWORDS = frozenset(
+    {
+        "attend",
+        "attended",
+        "hike",
+        "hiked",
+        "hikes",
+        "hiking",
+        "join",
+        "joined",
+        "participate",
+        "participated",
+        "went",
+    }
+)
+_WORKFLOW_EVENT_KEYWORDS = frozenset(
+    {
+        "deadline",
+        "deliverable",
+        "due",
+        "milestone",
+        "reminder",
+        "task",
+        "todo",
+        "дедлайн",
+        "задача",
+        "майлстоун",
+        "напоминание",
+        "поручение",
+        "срок",
+    }
+)
+_EVENT_DISPLAY_NORMALIZATIONS = {
+    "due": "deadline",
+    "созвона": "созвон",
+}
 _EVENT_PATTERN = re.compile(
-    rf"\b({_EVENT_KEYWORDS})"
+    rf"\b({_EVENT_KEYWORDS})\b"
     r"(?:\s+(?:with|from|about|с|от|по|об|про|[A-Za-zА-Яа-яЁё0-9][\w.-]{1,40})){0,5}?"
     rf"(?:\s+({_TEMPORAL_PHRASE}))?",
     re.IGNORECASE,
@@ -65,9 +210,7 @@ _EVENT_PARTICIPANT_PATTERN = re.compile(
     r"\b(?P<prep>with|from|с|от)\s+"
     rf"(?P<label>{_EVENT_PERSON_TOKEN})\b"
 )
-_EVENT_DIRECT_PARTICIPANT_PATTERN = re.compile(
-    rf"^\s+(?P<label>{_EVENT_PERSON_TOKEN})\b"
-)
+_EVENT_DIRECT_PARTICIPANT_PATTERN = re.compile(rf"^\s+(?P<label>{_EVENT_PERSON_TOKEN})\b")
 _EVENT_PROJECT_PATTERN = re.compile(
     r"\b(?P<prep>about|for|in|по|про|для|в)\s+"
     r"(?:(?:project|проект(?:у|е|а|ом)?)\s+)?"
@@ -75,104 +218,181 @@ _EVENT_PROJECT_PATTERN = re.compile(
     r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})",
     re.IGNORECASE,
 )
-_EVENT_PREFIX_PARTICIPANT_PATTERN = re.compile(
-    rf"(?P<label>{_EVENT_PERSON_TOKEN})\s*$"
+_EVENT_PREFIX_PARTICIPANT_PATTERN = re.compile(rf"(?P<label>{_EVENT_PERSON_TOKEN})\s*$")
+_EVENT_PREFIX_PROJECT_PATTERN = re.compile(
+    r"\b(?:(?:project|проект(?:у|е|а|ом)?)\s+)?"
+    r"(?P<label>[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}"
+    r"(?:\s+[A-Za-zА-Яа-яЁё0-9][\w.-]{1,80}){0,3})\s*$",
+    re.IGNORECASE,
+)
+_EVENT_INTERVIEW_SUBJECT_PATTERN = re.compile(
+    rf"\b(?P<label>{_EVENT_SUBJECT_PERSON_TOKEN})\s+"
+    r"(?:passed|had|scheduled|finished|completed|cleared)\b"
 )
 _EVENT_KEYWORD_PATTERN = re.compile(rf"\b({_EVENT_KEYWORDS})\b", re.IGNORECASE)
 _TEMPORAL_PATTERN = re.compile(rf"\b({_TEMPORAL_PHRASE})\b", re.IGNORECASE)
 
-_EVENT_PERSON_STOP_WORDS = {
-    "a",
-    "about",
-    "an",
-    "api",
-    "call",
-    "chat",
-    "confirmed",
-    "content",
-    "context",
-    "covered",
-    "daily",
-    "demo",
-    "dimensions",
-    "direct",
-    "discussed",
-    "dm",
-    "document",
-    "documents",
-    "duration",
-    "format",
-    "frontend",
-    "backend",
-    "image",
-    "interview",
-    "last",
-    "launch",
-    "meeting",
-    "memory",
-    "message",
-    "monthly",
-    "next",
-    "notes",
-    "open",
-    "organization",
-    "owns",
-    "page",
-    "planning",
-    "previous",
-    "project",
-    "quick",
-    "release",
-    "review",
-    "reviewed",
-    "said",
-    "says",
-    "save",
-    "sent",
-    "shared",
-    "sync",
-    "team",
-    "that",
-    "the",
-    "this",
-    "today",
-    "tomorrow",
-    "tracks",
-    "transcript",
-    "user",
-    "uses",
-    "weekly",
-    "workshop",
-    "yearly",
-    "yesterday",
-    "встреча",
-    "вчера",
-    "завтра",
-    "запуск",
-    "звонок",
-    "итог",
-    "итоги",
-    "мы",
-    "написал",
-    "написала",
-    "неделя",
-    "неделю",
-    "он",
-    "она",
-    "переписка",
-    "переписывался",
-    "планерка",
-    "планёрка",
-    "проект",
-    "разговор",
-    "сегодня",
-    "созвон",
-    "час",
-    "часа",
-    "часов",
-    "чат",
-    "я",
-}
+_TEMPORAL_PERSON_STOP_WORDS = frozenset(
+    {
+        "afternoon",
+        "ago",
+        "day",
+        "days",
+        "evening",
+        "friday",
+        "hour",
+        "hours",
+        "monday",
+        "month",
+        "months",
+        "morning",
+        "next",
+        "saturday",
+        "sunday",
+        "thursday",
+        "tuesday",
+        "week",
+        "wednesday",
+        "weeks",
+        "year",
+        "years",
+        "вечером",
+        "день",
+        "днем",
+        "днём",
+        "дней",
+        "дня",
+        "год",
+        "года",
+        "году",
+        "лет",
+        "месяц",
+        "месяца",
+        "месяцев",
+        "месяце",
+        "назад",
+        "недели",
+        "неделя",
+        "неделю",
+        "следующей",
+        "следующем",
+        "следующий",
+        "следующую",
+        "выходные",
+        "выходных",
+        "утром",
+    }
+)
+_EVENT_PERSON_STOP_WORDS = (
+    {
+        "a",
+        "about",
+        "an",
+        "api",
+        "call",
+        "chat",
+        "confirmed",
+        "content",
+        "context",
+        "covered",
+        "daily",
+        "demo",
+        "deadline",
+        "dimensions",
+        "direct",
+        "discussed",
+        "dm",
+        "document",
+        "documents",
+        "due",
+        "duration",
+        "format",
+        "from",
+        "frontend",
+        "backend",
+        "image",
+        "interview",
+        "kiev",
+        "kyiv",
+        "last",
+        "launch",
+        "meeting",
+        "memory",
+        "message",
+        "milestone",
+        "monthly",
+        "next",
+        "notes",
+        "open",
+        "organization",
+        "owns",
+        "page",
+        "planning",
+        "previous",
+        "project",
+        "quick",
+        "release",
+        "review",
+        "reviewed",
+        "said",
+        "says",
+        "save",
+        "sent",
+        "shared",
+        "sweden",
+        "sync",
+        "team",
+        "that",
+        "the",
+        "this",
+        "today",
+        "tomorrow",
+        "tracks",
+        "transcript",
+        "task",
+        "todo",
+        "user",
+        "uses",
+        "weekly",
+        "workshop",
+        "yearly",
+        "yesterday",
+        "встреча",
+        "вчера",
+        "завтра",
+        "запуск",
+        "звонок",
+        "дедлайн",
+        "итог",
+        "итоги",
+        "киев",
+        "киева",
+        "мы",
+        "написал",
+        "написала",
+        "неделя",
+        "неделю",
+        "поручение",
+        "он",
+        "она",
+        "переписка",
+        "переписывался",
+        "планерка",
+        "планёрка",
+        "проект",
+        "разговор",
+        "сегодня",
+        "созвон",
+        "срок",
+        "час",
+        "часа",
+        "часов",
+        "чат",
+        "я",
+    }
+    | set(_NUMBER_WORDS)
+    | _TEMPORAL_PERSON_STOP_WORDS
+)
 _PROJECT_LABEL_STOP_WORDS = {
     "about",
     "after",
@@ -181,6 +401,7 @@ _PROJECT_LABEL_STOP_WORDS = {
     "billing",
     "confirmed",
     "covered",
+    "deadline",
     "document",
     "documents",
     "docs",
@@ -191,6 +412,7 @@ _PROJECT_LABEL_STOP_WORDS = {
     "is",
     "keeps",
     "meeting",
+    "milestone",
     "needs",
     "notes",
     "owns",
@@ -198,6 +420,7 @@ _PROJECT_LABEL_STOP_WORDS = {
     "said",
     "says",
     "shared",
+    "task",
     "timeline",
     "tracks",
     "update",
@@ -206,12 +429,28 @@ _PROJECT_LABEL_STOP_WORDS = {
     "with",
     "документ",
     "документы",
+    "дедлайн",
     "заметка",
     "заметки",
     "по",
     "после",
+    "поручение",
     "про",
     "с",
+    "срок",
+}
+_PREFIX_PROJECT_LEADING_STOP_WORDS = {
+    "what",
+    "when",
+    "which",
+    "who",
+    "whose",
+    "какая",
+    "какие",
+    "какой",
+    "кто",
+    "чей",
+    "чья",
 }
 _PROJECT_HINTS = {
     "backend",
@@ -258,23 +497,51 @@ def event_participant_labels(text: str) -> tuple[str, ...]:
 def event_labels(text: str) -> tuple[str, ...]:
     labels: list[str] = []
     for match in _EVENT_PATTERN.finditer(text):
-        event = match.group(1).strip()
-        participant = (
-            _event_participant_in_phrase(match.group(0))
-            or _nearby_event_participant_before(
+        event = _display_event_type(match.group(1).strip())
+        event_tail_start = match.end(1)
+        normalized_event = normalize_anchor_key(event)
+        is_relocation = normalized_event in _RELOCATION_EVENT_KEYWORDS
+        is_activity = normalized_event in _ACTIVITY_EVENT_KEYWORDS
+        is_workflow = normalized_event in _WORKFLOW_EVENT_KEYWORDS
+        allow_direct_after = normalized_event in _DIRECT_AFTER_EVENT_KEYWORDS
+        prefix_participant = (
+            ""
+            if is_workflow
+            else _nearby_event_participant_before(
                 text,
                 match.start(),
                 event_keyword=event,
             )
-            or _nearby_event_participant(text, match.end())
         )
-        project = _event_project_in_phrase(match.group(0)) or _nearby_event_project(
-            text,
-            match.end(),
+        if is_activity:
+            participant = prefix_participant
+        elif is_workflow:
+            participant = ""
+        else:
+            participant = (
+                _event_participant_in_phrase(
+                    match.group(0),
+                    allow_origin_preps=not is_relocation,
+                )
+                or _nearby_event_participant(
+                    text,
+                    event_tail_start,
+                    allow_direct=allow_direct_after,
+                    allow_origin_preps=not is_relocation,
+                )
+                or prefix_participant
+            )
+        project = (
+            _event_project_in_phrase(match.group(0))
+            or _nearby_event_project(
+                text,
+                event_tail_start,
+            )
+            or (_nearby_event_project_before(text, match.start()) if is_workflow else "")
         )
         temporal = (
             match.group(2)
-            or _nearby_temporal_after(text, match.end())
+            or _nearby_temporal_after(text, event_tail_start)
             or _nearby_temporal_before(text, match.start())
         ).strip()
         label = " ".join(part for part in (event, participant, project, temporal) if part).strip()
@@ -329,6 +596,10 @@ def structured_event_metadata(
         metadata["event_temporal_phrase"] = components.temporal_phrase
     if components.temporal_hint_code:
         metadata["event_temporal_hint_code"] = components.temporal_hint_code
+        if components.temporal_hint_code.startswith("date_"):
+            metadata["event_date"] = components.temporal_hint_code.removeprefix("date_").replace(
+                "_", "-"
+            )
     if components.temporal_quantity is not None:
         metadata["event_temporal_quantity"] = components.temporal_quantity
     if components.temporal_unit:
@@ -449,8 +720,30 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
     normalized = normalize_anchor_key(phrase)
     if not normalized:
         return "", None, ""
+    if dates := date_tokens(phrase):
+        return dates[0], None, "date"
     if normalized in {"today", "сегодня"}:
         return "today", 0, "day"
+    if normalized in {
+        "this week",
+        "current week",
+        "earlier this week",
+        "на этой неделе",
+        "в эту неделю",
+        "эта неделя",
+    }:
+        return "this_week", 0, "week"
+    if normalized in {
+        "this quarter",
+        "current quarter",
+        "в этом квартале",
+        "этот квартал",
+    }:
+        return "this_quarter", 0, "quarter"
+    if normalized in {"this month", "current month", "в этом месяце", "этот месяц"}:
+        return "this_month", 0, "month"
+    if normalized in {"this year", "current year", "в этом году", "этот год"}:
+        return "this_year", 0, "year"
     if normalized in {"earlier today", "ранее сегодня"}:
         return "earlier_today", 0, "day"
     if normalized in {"this morning", "сегодня утром", "утром сегодня"}:
@@ -470,6 +763,42 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
     if normalized in {"tomorrow", "завтра"}:
         return "tomorrow", 1, "day"
     if normalized in {
+        "next week",
+        "upcoming week",
+        "following week",
+        "на следующей неделе",
+        "в следующую неделю",
+        "следующая неделя",
+    }:
+        return "next_week", 1, "week"
+    if normalized in {
+        "next month",
+        "upcoming month",
+        "following month",
+        "в следующем месяце",
+        "на следующий месяц",
+        "следующий месяц",
+    }:
+        return "next_month", 1, "month"
+    if normalized in {
+        "next quarter",
+        "upcoming quarter",
+        "following quarter",
+        "в следующем квартале",
+        "на следующий квартал",
+        "следующий квартал",
+    }:
+        return "next_quarter", 1, "quarter"
+    if normalized in {
+        "next year",
+        "upcoming year",
+        "following year",
+        "в следующем году",
+        "на следующий год",
+        "следующий год",
+    }:
+        return "next_year", 1, "year"
+    if normalized in {
         "last week",
         "previous week",
         "week ago",
@@ -480,6 +809,60 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
         "прошлую неделю",
     }:
         return "last_week", 1, "week"
+    if normalized in {"this weekend", "current weekend", "в эти выходные", "на этих выходных"}:
+        return "this_weekend", 0, "weekend"
+    if normalized in {
+        "last weekend",
+        "previous weekend",
+        "weekend ago",
+        "1 weekend ago",
+        "на прошлых выходных",
+        "прошлые выходные",
+        "прошлых выходных",
+    }:
+        return "last_weekend", 1, "weekend"
+    if weekday_match := re.match(r"(?:last|previous) (?P<weekday>[a-z]+)$", normalized):
+        weekday = weekday_match.group("weekday")
+        if weekday in {
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        }:
+            return f"last_{weekday}", 1, "weekday"
+    if normalized in {
+        "last month",
+        "previous month",
+        "month ago",
+        "1 month ago",
+        "месяц назад",
+        "в прошлом месяце",
+        "прошлый месяц",
+        "прошлом месяце",
+    }:
+        return "last_month", 1, "month"
+    if normalized in {
+        "last quarter",
+        "previous quarter",
+        "в прошлом квартале",
+        "прошлый квартал",
+        "прошлом квартале",
+    }:
+        return "last_quarter", 1, "quarter"
+    if normalized in {
+        "last year",
+        "previous year",
+        "year ago",
+        "1 year ago",
+        "год назад",
+        "в прошлом году",
+        "прошлый год",
+        "прошлом году",
+    }:
+        return "last_year", 1, "year"
     if normalized in {"an hour ago", "hour ago", "1 hour ago", "час назад"}:
         return "hours_ago", 1, "hour"
     if match := re.match(
@@ -487,16 +870,67 @@ def _temporal_hint_payload(phrase: str) -> tuple[str, int | None, str]:
         normalized,
     ):
         return "hours_ago", _temporal_count(match.group("count")), "hour"
-    if match := re.match(r"(?P<count>\d{1,3}) час(?:а|ов)? назад$", normalized):
-        return "hours_ago", int(match.group("count")), "hour"
-    if match := re.match(r"(?P<count>\d{1,3}) days? ago$", normalized):
-        return "days_ago", int(match.group("count")), "day"
-    if match := re.match(r"(?P<count>\d{1,3}) д(?:ень|ня|ней) назад$", normalized):
-        return "days_ago", int(match.group("count")), "day"
-    if match := re.match(r"(?P<count>\d{1,2}) weeks? ago$", normalized):
-        return "weeks_ago", int(match.group("count")), "week"
-    if match := re.match(r"(?P<count>\d{1,2}) недел[юи] назад$", normalized):
-        return "weeks_ago", int(match.group("count")), "week"
+    if match := re.match(
+        rf"(?P<count>\d{{1,3}}|{_RU_NUMBER_WORD}) час(?:а|ов)? назад$",
+        normalized,
+    ):
+        return "hours_ago", _temporal_count(match.group("count")), "hour"
+    if match := re.match(
+        rf"(?P<count>\d{{1,3}}|{_EN_NUMBER_WORD}) days? ago$",
+        normalized,
+    ):
+        return "days_ago", _temporal_count(match.group("count")), "day"
+    if match := re.match(
+        rf"(?P<count>\d{{1,3}}|{_RU_NUMBER_WORD}) д(?:ень|ня|ней) назад$",
+        normalized,
+    ):
+        return "days_ago", _temporal_count(match.group("count")), "day"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_EN_NUMBER_WORD}) weeks? ago$",
+        normalized,
+    ):
+        return "weeks_ago", _temporal_count(match.group("count")), "week"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) недел[юи] назад$",
+        normalized,
+    ):
+        return "weeks_ago", _temporal_count(match.group("count")), "week"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_EN_NUMBER_WORD}) weekends? ago$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_weekend" if count == 1 else "weekends_ago"), count, "weekend"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) выходн(?:ые|ых) назад$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_weekend" if count == 1 else "weekends_ago"), count, "weekend"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_EN_NUMBER_WORD}) months? ago$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_month" if count == 1 else "months_ago"), count, "month"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) месяц(?:а|ев)? назад$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_month" if count == 1 else "months_ago"), count, "month"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_EN_NUMBER_WORD}) years? ago$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_year" if count == 1 else "years_ago"), count, "year"
+    if match := re.match(
+        rf"(?P<count>\d{{1,2}}|{_RU_NUMBER_WORD}) (?:год(?:а)?|лет) назад$",
+        normalized,
+    ):
+        count = _temporal_count(match.group("count"))
+        return ("last_year" if count == 1 else "years_ago"), count, "year"
     return "relative_time", None, ""
 
 
@@ -512,44 +946,73 @@ def _nearby_temporal_after(text: str, start: int) -> str:
     return match.group(1) if match else ""
 
 
-def _nearby_event_participant(text: str, start: int) -> str:
+def _nearby_event_participant(
+    text: str,
+    start: int,
+    *,
+    allow_direct: bool = True,
+    allow_origin_preps: bool = True,
+) -> str:
     tail = _nearby_clause(text[start : start + 80])
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
-    match = _EVENT_PARTICIPANT_PATTERN.search(tail)
-    if match:
+    if match := _event_participant_match(tail, allow_origin_preps=allow_origin_preps):
         label = _display_person_label(match.group("label"))
         prep = match.group("prep")
-    else:
-        direct_match = _EVENT_DIRECT_PARTICIPANT_PATTERN.search(tail)
-        if not direct_match:
-            return ""
+    elif direct_match := _direct_event_participant_match(tail, allow_direct=allow_direct):
         label = _display_person_label(direct_match.group("label"))
         prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
+    else:
+        return ""
     if not _is_probable_person_label(label):
         return ""
     return f"{prep} {label}"
 
 
-def _event_participant_in_phrase(text: str) -> str:
+def _event_participant_in_phrase(
+    text: str,
+    *,
+    allow_origin_preps: bool = True,
+) -> str:
     if not (keyword_match := _EVENT_KEYWORD_PATTERN.search(text)):
         return ""
     tail = _nearby_clause(text[keyword_match.end() : keyword_match.end() + 80])
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
-    match = _EVENT_PARTICIPANT_PATTERN.search(tail)
-    if match:
+    if match := _event_participant_match(tail, allow_origin_preps=allow_origin_preps):
         label = _display_person_label(match.group("label"))
         prep = match.group("prep")
-    else:
-        direct_match = _EVENT_DIRECT_PARTICIPANT_PATTERN.search(tail)
-        if not direct_match:
-            return ""
+    elif direct_match := _direct_event_participant_match(tail):
         label = _display_person_label(direct_match.group("label"))
         prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
+    else:
+        return ""
     if not _is_probable_person_label(label):
         return ""
     return f"{prep} {label}"
+
+
+def _event_participant_match(
+    text: str,
+    *,
+    allow_origin_preps: bool,
+) -> re.Match[str] | None:
+    for match in _EVENT_PARTICIPANT_PATTERN.finditer(text):
+        prep = normalize_anchor_key(match.group("prep"))
+        if not allow_origin_preps and prep in {"from", "от"}:
+            continue
+        return match
+    return None
+
+
+def _direct_event_participant_match(
+    text: str,
+    *,
+    allow_direct: bool = True,
+) -> re.Match[str] | None:
+    if not allow_direct:
+        return None
+    return _EVENT_DIRECT_PARTICIPANT_PATTERN.search(text)
 
 
 def _nearby_event_project(text: str, start: int) -> str:
@@ -557,6 +1020,25 @@ def _nearby_event_project(text: str, start: int) -> str:
     if next_event := _EVENT_KEYWORD_PATTERN.search(tail):
         tail = tail[: next_event.start()]
     return _event_project_in_phrase(tail)
+
+
+def _nearby_event_project_before(text: str, end: int) -> str:
+    prefix = _nearby_clause_before(text[max(0, end - 100) : end])
+    match = _EVENT_PREFIX_PROJECT_PATTERN.search(prefix)
+    if not match:
+        return ""
+    label = _clean_prefix_project_label(match.group("label"))
+    if not _is_probable_event_project_label(label):
+        return ""
+    prep = "по" if re.search(r"[А-Яа-яЁё]", label) else "for"
+    return f"{prep} {label}"
+
+
+def _clean_prefix_project_label(label: str) -> str:
+    tokens = [token for token in label.split() if token.strip(".,:;()[]{}")]
+    while tokens and normalize_anchor_key(tokens[0]) in _PREFIX_PROJECT_LEADING_STOP_WORDS:
+        tokens.pop(0)
+    return _clean_project_label(" ".join(tokens))
 
 
 def _event_project_in_phrase(text: str) -> str:
@@ -578,6 +1060,9 @@ def _nearby_event_participant_before(
     prefix = _nearby_clause_before(text[max(0, end - 80) : end])
     if re.search(r"(?:project|проект)\s+[A-Za-zА-Яа-яЁё0-9][\w.-]*\s*$", prefix, re.IGNORECASE):
         return ""
+    subject = _event_interview_subject_participant_before(prefix, event_keyword=event_keyword)
+    if subject:
+        return subject
     match = _EVENT_PREFIX_PARTICIPANT_PATTERN.search(prefix)
     if not match:
         return ""
@@ -593,11 +1078,29 @@ def _nearby_event_participant_before(
     return f"{prep} {label}"
 
 
+def _event_interview_subject_participant_before(prefix: str, *, event_keyword: str) -> str:
+    if normalize_anchor_key(event_keyword) not in {"interview", "interviews"}:
+        return ""
+    matches = list(_EVENT_INTERVIEW_SUBJECT_PATTERN.finditer(prefix))
+    for match in reversed(matches):
+        label = _display_person_label(match.group("label"))
+        if not _is_probable_person_label(label):
+            continue
+        prep = "с" if re.search(r"[А-Яа-яЁё]", label) else "with"
+        return f"{prep} {label}"
+    return ""
+
+
 def _is_lowercase_person_token(value: str) -> bool:
     stripped = value.strip()
     if not stripped or stripped.startswith("@"):
         return False
     return bool(re.match(r"[a-zа-яё]", stripped))
+
+
+def _display_event_type(raw: str) -> str:
+    normalized = normalize_anchor_key(raw)
+    return _EVENT_DISPLAY_NORMALIZATIONS.get(normalized, raw)
 
 
 def _nearby_temporal_before(text: str, end: int) -> str:
@@ -673,6 +1176,8 @@ def _clean_project_label(label: str) -> str:
         normalized = normalize_anchor_key(token)
         if not normalized:
             continue
+        if index == 0 and normalized in _PROJECT_LABEL_STOP_WORDS:
+            return ""
         if index > 0 and (
             normalized in _PROJECT_LABEL_STOP_WORDS
             or not _looks_like_project_label_continuation(token)

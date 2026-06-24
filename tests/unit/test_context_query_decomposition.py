@@ -24,6 +24,23 @@ def test_query_decomposition_splits_compound_event_artifact_query() -> None:
     assert plan.diagnostics()["query_decomposition_status"] == "available"
 
 
+def test_query_decomposition_keeps_compound_person_clauses_separate() -> None:
+    plan = build_query_decomposition_plan(
+        "What did Alex say about Atlas, and what did Maria decide?"
+    )
+
+    clause_queries = [
+        item.query.casefold()
+        for item in plan.decompositions
+        if item.reason == "decomposition_clause"
+    ]
+
+    assert "what did alex say about atlas" in clause_queries
+    assert "what did maria decide" in clause_queries
+    assert not any(query.startswith("maria what did alex") for query in clause_queries)
+    assert not any(query.startswith("alex and what did maria") for query in clause_queries)
+
+
 def test_query_decomposition_handles_russian_event_artifact_query() -> None:
     plan = build_query_decomposition_plan(
         "Что изменилось после созвона с алексом по Атласу и что было на скриншоте?"
@@ -35,50 +52,196 @@ def test_query_decomposition_handles_russian_event_artifact_query() -> None:
     assert any("artifact file screenshot image video audio" in query for query in queries)
 
 
+def test_query_decomposition_treats_attachments_as_artifacts() -> None:
+    english = build_query_decomposition_plan("Find the Atlas attachment recording")
+    russian = build_query_decomposition_plan("Найди вложение с записью по Атласу")
+
+    assert "decomposition_artifact_evidence" in {item.reason for item in english.decompositions}
+    assert "decomposition_artifact_evidence" in {item.reason for item in russian.decompositions}
+
+
 def test_query_decomposition_expands_relative_time_queries() -> None:
     plan = build_query_decomposition_plan("What did Alex say two hours ago?")
+    future_plan = build_query_decomposition_plan("What action items are due next week?")
 
     relative = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_relative_time"
+        item for item in plan.decompositions if item.reason == "decomposition_relative_time"
+    )
+    future_relative = next(
+        item for item in future_plan.decompositions if item.reason == "decomposition_relative_time"
     )
 
     assert "alex" in relative.query.casefold()
     assert "hours_ago" in relative.query
     assert "transcript notes meeting call" in relative.query
-    assert "decomposition_relative_time" in plan.diagnostics()[
-        "query_decomposition_reasons"
-    ]
+    assert "next_week" in future_relative.query
+    assert "decomposition_relative_time" in plan.diagnostics()["query_decomposition_reasons"]
+
+
+def test_query_decomposition_covers_conversational_event_wording() -> None:
+    english = build_query_decomposition_plan("What did Alex decide after the Atlas DM?")
+    talk = build_query_decomposition_plan("Who did Alex talk to about Project Atlas?")
+    meet = build_query_decomposition_plan("Who did Alex meet with about Atlas?")
+    russian = build_query_decomposition_plan(
+        "Что Мария решила после переписки с Сергеем по Атласу?"
+    )
+    russian_talk = build_query_decomposition_plan("С кем Алекс говорил про Atlas?")
+
+    english_context = next(
+        item for item in english.decompositions if item.reason == "decomposition_event_context"
+    )
+    english_sequence = next(
+        item for item in english.decompositions if item.reason == "decomposition_event_sequence"
+    )
+    talk_context = next(
+        item for item in talk.decompositions if item.reason == "decomposition_event_context"
+    )
+    meet_context = next(
+        item for item in meet.decompositions if item.reason == "decomposition_event_context"
+    )
+    russian_context = next(
+        item for item in russian.decompositions if item.reason == "decomposition_event_context"
+    )
+    russian_talk_context = next(
+        item
+        for item in russian_talk.decompositions
+        if item.reason == "decomposition_event_context"
+    )
+
+    assert "chat message dm transcript" in english_context.query
+    assert "meeting call chat message conversation event" in english_sequence.query
+    assert "alex" in talk_context.query.casefold()
+    assert "project" in talk_context.query.casefold()
+    assert "atlas" in talk_context.query.casefold()
+    assert "event conversation meeting call chat message" in talk_context.query
+    assert "atlas" in meet_context.query.casefold()
+    assert "сергеем" in russian_context.query.casefold()
+    assert "атлас" in russian_context.query.casefold()
+    assert "chat message dm transcript" in russian_context.query
+    assert "алекс" in russian_talk_context.query.casefold()
+    assert "atlas" in russian_talk_context.query.casefold()
+
+
+def test_query_decomposition_covers_relocation_life_event_origin() -> None:
+    english = build_query_decomposition_plan("Where did Caroline move from 4 years ago?")
+    russian = build_query_decomposition_plan("Откуда Мария переехала четыре года назад?")
+
+    english_context = next(
+        item for item in english.decompositions if item.reason == "decomposition_relocation_context"
+    )
+    russian_context = next(
+        item for item in russian.decompositions if item.reason == "decomposition_relocation_context"
+    )
+
+    assert english_context.query.casefold().startswith("caroline ")
+    assert "from origin previous home country city" in english_context.query
+    assert russian_context.query.casefold().startswith("мария ")
+    assert "from origin previous home country city" in russian_context.query
+
+
+def test_query_decomposition_does_not_add_origin_noise_for_relocation_destination() -> None:
+    english = build_query_decomposition_plan("Where did Alex move to?")
+    russian = build_query_decomposition_plan("Куда Мария переехала?")
+    english_reasons = {item.reason for item in english.decompositions}
+    russian_reasons = {item.reason for item in russian.decompositions}
+    english_destination = next(
+        item
+        for item in english.decompositions
+        if item.reason == "decomposition_relocation_destination"
+    )
+    russian_destination = next(
+        item
+        for item in russian.decompositions
+        if item.reason == "decomposition_relocation_destination"
+    )
+
+    assert "decomposition_relocation_destination" in english_reasons
+    assert "decomposition_relocation_destination" in russian_reasons
+    assert "decomposition_relocation_context" not in english_reasons
+    assert "decomposition_relocation_context" not in russian_reasons
+    assert english_destination.query.casefold().startswith("alex ")
+    assert "to destination new current home country city" in english_destination.query
+    assert russian_destination.query.casefold().startswith("мария ")
+    assert "to destination new current home country city" in russian_destination.query
+
+
+def test_query_decomposition_does_not_treat_book_suggestion_from_as_relocation() -> None:
+    plan = build_query_decomposition_plan("What book did Melanie read from Caroline's suggestion?")
+
+    reasons = {item.reason for item in plan.decompositions}
+    assert "decomposition_relocation_context" not in reasons
+    assert "decomposition_clause" not in reasons
+
+
+def test_query_decomposition_covers_activity_life_event_questions() -> None:
+    plan = build_query_decomposition_plan("What LGBTQ+ events has Caroline participated in?")
+
+    reasons = {item.reason for item in plan.decompositions}
+    event_context = next(
+        item for item in plan.decompositions if item.reason == "decomposition_event_context"
+    )
+
+    assert "decomposition_event_context" in reasons
+    assert "decomposition_lgbtq_pride_event" in reasons
+    assert "decomposition_lgbtq_support_group_event" in reasons
+    assert "decomposition_lgbtq_school_speech_event" in reasons
+    assert "decomposition_attribute_aggregation" in reasons
+    assert event_context.query.casefold().startswith("caroline ")
+    assert "event conversation meeting call chat message dm transcript" in event_context.query
+
+    pride = next(
+        item for item in plan.decompositions if item.reason == "decomposition_lgbtq_pride_event"
+    )
+    support = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_lgbtq_support_group_event"
+    )
+    school = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_lgbtq_school_speech_event"
+    )
+    assert "pride parade" in pride.query
+    assert "support group" in support.query
+    assert "school event speech" in school.query
 
 
 def test_query_decomposition_adds_after_event_sequence_query() -> None:
     plan = build_query_decomposition_plan("What did Alex decide after the Atlas call?")
 
     sequence = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_event_sequence"
+        item for item in plan.decompositions if item.reason == "decomposition_event_sequence"
     )
 
     assert "alex" in sequence.query.casefold()
     assert "atlas" in sequence.query.casefold()
     assert "after following later next timeline" in sequence.query
-    assert "meeting call conversation event" in sequence.query
+    assert "meeting call chat message conversation event" in sequence.query
+
+
+def test_query_decomposition_treats_since_event_as_after_sequence() -> None:
+    plan = build_query_decomposition_plan("What changed since the Atlas call?")
+
+    sequence = next(
+        item for item in plan.decompositions if item.reason == "decomposition_event_sequence"
+    )
+
+    assert "atlas" in sequence.query.casefold()
+    assert "after following later next timeline" in sequence.query
+    assert "meeting call chat message conversation event" in sequence.query
 
 
 def test_query_decomposition_adds_before_event_sequence_query() -> None:
     plan = build_query_decomposition_plan("What was Alex thinking before the review?")
 
     sequence = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_event_sequence"
+        item for item in plan.decompositions if item.reason == "decomposition_event_sequence"
     )
 
     assert sequence.query.casefold().startswith("alex ")
     assert "before earlier prior previous timeline" in sequence.query
-    assert "meeting call conversation event" in sequence.query
+    assert "meeting call chat message conversation event" in sequence.query
 
 
 def test_query_decomposition_is_bounded_and_deduplicated() -> None:
@@ -120,10 +283,7 @@ def test_best_query_relevance_uses_decomposed_artifact_query() -> None:
 
     _, reason, relevance = best_query_relevance(
         plan,
-        text=(
-            "Screenshot OCR detected text: Atlas launch deadline moved after "
-            "the Alex call."
-        ),
+        text=("Screenshot OCR detected text: Atlas launch deadline moved after the Alex call."),
     )
 
     assert reason == "decomposition_artifact_evidence"
@@ -149,9 +309,7 @@ def test_query_decomposition_adds_inference_support_query() -> None:
     plan = build_query_decomposition_plan("Would Melanie be considered an ally?")
 
     inference = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_inference_support"
+        item for item in plan.decompositions if item.reason == "decomposition_inference_support"
     )
 
     assert inference.query.casefold().startswith("melanie ")
@@ -159,15 +317,56 @@ def test_query_decomposition_adds_inference_support_query() -> None:
     assert "support supportive encouraging" in inference.query
 
 
-def test_query_decomposition_keeps_salient_terms_for_inference_queries() -> None:
-    plan = build_query_decomposition_plan(
-        "Would Caroline pursue writing as a career option?"
-    )
+def test_query_decomposition_adds_counterfactual_evidence_query() -> None:
+    plan = build_query_decomposition_plan("Would Caroline support Alex joining the pride group?")
 
-    inference = next(
+    counterfactual = next(
         item
         for item in plan.decompositions
-        if item.reason == "decomposition_inference_support"
+        if item.reason == "decomposition_counterfactual_evidence"
+    )
+
+    assert counterfactual.query.casefold().startswith("caroline ")
+    assert "alex" in counterfactual.query.casefold()
+    assert "counterfactual hypothetical would likely past behavior" in counterfactual.query
+    assert "preference trait supporting evidence" in counterfactual.query
+
+
+def test_query_decomposition_adds_support_role_fit_query() -> None:
+    plan = build_query_decomposition_plan("Would Caroline be a good mentor for Alex?")
+
+    support_role = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_support_role_fit"
+    )
+
+    assert support_role.query.casefold().startswith("caroline ")
+    assert "alex" in support_role.query.casefold()
+    assert "support role fit mentor mentoring guidance advice" in support_role.query
+    assert "listened comfort empathy patient helped" in support_role.query
+
+
+def test_query_decomposition_adds_absence_contrast_query() -> None:
+    plan = build_query_decomposition_plan(
+        "What pet did I mention named Luna instead of a hamster?"
+    )
+
+    contrast = next(
+        item for item in plan.decompositions if item.reason == "decomposition_absence_contrast"
+    )
+
+    assert "luna" in contrast.query.casefold()
+    assert "hamster" in contrast.query.casefold()
+    assert "mentioned did not mention absent instead rather than" in contrast.query
+    assert "pet cat dog hamster evidence" in contrast.query
+
+
+def test_query_decomposition_keeps_salient_terms_for_inference_queries() -> None:
+    plan = build_query_decomposition_plan("Would Caroline pursue writing as a career option?")
+
+    inference = next(
+        item for item in plan.decompositions if item.reason == "decomposition_inference_support"
     )
     current_goal = next(
         item
@@ -179,20 +378,202 @@ def test_query_decomposition_keeps_salient_terms_for_inference_queries() -> None
     assert "writing" in inference.query.casefold()
     assert "supporting evidence likely would considered" in inference.query
     assert "current goal future plan" in current_goal.query
+    assert "career option counseling counselor mental health jobs" in current_goal.query
+    assert "next steps figure out" in current_goal.query
+    assert "decomposition_support_role_fit" not in {
+        item.reason for item in plan.decompositions
+    }
+
+
+def test_query_decomposition_adds_support_role_for_helping_shelter_query() -> None:
+    plan = build_query_decomposition_plan("Would Maria be good helping at the shelter?")
+
+    support_role = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_support_role_fit"
+    )
+
+    assert support_role.query.casefold().startswith("maria ")
+    assert "shelter" in support_role.query.casefold()
+    assert "volunteer counseling counselor listened comfort empathy" in support_role.query
+
+
+def test_query_decomposition_does_not_turn_considered_attribute_into_goal_noise() -> None:
+    religious = build_query_decomposition_plan("Would Caroline be considered religious?")
+    membership = build_query_decomposition_plan(
+        "Would Melanie be considered a member of the LGBTQ community?"
+    )
+
+    for plan in (religious, membership):
+        reasons = {item.reason for item in plan.decompositions}
+
+        assert "decomposition_inference_support" in reasons
+        assert "decomposition_current_preference_or_goal" not in reasons
+        assert "decomposition_comparison_preference" not in reasons
 
 
 def test_query_decomposition_adds_attribute_aggregation_query() -> None:
     plan = build_query_decomposition_plan("What items has Melanie bought?")
 
     aggregation = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_attribute_aggregation"
+        item for item in plan.decompositions if item.reason == "decomposition_attribute_aggregation"
     )
 
     assert aggregation.query.casefold().startswith("melanie ")
     assert "items" in aggregation.query.casefold()
     assert "bought purchased got new" in aggregation.query
+
+
+def test_query_decomposition_adds_quantity_count_query() -> None:
+    plan = build_query_decomposition_plan("How many concerts has Alex attended?")
+
+    quantity = next(
+        item for item in plan.decompositions if item.reason == "decomposition_quantity_count"
+    )
+
+    assert quantity.query.casefold().startswith("alex ")
+    assert "concerts" in quantity.query.casefold()
+    assert "count number total quantity" in quantity.query
+    assert "once twice couple several multiple" in quantity.query
+
+
+def test_query_decomposition_adds_temporal_answer_query() -> None:
+    plan = build_query_decomposition_plan("When did I review the launch notes?")
+
+    temporal = next(
+        item for item in plan.decompositions if item.reason == "decomposition_temporal_answer"
+    )
+
+    assert "review" in temporal.query.casefold()
+    assert "launch" in temporal.query.casefold()
+    assert "when date day time session date weekday" in temporal.query
+
+
+def test_query_decomposition_adds_knowledge_update_current_query() -> None:
+    plan = build_query_decomposition_plan("What did I decide to use?")
+
+    update = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_knowledge_update_current"
+    )
+
+    assert "current latest active final decided chose selected switched" in update.query
+    assert "valid not stale superseded old" in update.query
+
+
+def test_query_decomposition_adds_knowledge_update_current_query_for_current_state() -> None:
+    english = build_query_decomposition_plan("What is the current Atlas provider?")
+    english_valid = build_query_decomposition_plan("Which Atlas provider is still valid?")
+    final_decision = build_query_decomposition_plan("What is the final Atlas decision?")
+    source_of_truth = build_query_decomposition_plan(
+        "What is the canonical source of truth for Atlas?"
+    )
+    chosen_provider = build_query_decomposition_plan("Which Atlas provider was chosen?")
+    russian_provider = build_query_decomposition_plan("Какой сейчас провайдер у Atlas?")
+    russian_final = build_query_decomposition_plan("Какое финальное решение по Atlas?")
+    russian_model = build_query_decomposition_plan("Какая текущая модель Atlas?")
+
+    plans = (
+        english,
+        english_valid,
+        final_decision,
+        source_of_truth,
+        chosen_provider,
+        russian_provider,
+        russian_final,
+        russian_model,
+    )
+
+    for plan in plans:
+        update = next(
+            item
+            for item in plan.decompositions
+            if item.reason == "decomposition_knowledge_update_current"
+        )
+        assert "current latest active final decided chose selected switched" in update.query
+        assert "valid not stale superseded old" in update.query
+
+
+def test_query_decomposition_adds_knowledge_update_previous_query() -> None:
+    plan = build_query_decomposition_plan("Which Atlas provider is no longer valid?")
+
+    previous = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_knowledge_update_previous"
+    )
+
+    assert "atlas" in previous.query.casefold()
+    assert "previous old stale outdated superseded" in previous.query
+    assert "no longer valid not current" in previous.query
+
+
+def test_query_decomposition_adds_state_transition_query() -> None:
+    switched = build_query_decomposition_plan("What did Atlas switch from LocalAI to?")
+    replaced = build_query_decomposition_plan("Which provider replaced LocalAI for Atlas?")
+    russian = build_query_decomposition_plan("Что заменило LocalAI в Атласе?")
+    switch_setting = build_query_decomposition_plan("Which switch setting did Alex mention?")
+
+    switched_transition = next(
+        item
+        for item in switched.decompositions
+        if item.reason == "decomposition_state_transition"
+    )
+    replaced_transition = next(
+        item
+        for item in replaced.decompositions
+        if item.reason == "decomposition_state_transition"
+    )
+    russian_transition = next(
+        item for item in russian.decompositions if item.reason == "decomposition_state_transition"
+    )
+
+    assert "atlas" in switched_transition.query.casefold()
+    assert "localai" in switched_transition.query.casefold()
+    assert "state transition changed switched replaced" in switched_transition.query
+    assert "previous old current new active final" in switched_transition.query
+    assert "provider" in replaced_transition.query.casefold()
+    assert "атласе" in russian_transition.query.casefold()
+    assert "decomposition_state_transition" not in {
+        item.reason for item in switch_setting.decompositions
+    }
+
+
+def test_query_decomposition_adds_commonality_query_for_two_people() -> None:
+    plan = build_query_decomposition_plan(
+        "What hobbies do Caroline and Melanie have in common?"
+    )
+
+    commonality = next(
+        item for item in plan.decompositions if item.reason == "decomposition_commonality"
+    )
+
+    assert "caroline" in commonality.query.casefold()
+    assert "melanie" in commonality.query.casefold()
+    assert "common shared both mutual" in commonality.query
+    assert "interests hobbies activities" in commonality.query
+
+
+def test_query_decomposition_adds_russian_commonality_query_for_two_people() -> None:
+    plan = build_query_decomposition_plan("Что Алиса и Мария обе любят?")
+
+    commonality = next(
+        item for item in plan.decompositions if item.reason == "decomposition_commonality"
+    )
+
+    assert "алиса" in commonality.query.casefold()
+    assert "мария" in commonality.query.casefold()
+    assert "common shared both mutual" in commonality.query
+
+
+def test_query_decomposition_does_not_make_historical_decision_current() -> None:
+    plan = build_query_decomposition_plan("What did Alex decide after the Atlas call?")
+
+    assert "decomposition_knowledge_update_current" not in {
+        item.reason for item in plan.decompositions
+    }
 
 
 def test_query_decomposition_keeps_existing_activity_bridge_unshadowed() -> None:
@@ -207,14 +588,13 @@ def test_query_decomposition_keeps_existing_activity_bridge_unshadowed() -> None
         if item.reason == "decomposition_activity_participation"
     )
     assert activity.query.casefold().startswith("melanie ")
-    assert "painting swimming pottery camping" in activity.query
+    assert "painting swimming swim pottery class camping" in activity.query
     assert "family kids" in activity.query
+    assert "fam weekend unplug hang" in activity.query
 
 
 def test_query_decomposition_adds_current_goal_for_career_path_typo() -> None:
-    plan = build_query_decomposition_plan(
-        "What career path has Caroline decided to persue?"
-    )
+    plan = build_query_decomposition_plan("What career path has Caroline decided to persue?")
 
     current_goal = next(
         item
@@ -238,14 +618,10 @@ def test_query_decomposition_does_not_add_current_goal_noise_to_music_preference
 
 
 def test_query_decomposition_adds_evidence_reason_query() -> None:
-    plan = build_query_decomposition_plan(
-        "Why would Project Atlas be considered blocked?"
-    )
+    plan = build_query_decomposition_plan("Why would Project Atlas be considered blocked?")
 
     reason = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_evidence_reason"
+        item for item in plan.decompositions if item.reason == "decomposition_evidence_reason"
     )
 
     assert "project" in reason.query.casefold()
@@ -254,15 +630,43 @@ def test_query_decomposition_adds_evidence_reason_query() -> None:
     assert "source citation quote explanation" in reason.query
 
 
-def test_query_decomposition_adds_russian_evidence_reason_query() -> None:
-    plan = build_query_decomposition_plan(
-        "Почему Алекс считается владельцем проекта Атлас?"
+def test_query_decomposition_adds_gotcha_failure_query() -> None:
+    watch_out = build_query_decomposition_plan(
+        "What should I watch out for in Atlas deployment?"
+    )
+    went_wrong = build_query_decomposition_plan("What went wrong with Atlas Docker?")
+    russian = build_query_decomposition_plan("Какие подводные камни у Атласа?")
+    issue_number = build_query_decomposition_plan("Which issue number did Alex mention?")
+
+    watch_out_gotcha = next(
+        item
+        for item in watch_out.decompositions
+        if item.reason == "decomposition_gotcha_failure"
+    )
+    went_wrong_gotcha = next(
+        item
+        for item in went_wrong.decompositions
+        if item.reason == "decomposition_gotcha_failure"
+    )
+    russian_gotcha = next(
+        item for item in russian.decompositions if item.reason == "decomposition_gotcha_failure"
     )
 
+    assert "atlas" in watch_out_gotcha.query.casefold()
+    assert "gotcha pitfall caveat known issue" in watch_out_gotcha.query
+    assert "workaround root cause troubleshooting" in watch_out_gotcha.query
+    assert "docker" in went_wrong_gotcha.query.casefold()
+    assert "атласа" in russian_gotcha.query.casefold()
+    assert "decomposition_gotcha_failure" not in {
+        item.reason for item in issue_number.decompositions
+    }
+
+
+def test_query_decomposition_adds_russian_evidence_reason_query() -> None:
+    plan = build_query_decomposition_plan("Почему Алекс считается владельцем проекта Атлас?")
+
     reason = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_evidence_reason"
+        item for item in plan.decompositions if item.reason == "decomposition_evidence_reason"
     )
 
     assert "алекс" in reason.query.casefold()
@@ -274,9 +678,7 @@ def test_query_decomposition_adds_identity_attribute_query() -> None:
     plan = build_query_decomposition_plan("What is Caroline's identity?")
 
     identity = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_identity_attribute"
+        item for item in plan.decompositions if item.reason == "decomposition_identity_attribute"
     )
 
     assert identity.query.casefold().startswith("caroline ")
@@ -288,14 +690,127 @@ def test_query_decomposition_adds_relationship_status_query() -> None:
     plan = build_query_decomposition_plan("What is Caroline's relationship status?")
 
     relationship = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_relationship_status"
+        item for item in plan.decompositions if item.reason == "decomposition_relationship_status"
     )
 
     assert relationship.query.casefold().startswith("caroline ")
     assert "relationship status single parent" in relationship.query
     assert "dating breakup friends family mentors" in relationship.query
+
+
+def test_query_decomposition_adds_action_role_query() -> None:
+    plan = build_query_decomposition_plan("What did Alex promise Maria after the Atlas call?")
+    nominal_plan = build_query_decomposition_plan(
+        "What decision did Caroline make after the interview?"
+    )
+    requested_recipient_plan = build_query_decomposition_plan(
+        "Who did Caroline recommend Becoming Nicole to?"
+    )
+
+    action = next(
+        item for item in plan.decompositions if item.reason == "decomposition_action_role"
+    )
+    followup = next(
+        item for item in plan.decompositions if item.reason == "decomposition_followup_task"
+    )
+    nominal_action = next(
+        item
+        for item in nominal_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+    requested_recipient_action = next(
+        item
+        for item in requested_recipient_plan.decompositions
+        if item.reason == "decomposition_action_role"
+    )
+
+    assert "alex" in action.query.casefold()
+    assert "maria" in action.query.casefold()
+    assert "atlas" in action.query.casefold()
+    assert "actor recipient speaker" in action.query
+    assert "outcome commitment next step" in action.query
+    assert "owner responsible assignee commitment" in followup.query
+    assert "due date deadline" in followup.query
+    assert "caroline" in nominal_action.query.casefold()
+    assert "decision" in nominal_action.query.casefold()
+    assert "caroline" in requested_recipient_action.query.casefold()
+    assert "becoming" in requested_recipient_action.query.casefold()
+    assert "actor recipient speaker" in requested_recipient_action.query
+
+
+def test_query_decomposition_adds_deadline_commitment_query() -> None:
+    plan = build_query_decomposition_plan("When is the Atlas launch deadline after the call?")
+    overdue_plan = build_query_decomposition_plan("Which Atlas tasks are overdue?")
+
+    deadline = next(
+        item for item in plan.decompositions if item.reason == "decomposition_deadline_commitment"
+    )
+    overdue = next(
+        item
+        for item in overdue_plan.decompositions
+        if item.reason == "decomposition_deadline_commitment"
+    )
+
+    assert "atlas" in deadline.query.casefold()
+    assert "deadline due date target date" in deadline.query
+    assert "deliverable overdue upcoming commitment" in deadline.query
+    assert "atlas" in overdue.query.casefold()
+    assert "overdue upcoming commitment" in overdue.query
+
+
+def test_query_decomposition_adds_followup_task_query() -> None:
+    plan = build_query_decomposition_plan("What follow up tasks did Alex assign after Atlas?")
+    owner_plan = build_query_decomposition_plan("Who is responsible for the Atlas invoice?")
+    assigned_plan = build_query_decomposition_plan("Who is assigned to the Atlas invoice?")
+    need_plan = build_query_decomposition_plan("What does Alex need to do after Atlas?")
+    must_plan = build_query_decomposition_plan("What must Alex do after Atlas?")
+    supposed_plan = build_query_decomposition_plan("What is Alex supposed to do after Atlas?")
+    russian_need_plan = build_query_decomposition_plan("Что нужно сделать по Атласу?")
+
+    followup = next(
+        item for item in plan.decompositions if item.reason == "decomposition_followup_task"
+    )
+    owner_followup = next(
+        item for item in owner_plan.decompositions if item.reason == "decomposition_followup_task"
+    )
+    assigned_followup = next(
+        item
+        for item in assigned_plan.decompositions
+        if item.reason == "decomposition_followup_task"
+    )
+    need_followup = next(
+        item for item in need_plan.decompositions if item.reason == "decomposition_followup_task"
+    )
+    must_followup = next(
+        item for item in must_plan.decompositions if item.reason == "decomposition_followup_task"
+    )
+    supposed_followup = next(
+        item
+        for item in supposed_plan.decompositions
+        if item.reason == "decomposition_followup_task"
+    )
+    russian_need_followup = next(
+        item
+        for item in russian_need_plan.decompositions
+        if item.reason == "decomposition_followup_task"
+    )
+
+    assert "alex" in followup.query.casefold()
+    assert "atlas" in followup.query.casefold()
+    assert "action item task todo follow up next step" in followup.query
+    assert "owner responsible assignee commitment" in followup.query
+    assert "atlas" in owner_followup.query.casefold()
+    assert "owner responsible assignee commitment" in owner_followup.query
+    assert "atlas" in assigned_followup.query.casefold()
+    assert "owner responsible assignee commitment" in assigned_followup.query
+    assert "atlas" in need_followup.query.casefold()
+    assert "owner responsible assignee commitment" in need_followup.query
+    assert "atlas" in must_followup.query.casefold()
+    assert "owner responsible assignee commitment" in must_followup.query
+    assert "atlas" in supposed_followup.query.casefold()
+    assert "owner responsible assignee commitment" in supposed_followup.query
+    assert "атлас" in russian_need_followup.query.casefold()
+    assert "owner responsible assignee commitment" in russian_need_followup.query
 
 
 def test_best_query_relevance_uses_identity_attribute_decomposition() -> None:
@@ -334,9 +849,7 @@ def test_query_decomposition_adds_comparison_preference_query() -> None:
     )
 
     comparison = next(
-        item
-        for item in plan.decompositions
-        if item.reason == "decomposition_comparison_preference"
+        item for item in plan.decompositions if item.reason == "decomposition_comparison_preference"
     )
 
     assert comparison.query.casefold().startswith("melanie ")
@@ -354,6 +867,144 @@ def test_best_query_relevance_uses_inference_support_decomposition() -> None:
 
     assert reason in {"ally_support_bridge", "decomposition_inference_support"}
     assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_counterfactual_evidence_decomposition() -> None:
+    plan = build_query_expansion_plan("Would Caroline support Alex joining the pride group?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline's past behavior shows she is supportive and encouraging. "
+            "She mentioned pride groups, acceptance, and helping Alex feel welcome."
+        ),
+    )
+
+    assert reason == "decomposition_counterfactual_evidence"
+    assert relevance.distinctive_term_hits >= 3
+
+
+def test_best_query_relevance_uses_absence_contrast_decomposition() -> None:
+    plan = build_query_expansion_plan("What pet did I mention named Luna instead of a hamster?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="My cat Luna needs a new carrier.",
+    )
+
+    assert reason == "decomposition_absence_contrast"
+    assert relevance.unique_term_hits >= 2
+
+
+def test_best_query_relevance_uses_quantity_count_decomposition() -> None:
+    plan = build_query_expansion_plan("How many concerts has Alex attended?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="D8:4 Alex attended three concerts this year and went twice with Maria.",
+    )
+
+    assert reason == "decomposition_quantity_count"
+    assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_temporal_answer_decomposition() -> None:
+    plan = build_query_expansion_plan("When did I review the launch notes?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "temporal_session date: 2023/05/30 (Tue) 18:00\n"
+            "user: I reviewed the launch notes."
+        ),
+    )
+
+    assert reason == "decomposition_temporal_answer"
+    assert relevance.unique_term_hits >= 5
+
+
+def test_best_query_relevance_uses_knowledge_update_current_decomposition() -> None:
+    plan = build_query_expansion_plan("Which provider did I decide to use?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "I switched away from Pinecone. Qdrant is the current retrieval "
+            "provider I selected."
+        ),
+    )
+
+    assert reason in {
+        "current_recommendation_bridge",
+        "decomposition_knowledge_update_current",
+    }
+    assert relevance.unique_term_hits >= 5
+
+
+def test_best_query_relevance_uses_current_state_knowledge_update_decomposition() -> None:
+    plan = build_query_expansion_plan("What is the current Atlas provider?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="Atlas selected provider remains valid, active, and current: OpenAI.",
+    )
+
+    assert reason in {
+        "current_state_temporal_bridge",
+        "decomposition_knowledge_update_current",
+    }
+    assert relevance.distinctive_term_hits >= 4
+
+
+def test_best_query_relevance_uses_final_decision_knowledge_update_decomposition() -> None:
+    plan = build_query_expansion_plan("What is the final Atlas decision?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="Atlas final source of truth: OpenAI is the selected active provider.",
+    )
+
+    assert reason in {
+        "current_state_temporal_bridge",
+        "decomposition_knowledge_update_current",
+    }
+    assert relevance.distinctive_term_hits >= 6
+
+
+def test_best_query_relevance_uses_knowledge_update_previous_decomposition() -> None:
+    plan = build_query_expansion_plan("Which Atlas provider is no longer valid?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Atlas used LocalAI before, but it is no longer valid and was "
+            "replaced by the current provider."
+        ),
+    )
+
+    assert reason in {
+        "decomposition_knowledge_update_previous",
+        "stale_state_temporal_bridge",
+    }
+    assert relevance.unique_term_hits >= 5
+
+
+def test_best_query_relevance_uses_commonality_decomposition() -> None:
+    plan = build_query_expansion_plan("What hobbies do Caroline and Melanie have in common?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Caroline and Melanie share camping and painting as common hobbies "
+            "they both enjoy."
+        ),
+    )
+
+    assert reason in {
+        "commonality_interest_bridge",
+        "decomposition_commonality",
+    }
+    assert relevance.unique_term_hits >= 5
 
 
 def test_best_query_relevance_uses_evidence_reason_decomposition() -> None:

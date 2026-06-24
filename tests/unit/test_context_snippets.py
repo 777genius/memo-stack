@@ -1,3 +1,7 @@
+from infinity_context_core.application.context_query_expansion import (
+    build_query_expansion_plan,
+)
+from infinity_context_core.application.context_ranking import best_query_relevance
 from infinity_context_core.application.context_snippets import (
     query_focused_snippet,
     source_refs_with_query_snippet,
@@ -93,6 +97,129 @@ def test_query_focused_snippet_preserves_long_structured_evidence_prefix() -> No
     assert "meteor shower during a camping trip" in snippet.text
 
 
+def test_query_focused_snippet_keeps_bounded_previous_structured_turns() -> None:
+    text = "\n".join(
+        [
+            "D4:3 Caroline: This necklace is from my grandma in Sweden and "
+            "reminds me of my roots.",
+            "D4:4 Melanie: That's gorgeous. Got any other treasured objects?",
+            "D4:5 Caroline: A friend made a bowl for my 18th birthday ten years ago.",
+            "D4:6 Melanie: That sounds great.",
+        ]
+    )
+
+    snippet = query_focused_snippet(
+        query="How long ago was Caroline's 18th birthday?",
+        text=text,
+        window_chars=90,
+    )
+
+    assert snippet is not None
+    assert "D4:3 Caroline:" in snippet.text
+    assert "Sweden" in snippet.text
+    assert "D4:5 Caroline:" in snippet.text
+
+
+def test_query_focused_snippet_keeps_inline_dialogue_marker_window() -> None:
+    text = (
+        "LoCoMo conv-26 session_4 D4:3 Caroline: This necklace is from my "
+        "grandma in Sweden and reminds me of my roots. D4:4 Melanie: That's "
+        "gorgeous. Got any other treasured objects? D4:5 Caroline: A friend "
+        "made a bowl for my 18th birthday ten years ago. D4:6 Melanie: That "
+        "sounds great."
+    )
+
+    snippet = query_focused_snippet(
+        query="How long ago was Caroline's 18th birthday?",
+        text=text,
+        window_chars=90,
+    )
+
+    assert snippet is not None
+    assert "D4:3 Caroline:" in snippet.text
+    assert "Sweden" in snippet.text
+    assert "D4:5 Caroline:" in snippet.text
+
+
+def test_query_focused_snippet_preserves_truncated_inline_following_markers() -> None:
+    text = (
+        "LoCoMo conv-42 session_14 D14:15 Joanna: Sounds like fun! "
+        "D14:16 Nate: They asked for gaming tips, so I said I could help. "
+        "D14:17 Joanna: Good on you for helping strangers out. "
+        "D14:18 Nate: Do you have any plans for the weekend? "
+        "D14:19 Joanna: Yep, I'm hiking with some buddies this weekend. "
+        "We're checking out a new trail with a rad waterfall. Can't wait! "
+        "Do you have any fun plans? "
+        "D14:20 Nate: Sounds great! "
+        + "I'm organizing a gaming party with friends and teammates. " * 12
+        + "D14:21 Joanna: Oh? Are you going to invite your tournament friends? "
+        "D14:22 Nate: Definitely. "
+    )
+
+    snippet = query_focused_snippet(
+        query="How many hikes has Joanna been on?",
+        text=text,
+        window_chars=320,
+    )
+
+    assert snippet is not None
+    assert "hiking with some buddies" in snippet.text
+    assert "D14:21" in snippet.text
+    assert len(snippet.text) <= 640
+
+
+def test_query_focused_snippet_preserves_truncated_structured_following_markers() -> None:
+    text = "\n".join(
+        [
+            "D14:15 Joanna: Sounds like fun! It's good to have friends.",
+            "D14:16 Nate: They asked for gaming tips, so I said I could help.",
+            "D14:17 Joanna: Good on you for helping strangers out.",
+            "D14:18 Nate: Do you have any plans for the weekend?",
+            (
+                "D14:19 Joanna: Yep, I'm hiking with some buddies this weekend. "
+                "We're checking out a new trail with a rad waterfall. Can't wait!"
+            ),
+            "D14:20 Nate: Sounds great! "
+            + "I'm organizing a gaming party with friends and teammates. " * 12,
+            "D14:21 Joanna: Oh? Are you going to invite your tournament friends?",
+            "D14:22 Nate: Definitely.",
+        ]
+    )
+
+    snippet = query_focused_snippet(
+        query="How many hikes has Joanna been on?",
+        text=text,
+        window_chars=320,
+    )
+
+    assert snippet is not None
+    assert "hiking with some buddies" in snippet.text
+    assert "D14:21" in snippet.text
+    assert len(snippet.text) <= 640
+
+
+def test_query_focused_snippet_prefers_animal_care_facet_over_generic_career() -> None:
+    plan = build_query_expansion_plan("What alternative career might Nate consider after gaming?")
+    text = (
+        "session_5 date: today "
+        "D5:1 Nate: I worked hard on a game project and thought about what comes next. "
+        "D5:2 Joanna: That sounds like a career turning point. "
+        "D5:6 Nate: I'm drawn to turtles because they are calming. "
+        "D5:7 Joanna: Is taking care of them tough? "
+        "D5:8 Nate: No, just keep their area clean, feed them properly, "
+        "and make sure they get enough light. "
+        "D5:10 Nate: Pets bring joy and are cute companions."
+    )
+
+    query, reason, _ = best_query_relevance(plan, text=text)
+    snippet = query_focused_snippet(query=query, text=text)
+
+    assert reason == "animal_care_instruction_bridge"
+    assert snippet is not None
+    assert "D5:8 Nate:" in snippet.text
+    assert "feed them properly" in snippet.text
+
+
 def test_source_refs_with_query_snippet_preserves_location_metadata() -> None:
     source_ref = SourceRef(
         source_type="asset_extraction",
@@ -141,6 +268,38 @@ def test_source_refs_with_query_snippet_can_include_snippet_char_range() -> None
     assert enriched[0].char_end == snippet.char_end
     assert enriched[0].time_start_ms == 1200
     assert enriched[0].time_end_ms == 5400
+
+
+def test_source_refs_with_query_snippet_keeps_secondary_quotes_bounded() -> None:
+    primary = SourceRef(
+        source_type="locomo_observation",
+        source_id="locomo:conv-26:session_7:observation",
+        chunk_id="chunk-1",
+        quote_preview="old observation quote",
+    )
+    secondary = SourceRef(
+        source_type="locomo_observation",
+        source_id="locomo:conv-26:session_7:D7:4:turn",
+        chunk_id="chunk-1",
+        quote_preview="D7:4 Melanie praises Caroline's drive.",
+        char_start=40,
+        char_end=90,
+    )
+    text = "Intro. D7:4 Melanie praises Caroline's drive to help. Outro."
+    snippet = query_focused_snippet(query="Caroline drive help", text=text)
+
+    enriched = source_refs_with_query_snippet(
+        (primary, secondary),
+        snippet,
+        include_char_range=True,
+    )
+
+    assert snippet is not None
+    assert enriched[0].quote_preview == snippet.text
+    assert enriched[0].char_start == snippet.char_start
+    assert enriched[1].quote_preview == "D7:4 Melanie praises Caroline's drive."
+    assert enriched[1].char_start == 40
+    assert enriched[1].source_id.endswith(":D7:4:turn")
 
 
 def test_query_focused_snippet_matches_russian_case_variants() -> None:

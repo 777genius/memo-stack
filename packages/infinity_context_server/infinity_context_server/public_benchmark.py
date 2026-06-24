@@ -27,6 +27,15 @@ from infinity_context_core.application.context_relevance import (
 )
 from infinity_context_core.reporting import with_report_provenance
 
+from infinity_context_server.public_benchmark_artifacts import (
+    validate_artifact_paths_do_not_overwrite_dataset as _validate_artifacts_not_dataset,
+)
+from infinity_context_server.public_benchmark_artifacts import (
+    validate_distinct_artifact_paths as _validate_distinct_artifact_paths,
+)
+from infinity_context_server.public_benchmark_artifacts import (
+    write_json_atomic as _write_json_atomic,
+)
 from infinity_context_server.public_benchmark_checkpoint import (
     BenchmarkSeedStats as _BenchmarkSeedStats,
 )
@@ -80,18 +89,89 @@ from infinity_context_server.public_benchmark_execution import (
 from infinity_context_server.public_benchmark_execution import (
     ordered_run_results as _ordered_run_results,
 )
+from infinity_context_server.public_benchmark_metrics import (
+    accuracy as _accuracy,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    benchmark_summaries as _benchmark_summaries,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    benchmark_summary_case_count as _benchmark_summary_case_count,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    bounded_progress_fields as _bounded_progress_fields,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    case_failures as _case_failures,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    case_payload as _case_payload,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    dataset_source_metadata as _dataset_source_metadata,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    flat_capability_accuracy as _flat_capability_accuracy,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    flat_capability_case_count as _flat_capability_case_count,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    flat_capability_failure_count as _flat_capability_failure_count,
+)
+from infinity_context_server.public_benchmark_metrics import (
+    run_metric_summary as _run_metric_summary,
+)
+from infinity_context_server.public_benchmark_selection import (
+    CASE_SELECTION_FIRST,
+    CASE_SELECTION_STRATIFIED,
+    SUPPORTED_CASE_SELECTION_STRATEGIES,
+)
+from infinity_context_server.public_benchmark_selection import (
+    case_selection_missing_capabilities as _case_selection_missing_capabilities,
+)
+from infinity_context_server.public_benchmark_selection import (
+    case_selection_missing_case_ids as _case_selection_missing_case_ids,
+)
+from infinity_context_server.public_benchmark_selection import (
+    missing_capability_failures as _missing_capability_failures,
+)
+from infinity_context_server.public_benchmark_selection import (
+    missing_case_id_failures as _missing_case_id_failures,
+)
+from infinity_context_server.public_benchmark_selection import (
+    normalize_requested_capabilities as _normalize_requested_capabilities,
+)
+from infinity_context_server.public_benchmark_selection import (
+    normalize_requested_case_ids as _normalize_requested_case_ids,
+)
+from infinity_context_server.public_benchmark_selection import (
+    select_cases as _select_cases,
+)
+
+__all__ = (
+    "BenchmarkDocumentInput",
+    "BenchmarkHttpClientPort",
+    "BenchmarkHttpResponsePort",
+    "BenchmarkMemoryInput",
+    "BenchmarkValidationError",
+    "CASE_SELECTION_FIRST",
+    "CASE_SELECTION_STRATIFIED",
+    "PublicBenchmarkCase",
+    "SUPPORTED_CASE_SELECTION_STRATEGIES",
+    "load_public_benchmark_case_count",
+    "load_public_benchmark_dataset_profile",
+    "run_public_memory_benchmark",
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
 LOCOMO_BENCHMARK_SUITE = "locomo"
 LONGMEMEVAL_BENCHMARK_SUITE = "longmemeval"
 SUPPORTED_BENCHMARKS = frozenset({LOCOMO_BENCHMARK_SUITE, LONGMEMEVAL_BENCHMARK_SUITE})
-CASE_SELECTION_FIRST = "first"
-CASE_SELECTION_STRATIFIED = "stratified"
-SUPPORTED_CASE_SELECTION_STRATEGIES = frozenset(
-    {CASE_SELECTION_FIRST, CASE_SELECTION_STRATIFIED}
-)
 _DEFAULT_MIN_ACCURACY = 0.85
+_DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
+_DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS = 30.0
 _PUBLIC_BENCHMARK_CONTEXT_TOKEN_BUDGET = 4000
 _PUBLIC_BENCHMARK_MAX_FACTS = 20
 _PUBLIC_BENCHMARK_MAX_CHUNKS = 50
@@ -170,13 +250,18 @@ class _BenchmarkProgress:
     progress_out: Path | None = None
     checkpoint_out: Path | None = None
     checkpoint_every_cases: int = 25
+    checkpoint_min_interval_seconds: float = _DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS
+    _event_index: int = field(default=0, init=False, repr=False)
+    _last_checkpoint_at: float = field(default=0.0, init=False, repr=False)
 
     def event(self, event_type: str, **fields: object) -> None:
         if self.progress_out is None:
             return
+        self._event_index += 1
         payload: dict[str, object] = {
             "schema_version": "public-benchmark-progress-v1",
             "event_type": event_type,
+            "event_index": self._event_index,
             "dataset_path_label": self.dataset_path.name,
             "dataset_hash": self.dataset_hash,
             "elapsed_ms": round((time.perf_counter() - self.started) * 1000, 2),
@@ -198,29 +283,46 @@ class _BenchmarkProgress:
     ) -> None:
         if self.checkpoint_out is None:
             return
+        processed_case_count = max(0, min(processed_case_count, self.total_case_count))
+        now = time.perf_counter()
+        last_checkpoint_at = self._last_checkpoint_at or self.started
         interval = max(1, self.checkpoint_every_cases)
-        if (
-            not force
-            and processed_case_count < self.total_case_count
-            and processed_case_count % interval != 0
-        ):
+        interval_seconds = max(0.0, float(self.checkpoint_min_interval_seconds))
+        checkpoint_reason = (
+            "forced"
+            if force
+            else self._checkpoint_due_reason(
+                processed_case_count=processed_case_count,
+                now=now,
+                interval=interval,
+                interval_seconds=interval_seconds,
+                last_checkpoint_at=last_checkpoint_at,
+            )
+        )
+        if checkpoint_reason is None:
             return
         payload = {
             "schema_version": "public-benchmark-checkpoint-v1",
-            "status": (
-                "completed"
-                if processed_case_count >= self.total_case_count
-                else "running"
-            ),
+            "status": ("completed" if processed_case_count >= self.total_case_count else "running"),
             "dataset_path_label": self.dataset_path.name,
             "dataset_hash": self.dataset_hash,
             "case_selection": dict(self.case_selection or {}),
+            "checkpoint_policy": {
+                "checkpoint_every_cases": interval,
+                "checkpoint_min_interval_seconds": interval_seconds,
+                "checkpoint_reason": checkpoint_reason,
+            },
             "progress": {
                 "processed_case_count": processed_case_count,
                 "total_case_count": self.total_case_count,
                 "processed_case_ratio": _ratio(
                     min(processed_case_count, self.total_case_count),
                     self.total_case_count,
+                ),
+                **_progress_timing_fields(
+                    processed_case_count=processed_case_count,
+                    total_case_count=self.total_case_count,
+                    started=self.started,
                 ),
                 "seeded_source_count": seeded_source_count,
                 "seed_source_attempt_count": (
@@ -230,13 +332,14 @@ class _BenchmarkProgress:
                     seed_stats.seed_cache_hit_count if seed_stats is not None else 0
                 ),
                 "failure_count": len(failures),
-                "elapsed_ms": round((time.perf_counter() - self.started) * 1000, 2),
+                "checkpoint_reason": checkpoint_reason,
+                "elapsed_since_checkpoint_ms": round(
+                    max(0.0, now - last_checkpoint_at) * 1000,
+                    2,
+                ),
+                "elapsed_ms": round((now - self.started) * 1000, 2),
             },
-            "metrics_so_far": {
-                "case_count": len(run_results),
-                "accuracy": _accuracy(run_results),
-                "latency_ms_p95": _p95([item.latency_ms for item in run_results]),
-            },
+            "metrics_so_far": _run_metric_summary(run_results),
             "cases": [_case_payload(item) for item in run_results],
             "failures": list(failures),
             "recent_cases": [_case_payload(item) for item in run_results[-20:]],
@@ -244,6 +347,26 @@ class _BenchmarkProgress:
         }
         self.checkpoint_out.parent.mkdir(parents=True, exist_ok=True)
         _write_json_atomic(self.checkpoint_out, payload)
+        self._last_checkpoint_at = now
+
+    def _checkpoint_due_reason(
+        self,
+        *,
+        processed_case_count: int,
+        now: float,
+        interval: int,
+        interval_seconds: float,
+        last_checkpoint_at: float,
+    ) -> str | None:
+        if processed_case_count >= self.total_case_count:
+            return "completed"
+        if processed_case_count <= 0:
+            return None
+        if processed_case_count % interval == 0:
+            return "case_interval"
+        if now - last_checkpoint_at >= interval_seconds:
+            return "time_interval"
+        return None
 
 
 class _TestClientBenchmarkAdapter:
@@ -283,17 +406,40 @@ def run_public_memory_benchmark(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    checkpoint_min_interval_seconds: float = _DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS,
     local_state_dir: Path | None = None,
     benchmark: str | None = None,
     min_accuracy: float = _DEFAULT_MIN_ACCURACY,
     max_cases: int | None = None,
     case_selection_strategy: str = CASE_SELECTION_FIRST,
+    case_ids: Sequence[str] | None = None,
+    capabilities: Sequence[str] | None = None,
     resume_from_checkpoint: bool = False,
     parallelism: int = 1,
+    request_timeout_seconds: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     """Run normalized public memory cases and optionally write a JSON report."""
 
+    _validate_distinct_artifact_paths(
+        error_factory=BenchmarkValidationError,
+        report_out=report_out,
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+    )
+    _validate_artifacts_not_dataset(
+        dataset_path=dataset_path,
+        error_factory=BenchmarkValidationError,
+        report_out=report_out,
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+    )
     started = time.perf_counter()
+    request_timeout_seconds = _normalize_request_timeout_seconds(request_timeout_seconds)
+    checkpoint_min_interval_seconds = _normalize_checkpoint_min_interval_seconds(
+        checkpoint_min_interval_seconds
+    )
+    requested_case_ids = _normalize_requested_case_ids(case_ids)
+    requested_capabilities = _normalize_requested_capabilities(capabilities)
     cases = _load_cases(dataset_path)
     if benchmark:
         canonical_benchmark = _normalize_benchmark_name(benchmark)
@@ -302,6 +448,10 @@ def run_public_memory_benchmark(
         cases,
         max_cases=max_cases,
         strategy=case_selection_strategy,
+        case_ids=requested_case_ids,
+        capabilities=requested_capabilities,
+        capability_resolver=_case_capability,
+        error_factory=BenchmarkValidationError,
     )
 
     duplicate_case_keys = _duplicate_case_keys(cases)
@@ -312,26 +462,43 @@ def run_public_memory_benchmark(
         )
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
         result["case_selection"] = case_selection
+        result["requested_case_ids"] = list(requested_case_ids)
+        result["requested_capabilities"] = list(requested_capabilities)
         _write_report(result, report_out)
         return result
 
     if not cases:
+        missing_case_ids = _case_selection_missing_case_ids(case_selection)
+        missing_capabilities = _case_selection_missing_capabilities(case_selection)
+        case_selection_failures = _missing_case_id_failures(missing_case_ids)
+        capability_selection_failures = _missing_capability_failures(missing_capabilities)
         result = {
             "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
             "status": "failed",
             "ok": False,
+            "benchmark_scope": "normalized_public_memory_retrieval",
+            "evaluation_mode": "retrieved_expected_terms",
+            "dataset_path_label": dataset_path.name,
+            "requested_case_ids": list(requested_case_ids),
+            "requested_capabilities": list(requested_capabilities),
             "checks": {
                 "dataset_loaded": False,
                 "case_count": False,
+                "requested_case_ids_found": not missing_case_ids,
+                "requested_capabilities_found": not missing_capabilities,
             },
             "metrics": {
                 "case_count": 0,
                 "benchmark_count": 0,
+                "missing_case_id_count": len(missing_case_ids),
+                "missing_capability_count": len(missing_capabilities),
                 "accuracy": 0.0,
             },
             "benchmarks": [],
             "cases": [],
-            "failures": [
+            "failures": case_selection_failures
+            + capability_selection_failures
+            or [
                 {
                     "case_id": "dataset",
                     "category": "setup",
@@ -349,11 +516,16 @@ def run_public_memory_benchmark(
         result = _setup_failure_result(reason="auth_token_required", case_count=len(cases))
         result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
         result["case_selection"] = case_selection
+        result["requested_case_ids"] = list(requested_case_ids)
+        result["requested_capabilities"] = list(requested_capabilities)
         _write_report(result, report_out)
         return result
 
     if api_url:
-        with httpx.Client(base_url=api_url.rstrip("/"), timeout=30.0) as http_client:
+        with httpx.Client(
+            base_url=api_url.rstrip("/"),
+            timeout=request_timeout_seconds,
+        ) as http_client:
             adapter: BenchmarkHttpClientPort = _HttpBenchmarkAdapter(http_client)
             result = _execute_cases(
                 adapter=adapter,
@@ -363,11 +535,15 @@ def run_public_memory_benchmark(
                 min_accuracy=min_accuracy,
                 started=started,
                 case_selection=case_selection,
+                requested_case_ids=requested_case_ids,
+                requested_capabilities=requested_capabilities,
                 progress_out=progress_out,
                 checkpoint_out=checkpoint_out,
                 checkpoint_every_cases=checkpoint_every_cases,
+                checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
                 resume_from_checkpoint=resume_from_checkpoint,
                 parallelism=parallelism,
+                request_timeout_seconds=request_timeout_seconds,
             )
     else:
         from fastapi.testclient import TestClient
@@ -403,14 +579,16 @@ def run_public_memory_benchmark(
                     min_accuracy=min_accuracy,
                     started=started,
                     case_selection=case_selection,
+                    requested_case_ids=requested_case_ids,
+                    requested_capabilities=requested_capabilities,
                     progress_out=progress_out,
                     checkpoint_out=checkpoint_out,
                     checkpoint_every_cases=checkpoint_every_cases,
-                    resume_from_checkpoint=(
-                        resume_from_checkpoint and local_state_dir is not None
-                    ),
+                    checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
+                    resume_from_checkpoint=(resume_from_checkpoint and local_state_dir is not None),
                     parallelism=parallelism,
                     force_sequential_reason="local_in_process_transport",
+                    request_timeout_seconds=request_timeout_seconds,
                 )
 
     result = _with_public_benchmark_provenance(result, dataset_path=dataset_path)
@@ -504,16 +682,35 @@ def _execute_cases(
     min_accuracy: float,
     started: float,
     case_selection: Mapping[str, object] | None = None,
+    requested_case_ids: Sequence[str] = (),
+    requested_capabilities: Sequence[str] = (),
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    checkpoint_min_interval_seconds: float = _DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS,
     resume_from_checkpoint: bool = False,
     parallelism: int = 1,
     force_sequential_reason: str | None = None,
+    request_timeout_seconds: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
+    _validate_distinct_artifact_paths(
+        error_factory=BenchmarkValidationError,
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+    )
+    _validate_artifacts_not_dataset(
+        dataset_path=dataset_path,
+        error_factory=BenchmarkValidationError,
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+    )
     requested_parallelism = _normalize_parallelism(
         parallelism,
         error_factory=BenchmarkValidationError,
+    )
+    request_timeout_seconds = _normalize_request_timeout_seconds(request_timeout_seconds)
+    checkpoint_min_interval_seconds = _normalize_checkpoint_min_interval_seconds(
+        checkpoint_min_interval_seconds
     )
     dataset_hash = _dataset_hash(dataset_path)
     scope_slug = f"public-benchmark-{dataset_hash[:16]}"
@@ -532,6 +729,7 @@ def _execute_cases(
         progress_out=progress_out,
         checkpoint_out=checkpoint_out,
         checkpoint_every_cases=checkpoint_every_cases,
+        checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
     )
 
     progress.event(
@@ -539,6 +737,8 @@ def _execute_cases(
         total_case_count=len(cases),
         benchmark_count=len({case.benchmark for case in cases}),
         requested_parallelism=requested_parallelism,
+        request_timeout_seconds=request_timeout_seconds,
+        checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
     )
     resumed_case_keys: set[tuple[str, str]] = set()
     resume_report: dict[str, object] = {
@@ -548,6 +748,9 @@ def _execute_cases(
         "resumed_case_count": 0,
         "selected_case_count": len(cases),
         "checkpoint_case_count": 0,
+        "checkpoint_success_case_count": 0,
+        "checkpoint_failed_case_count": 0,
+        "checkpoint_invalid_case_count": 0,
     }
     if resume_from_checkpoint:
         resume_load = load_checkpoint_resume_state_with_diagnostics(
@@ -563,6 +766,9 @@ def _execute_cases(
             "resumed_case_count": 0,
             "selected_case_count": resume_load.selected_case_count,
             "checkpoint_case_count": resume_load.checkpoint_case_count,
+            "checkpoint_success_case_count": resume_load.checkpoint_success_case_count,
+            "checkpoint_failed_case_count": resume_load.checkpoint_failed_case_count,
+            "checkpoint_invalid_case_count": resume_load.checkpoint_invalid_case_count,
         }
         resume_state = resume_load.state
         if resume_state is not None:
@@ -581,6 +787,9 @@ def _execute_cases(
                 reason=resume_load.reason,
                 resumed_case_count=len(resumed_case_keys),
                 checkpoint_case_count=resume_load.checkpoint_case_count,
+                checkpoint_success_case_count=resume_load.checkpoint_success_case_count,
+                checkpoint_failed_case_count=resume_load.checkpoint_failed_case_count,
+                checkpoint_invalid_case_count=resume_load.checkpoint_invalid_case_count,
                 seeded_source_count=len(seeded_source_keys),
                 seed_source_attempt_count=seed_stats.source_attempt_count,
                 seed_cache_hit_count=seed_stats.seed_cache_hit_count,
@@ -591,6 +800,9 @@ def _execute_cases(
                 reason=resume_load.reason,
                 selected_case_count=resume_load.selected_case_count,
                 checkpoint_case_count=resume_load.checkpoint_case_count,
+                checkpoint_success_case_count=resume_load.checkpoint_success_case_count,
+                checkpoint_failed_case_count=resume_load.checkpoint_failed_case_count,
+                checkpoint_invalid_case_count=resume_load.checkpoint_invalid_case_count,
             )
     pending_entries = tuple(
         _CaseExecutionEntry(case_index=case_index, case=case)
@@ -615,6 +827,8 @@ def _execute_cases(
         requested_parallelism=requested_parallelism,
         effective_parallelism=effective_parallelism,
         parallelism_degraded_reason=parallelism_degraded_reason,
+        request_timeout_seconds=request_timeout_seconds,
+        checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
     )
 
     def run_case_adapter(
@@ -675,8 +889,7 @@ def _execute_cases(
             )
     else:
         result_by_key = {
-            case_result_key(result.benchmark, result.case_id): result
-            for result in run_results
+            case_result_key(result.benchmark, result.case_id): result for result in run_results
         }
         execution_groups = _case_execution_groups(pending_entries)
         with concurrent.futures.ThreadPoolExecutor(
@@ -784,8 +997,12 @@ def _execute_cases(
     )
 
     benchmarks = _benchmark_summaries(run_results, min_accuracy=min_accuracy)
-    accuracy = _accuracy(run_results)
-    ok = bool(run_results) and all(item["ok"] is True for item in benchmarks)
+    missing_case_ids = _case_selection_missing_case_ids(case_selection)
+    missing_capabilities = _case_selection_missing_capabilities(case_selection)
+    case_selection_failures = _missing_case_id_failures(missing_case_ids)
+    capability_selection_failures = _missing_capability_failures(missing_capabilities)
+    benchmark_accuracy_ok = bool(run_results) and all(item["ok"] is True for item in benchmarks)
+    ok = benchmark_accuracy_ok and not case_selection_failures and not capability_selection_failures
     case_keys = tuple(f"{case.benchmark}:{case.case_id}" for case in cases)
     result: dict[str, object] = {
         "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
@@ -795,6 +1012,8 @@ def _execute_cases(
         "evaluation_mode": "retrieved_expected_terms",
         "dataset_path_label": dataset_path.name,
         "dataset_hash": dataset_hash,
+        "requested_case_ids": list(requested_case_ids),
+        "requested_capabilities": list(requested_capabilities),
         "case_selection": dict(case_selection or {}),
         "dataset_sources": {
             summary["name"]: _dataset_source_metadata(
@@ -810,16 +1029,20 @@ def _execute_cases(
             "dataset_loaded": True,
             "case_count": len(run_results) > 0,
             "unique_case_ids": True,
-            "minimum_accuracy_met": ok,
-            "no_request_failures": not failures,
+            "minimum_accuracy_met": benchmark_accuracy_ok,
+            "requested_case_ids_found": not missing_case_ids,
+            "requested_capabilities_found": not missing_capabilities,
+            "no_request_failures": (
+                not failures and not case_selection_failures and not capability_selection_failures
+            ),
         },
         "metrics": {
             "benchmark_count": len(benchmarks),
-            "case_count": len(run_results),
+            **_run_metric_summary(run_results),
             "unique_case_id_count": len(set(case_keys)),
             "duplicate_case_id_count": 0,
-            "accuracy": accuracy,
-            "latency_ms_p95": _p95([item.latency_ms for item in run_results]),
+            "missing_case_id_count": len(missing_case_ids),
+            "missing_capability_count": len(missing_capabilities),
             "seed_source_attempt_count": seed_stats.source_attempt_count,
             "seeded_source_count": len(seeded_source_keys),
             "seed_cache_hit_count": seed_stats.seed_cache_hit_count,
@@ -827,13 +1050,25 @@ def _execute_cases(
             "effective_parallelism": effective_parallelism,
             "parallelism_degraded": parallelism_degraded_reason is not None,
             "parallelism_degraded_reason": parallelism_degraded_reason,
+            "request_timeout_seconds": request_timeout_seconds,
+            "checkpoint_min_interval_seconds": checkpoint_min_interval_seconds,
             "resumed_case_count": len(resumed_case_keys),
             "pending_case_count": len(pending_entries),
+            **_progress_timing_fields(
+                processed_case_count=len(run_results),
+                total_case_count=len(cases),
+                started=started,
+            ),
         },
         "resume": resume_report,
         "benchmarks": benchmarks,
         "cases": [_case_payload(item) for item in run_results],
-        "failures": failures + _case_failures(run_results),
+        "failures": (
+            failures
+            + case_selection_failures
+            + capability_selection_failures
+            + _case_failures(run_results)
+        ),
         "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
     }
     for summary in benchmarks:
@@ -860,7 +1095,15 @@ def _emit_case_progress_snapshot(
         processed_case_count=processed_case_count,
         total_case_count=progress.total_case_count,
         processed_case_ratio=_ratio(processed_case_count, progress.total_case_count),
+        **_progress_timing_fields(
+            processed_case_count=processed_case_count,
+            total_case_count=progress.total_case_count,
+            started=progress.started,
+        ),
         accuracy_so_far=_accuracy(run_results),
+        capability_accuracy_so_far=_flat_capability_accuracy(run_results),
+        capability_case_count_so_far=_flat_capability_case_count(run_results),
+        capability_failure_count_so_far=_flat_capability_failure_count(run_results),
         failure_count=len(failures),
         seeded_source_count=seeded_source_count,
         seed_source_attempt_count=seed_stats.source_attempt_count,
@@ -869,101 +1112,18 @@ def _emit_case_progress_snapshot(
     )
 
 
-def _select_cases(
-    cases: Sequence[PublicBenchmarkCase],
-    *,
-    max_cases: int | None,
-    strategy: str,
-) -> tuple[tuple[PublicBenchmarkCase, ...], dict[str, object]]:
-    normalized_strategy = _normalize_case_selection_strategy(strategy)
-    available = tuple(cases)
-    if max_cases is not None and max_cases < 1:
-        raise BenchmarkValidationError("max_cases must be greater than zero")
-    if max_cases is None or max_cases >= len(available):
-        selected = available
-    elif normalized_strategy == CASE_SELECTION_FIRST:
-        selected = available[:max_cases]
-    else:
-        selected = _stratified_case_selection(available, max_cases=max_cases)
-    return selected, _case_selection_report(
-        available=available,
-        selected=selected,
-        max_cases=max_cases,
-        strategy=normalized_strategy,
-    )
+def _normalize_request_timeout_seconds(value: float) -> float:
+    if isinstance(value, bool) or value <= 0:
+        raise BenchmarkValidationError("request_timeout_seconds must be greater than zero")
+    return float(value)
 
 
-def _normalize_case_selection_strategy(value: str) -> str:
-    normalized = (value or "").strip().lower().replace("_", "-")
-    if normalized in {"", CASE_SELECTION_FIRST}:
-        return CASE_SELECTION_FIRST
-    if normalized == CASE_SELECTION_STRATIFIED:
-        return CASE_SELECTION_STRATIFIED
-    raise BenchmarkValidationError(f"Unsupported case selection strategy: {value}")
-
-
-def _stratified_case_selection(
-    cases: Sequence[PublicBenchmarkCase],
-    *,
-    max_cases: int,
-) -> tuple[PublicBenchmarkCase, ...]:
-    grouped: dict[str, list[PublicBenchmarkCase]] = defaultdict(list)
-    for case in cases:
-        grouped[_case_selection_group(case)].append(case)
-    selected: list[PublicBenchmarkCase] = []
-    round_index = 0
-    ordered_groups = sorted(grouped)
-    while len(selected) < max_cases:
-        added = False
-        for group in ordered_groups:
-            group_cases = grouped[group]
-            if round_index >= len(group_cases):
-                continue
-            selected.append(group_cases[round_index])
-            added = True
-            if len(selected) >= max_cases:
-                break
-        if not added:
-            break
-        round_index += 1
-    return tuple(selected)
-
-
-def _case_selection_report(
-    *,
-    available: Sequence[PublicBenchmarkCase],
-    selected: Sequence[PublicBenchmarkCase],
-    max_cases: int | None,
-    strategy: str,
-) -> dict[str, object]:
-    available_counts = _case_selection_counts(available)
-    selected_counts = _case_selection_counts(selected)
-    return {
-        "schema_version": "public-benchmark-case-selection-v1",
-        "strategy": strategy,
-        "requested_max_cases": max_cases,
-        "input_case_count": len(available),
-        "selected_case_count": len(selected),
-        "truncated": len(selected) < len(available),
-        "available_capability_count": len(available_counts),
-        "selected_capability_count": len(selected_counts),
-        "available_capability_counts": available_counts,
-        "selected_capability_counts": selected_counts,
-    }
-
-
-def _case_selection_counts(
-    cases: Sequence[PublicBenchmarkCase],
-) -> dict[str, int]:
-    counts: dict[str, int] = defaultdict(int)
-    for case in cases:
-        counts[_case_selection_group(case)] += 1
-    return dict(sorted(counts.items()))
-
-
-def _case_selection_group(case: PublicBenchmarkCase) -> str:
-    capability = _case_capability(case)
-    return f"{case.benchmark}:{capability or 'uncategorized'}"
+def _normalize_checkpoint_min_interval_seconds(value: float) -> float:
+    if isinstance(value, bool) or value < 0:
+        raise BenchmarkValidationError(
+            "checkpoint_min_interval_seconds must be greater than or equal to zero"
+        )
+    return float(value)
 
 
 def _run_case(
@@ -1031,10 +1191,7 @@ def _run_case(
         progress.event("source_seed_reused", **event_fields)
         reused_source_detail_event_count += 1
 
-    if (
-        corpus_metadata.reusable_by_identity
-        and corpus_identity in seeded_corpus_identities
-    ):
+    if corpus_metadata.reusable_by_identity and corpus_identity in seeded_corpus_identities:
         seed_stats.source_attempt_count += corpus_metadata.source_count
         seed_stats.seed_cache_hit_count += corpus_metadata.source_count
         if progress is not None:
@@ -1052,8 +1209,7 @@ def _run_case(
     else:
         for index, memory in enumerate(case.memories):
             source_id = safe_identifier(
-                memory.source_external_id
-                or f"{dataset_hash}:{case.case_id}:memory:{index}",
+                memory.source_external_id or f"{dataset_hash}:{case.case_id}:memory:{index}",
                 max_chars=160,
             )
             seed_key = (memory_scope_ref, thread_ref, "fact", source_id)
@@ -1116,8 +1272,7 @@ def _run_case(
 
         for index, document in enumerate(case.documents):
             source_id = safe_identifier(
-                document.source_external_id
-                or f"{dataset_hash}:{case.case_id}:doc:{index}",
+                document.source_external_id or f"{dataset_hash}:{case.case_id}:doc:{index}",
                 max_chars=240,
             )
             seed_key = (memory_scope_ref, thread_ref, "document", source_id)
@@ -1252,6 +1407,7 @@ def _run_case(
         leaked_terms=leaked,
         item_ids=item_ids,
         latency_ms=latency_ms,
+        question_preview=case.question[:240],
     )
 
 
@@ -1452,9 +1608,7 @@ def _official_locomo_supported_answer_terms(
     if not answer_terms:
         return ()
     searchable_text = _normalize_text("\n".join(document.text for document in documents))
-    return tuple(
-        term for term in answer_terms if _normalize_text(term) in searchable_text
-    )
+    return tuple(term for term in answer_terms if _normalize_text(term) in searchable_text)
 
 
 def _official_locomo_documents(
@@ -1526,9 +1680,7 @@ def _official_locomo_turn_documents(
                     title=f"LoCoMo {sample_id} {session_key} turn {turn.dia_id}",
                     text="\n".join(lines),
                     source_type="locomo_turn",
-                    source_external_id=(
-                        f"locomo:{sample_id}:{session_key}:{turn.dia_id}:turn"
-                    ),
+                    source_external_id=(f"locomo:{sample_id}:{session_key}:{turn.dia_id}:turn"),
                 )
             )
     return tuple(documents)
@@ -1563,8 +1715,11 @@ def _official_locomo_observation_documents(
                     actor_name=actor_name,
                     session_turns=session_turns,
                 )
-                evidence_label = " ".join(evidence_ids)
-                lines.append(f"{evidence_label} {actor_name}: {text}")
+                related_ids = tuple(item for item in evidence_ids if item != evidence_id)
+                related_label = (
+                    f" Related turns: {' '.join(related_ids)}." if related_ids else ""
+                )
+                lines.append(f"{evidence_id} {actor_name}: {text}{related_label}")
         if len(lines) <= 1:
             continue
         documents.append(
@@ -1620,13 +1775,33 @@ def _official_locomo_related_observation_evidence_ids(
             )
         )
     ranked.sort(key=lambda item: item[0])
+    adjacent_ids = _official_locomo_adjacent_evidence_ids(
+        explicit_turn=explicit_turn,
+        session_turns=session_turns,
+    )
     related_ids = tuple(turn.dia_id for _, turn in ranked[:3])
     session_order = {turn.dia_id: turn.turn_index for turn in session_turns}
     return tuple(
         sorted(
-            _unique((evidence_id, *related_ids)),
+            _unique((evidence_id, *adjacent_ids, *related_ids)),
             key=lambda item: session_order.get(item, 10_000),
         )
+    )
+
+
+def _official_locomo_adjacent_evidence_ids(
+    *,
+    explicit_turn: _OfficialLocomoTurn | None,
+    session_turns: tuple[_OfficialLocomoTurn, ...],
+) -> tuple[str, ...]:
+    if explicit_turn is None:
+        return ()
+    return tuple(
+        turn.dia_id
+        for turn in session_turns
+        if turn.dia_id != explicit_turn.dia_id
+        and turn.speaker.casefold().strip() == explicit_turn.speaker.casefold().strip()
+        and explicit_turn.turn_index - 1 <= turn.turn_index <= explicit_turn.turn_index + 2
     )
 
 
@@ -1681,10 +1856,12 @@ def _official_locomo_event_summary_documents(
     summaries = raw.get("event_summary")
     if not isinstance(summaries, Mapping):
         return ()
+    turns_by_session = _official_locomo_session_turns(raw)
     documents: list[BenchmarkDocumentInput] = []
     for key in sorted(summaries, key=_session_sort_key):
         value = summaries.get(key)
         session_key = key.removeprefix("events_")
+        session_turns = turns_by_session.get(session_key, ())
         lines = [f"{session_key} events"]
         if isinstance(value, Mapping):
             date = _first_str(value, "date", "session_date")
@@ -1697,7 +1874,14 @@ def _official_locomo_event_summary_documents(
                 for item in _as_list(raw_items):
                     text = _official_locomo_event_summary_text(item)
                     if text:
-                        lines.append(f"{actor_name}: {text}")
+                        evidence_ids = _official_locomo_related_event_summary_evidence_ids(
+                            text=text,
+                            actor_name=actor_name,
+                            session_turns=session_turns,
+                        )
+                        evidence_label = " ".join(evidence_ids)
+                        prefix = f"{evidence_label} " if evidence_label else ""
+                        lines.append(f"{prefix}{actor_name}: {text}")
         else:
             text = _official_locomo_event_summary_text(value)
             if text:
@@ -1713,6 +1897,41 @@ def _official_locomo_event_summary_documents(
             )
         )
     return tuple(documents)
+
+
+def _official_locomo_related_event_summary_evidence_ids(
+    *,
+    text: str,
+    actor_name: str,
+    session_turns: tuple[_OfficialLocomoTurn, ...],
+) -> tuple[str, ...]:
+    actor_key = actor_name.casefold().strip()
+    ranked: list[tuple[tuple[int, int, int, int], _OfficialLocomoTurn]] = []
+    for turn in session_turns:
+        if actor_key and turn.speaker.casefold().strip() != actor_key:
+            continue
+        relevance = score_query_relevance(query=text, text=turn.text)
+        if not _is_related_locomo_observation_turn(relevance):
+            continue
+        ranked.append(
+            (
+                (
+                    -relevance.distinctive_term_hits,
+                    -relevance.unique_term_hits,
+                    -relevance.capped_frequency_hits,
+                    turn.turn_index,
+                ),
+                turn,
+            )
+        )
+    ranked.sort(key=lambda item: item[0])
+    session_order = {turn.dia_id: turn.turn_index for turn in session_turns}
+    return tuple(
+        sorted(
+            _unique(turn.dia_id for _, turn in ranked[:4]),
+            key=lambda item: session_order.get(item, 10_000),
+        )
+    )
 
 
 def _official_locomo_event_summary_text(item: object) -> str:
@@ -1852,12 +2071,19 @@ def _normalize_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
     if not expected_terms:
         expected_terms = _terms(raw, "answer", "expected_answer", "ground_truth", "gold_answer")
     forbidden_terms = _terms(raw, "forbidden_terms", "forbidden", "must_not_retrieve")
+    is_abstention_case = _is_normalized_abstention_case(raw)
+    if is_abstention_case:
+        expected_terms = ()
     memories = _memory_inputs(raw)
     documents = _document_inputs(raw)
     if not question:
         raise BenchmarkValidationError(f"Case {case_id} is missing question")
-    if not expected_terms:
+    if not expected_terms and not is_abstention_case:
         raise BenchmarkValidationError(f"Case {case_id} is missing expected_terms or answer")
+    if is_abstention_case and not forbidden_terms:
+        raise BenchmarkValidationError(
+            f"Case {case_id} is missing forbidden_terms for abstention evaluation"
+        )
     if not memories and not documents:
         raise BenchmarkValidationError(f"Case {case_id} is missing memories/documents")
     return PublicBenchmarkCase(
@@ -1874,6 +2100,23 @@ def _normalize_case(raw: Mapping[str, object]) -> PublicBenchmarkCase:
         thread_external_ref=_first_str(raw, "thread_external_ref", "thread_id", "session_id"),
         metadata=_metadata(raw),
     )
+
+
+def _is_normalized_abstention_case(raw: Mapping[str, object]) -> bool:
+    qa = raw.get("qa")
+    return _mapping_requests_abstention(raw) or (
+        isinstance(qa, Mapping) and _mapping_requests_abstention(qa)
+    )
+
+
+def _mapping_requests_abstention(raw: Mapping[str, object]) -> bool:
+    for key in ("answerable", "is_answerable", "has_answer"):
+        if raw.get(key) is False:
+            return True
+    for key in ("abstention", "no_answer", "unanswerable", "hard_negative"):
+        if raw.get(key) is True:
+            return True
+    return False
 
 
 def _normalize_benchmark_name(value: object) -> str:
@@ -2022,104 +2265,40 @@ def _evidence_text(data: Mapping[str, object]) -> str:
     items = data.get("items")
     if isinstance(items, Sequence) and not isinstance(items, str | bytes):
         for item in items:
-            if isinstance(item, Mapping) and isinstance(item.get("text"), str):
+            if not isinstance(item, Mapping):
+                continue
+            if isinstance(item.get("text"), str):
                 texts.append(item["text"])
+            texts.extend(_item_source_ref_evidence_parts(item))
     return "\n".join(texts)
 
 
-def _benchmark_summaries(
-    run_results: Sequence[CaseRunResult],
-    *,
-    min_accuracy: float,
-) -> list[dict[str, object]]:
-    grouped: dict[str, list[CaseRunResult]] = defaultdict(list)
-    for item in run_results:
-        grouped[item.benchmark].append(item)
-    summaries: list[dict[str, object]] = []
-    for benchmark in sorted(grouped):
-        cases = grouped[benchmark]
-        accuracy = _accuracy(cases)
-        summaries.append(
-            {
-                "name": benchmark,
-                "suite": benchmark,
-                "ok": accuracy >= min_accuracy,
-                "metrics": {
-                    "accuracy": accuracy,
-                    "case_count": len(cases),
-                    "capability_count": len(
-                        {item.capability for item in cases if item.capability}
-                    ),
-                    "expected_recall": _ratio(
-                        sum(1 for item in cases if item.expected_ok),
-                        len(cases),
-                    ),
-                    "forbidden_leak_rate": _ratio(
-                        sum(1 for item in cases if not item.forbidden_ok),
-                        len(cases),
-                    ),
-                    "latency_ms_p95": _p95([item.latency_ms for item in cases]),
-                },
-                "capability_breakdown": _capability_breakdown(cases),
-            }
-        )
-    return summaries
+def _item_source_ref_evidence_parts(item: Mapping[str, object]) -> list[str]:
+    parts: list[str] = []
+    source_refs = item.get("source_refs")
+    if isinstance(source_refs, Sequence) and not isinstance(source_refs, str | bytes):
+        for ref in source_refs[:8]:
+            parts.extend(_source_ref_evidence_parts(ref))
+    citations = item.get("citations")
+    if isinstance(citations, Sequence) and not isinstance(citations, str | bytes):
+        for citation in citations[:8]:
+            if not isinstance(citation, Mapping):
+                continue
+            parts.extend(_source_ref_evidence_parts(citation.get("source")))
+    return parts
 
 
-def _case_payload(item: CaseRunResult) -> dict[str, object]:
-    return {
-        "benchmark": item.benchmark,
-        "case_id": item.case_id,
-        "capability": item.capability,
-        "status": "ok" if item.ok else "failed",
-        "expected_ok": item.expected_ok,
-        "forbidden_ok": item.forbidden_ok,
-        "missing_terms": list(item.missing_terms),
-        "leaked_terms": list(item.leaked_terms),
-        "item_ids": list(item.item_ids),
-        "latency_ms": item.latency_ms,
-    }
-
-
-def _case_failures(run_results: Sequence[CaseRunResult]) -> list[dict[str, object]]:
-    return [
-        {
-            "case_id": item.case_id,
-            "category": item.benchmark,
-            "capability": item.capability,
-            "reason": "missing_expected_terms" if item.missing_terms else "forbidden_terms_leaked",
-            "missing_terms": list(item.missing_terms),
-            "leaked_terms": list(item.leaked_terms),
-        }
-        for item in run_results
-        if not item.ok
-    ]
-
-
-def _accuracy(run_results: Sequence[CaseRunResult]) -> float:
-    return _ratio(sum(1 for item in run_results if item.ok), len(run_results))
-
-
-def _capability_breakdown(cases: Sequence[CaseRunResult]) -> dict[str, dict[str, object]]:
-    grouped: dict[str, list[CaseRunResult]] = defaultdict(list)
-    for item in cases:
-        if item.capability:
-            grouped[item.capability].append(item)
-    return {
-        capability: {
-            "case_count": len(items),
-            "accuracy": _accuracy(items),
-            "expected_recall": _ratio(
-                sum(1 for item in items if item.expected_ok),
-                len(items),
-            ),
-            "forbidden_leak_rate": _ratio(
-                sum(1 for item in items if not item.forbidden_ok),
-                len(items),
-            ),
-        }
-        for capability, items in sorted(grouped.items())
-    }
+def _source_ref_evidence_parts(ref: object) -> list[str]:
+    if not isinstance(ref, Mapping):
+        return []
+    parts: list[str] = []
+    for key in ("source_type", "source_id", "chunk_id", "quote_preview"):
+        value = ref.get(key)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                parts.append(text[:320])
+    return parts
 
 
 def _case_capability(case: PublicBenchmarkCase) -> str:
@@ -2168,81 +2347,35 @@ def _ratio(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 4)
 
 
-def _p95(values: Sequence[float]) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, int(round((len(ordered) - 1) * 0.95))))
-    return round(ordered[index], 2)
+def _progress_timing_fields(
+    *,
+    processed_case_count: int,
+    total_case_count: int,
+    started: float,
+) -> dict[str, float]:
+    if processed_case_count <= 0 or total_case_count <= 0:
+        return {
+            "cases_per_second": 0.0,
+            "estimated_remaining_ms": 0.0,
+        }
+    elapsed_seconds = max(0.001, time.perf_counter() - started)
+    cases_per_second = processed_case_count / elapsed_seconds
+    remaining_case_count = max(0, total_case_count - processed_case_count)
+    estimated_remaining_ms = (
+        remaining_case_count / cases_per_second * 1000 if cases_per_second > 0 else 0.0
+    )
+    return {
+        "cases_per_second": round(cases_per_second, 4),
+        "estimated_remaining_ms": round(estimated_remaining_ms, 2),
+    }
 
 
 def _dataset_hash(dataset_path: Path) -> str:
     return hashlib.sha256(dataset_path.read_bytes()).hexdigest()
 
 
-def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
-    tmp_path = path.with_name(f".{path.name}.tmp")
-    tmp_path.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    tmp_path.replace(path)
-
-
 def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
-
-
-def _bounded_progress_fields(fields: Mapping[str, object]) -> dict[str, object]:
-    bounded: dict[str, object] = {}
-    for key, value in fields.items():
-        if value is None:
-            continue
-        if isinstance(value, str):
-            bounded[key] = value[:240]
-        elif isinstance(value, bool | int | float):
-            bounded[key] = value
-        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
-            bounded[key] = [
-                item[:120] if isinstance(item, str) else item
-                for item in value[:20]
-                if isinstance(item, str | bool | int | float)
-            ]
-        elif isinstance(value, Mapping):
-            bounded[key] = {
-                str(map_key)[:80]: map_value[:120]
-                if isinstance(map_value, str)
-                else map_value
-                for map_key, map_value in list(value.items())[:20]
-                if isinstance(map_value, str | bool | int | float)
-            }
-    return bounded
-
-
-def _dataset_source_metadata(
-    *,
-    dataset_path: Path,
-    dataset_hash: str,
-    source_kind: str,
-    case_count: int | None,
-) -> dict[str, object]:
-    result: dict[str, object] = {
-        "source_kind": source_kind,
-        "path_label": dataset_path.name,
-        "sha256": dataset_hash,
-        "size_bytes": dataset_path.stat().st_size,
-    }
-    if isinstance(case_count, int):
-        result["case_count"] = case_count
-    return result
-
-
-def _benchmark_summary_case_count(summary: Mapping[str, object]) -> int | None:
-    metrics = summary.get("metrics")
-    if not isinstance(metrics, Mapping):
-        return None
-    case_count = metrics.get("case_count")
-    return case_count if isinstance(case_count, int) else None
 
 
 def _case_hash(raw: Mapping[str, object]) -> str:
@@ -2327,4 +2460,4 @@ def _write_report(result: dict[str, object], report_out: Path | None) -> None:
     if report_out is None:
         return
     report_out.parent.mkdir(parents=True, exist_ok=True)
-    report_out.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    _write_json_atomic(report_out, result)

@@ -1,7 +1,9 @@
 from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
+    is_chunk_candidate_relevance_sufficient,
     is_fact_candidate_relevance_sufficient,
+    is_query_relevance_specific_enough,
     is_query_relevance_sufficient,
     score_query_relevance,
 )
@@ -17,6 +19,33 @@ def test_query_relevance_matches_russian_case_variants() -> None:
     assert relevance.unique_term_hits >= 4
     assert relevance.hit_ratio >= 0.8
     assert relevance.score_boost > 0.08
+
+
+def test_query_relevance_matches_cross_language_relative_event_terms() -> None:
+    russian_query = "Что Алекс сказал час назад по проекту Атлас?"
+    english_text = "Alex said one hour ago that Project Atlas billing was approved."
+    english_query = "What did Alex say one hour ago about Project Atlas?"
+    russian_text = "Алекс сказал час назад, что проект Атлас согласован."
+    variants_by_raw = {term.raw: set(term.variants) for term in query_terms(russian_query)}
+
+    assert {"said", "told", "mentioned"}.issubset(variants_by_raw["сказал"])
+    assert "hour" in variants_by_raw["час"]
+    assert "ago" in variants_by_raw["назад"]
+    assert "project" in variants_by_raw["проекту"]
+
+    russian_to_english = score_query_relevance(
+        query=russian_query,
+        text=english_text,
+    )
+    english_to_russian = score_query_relevance(
+        query=english_query,
+        text=russian_text,
+    )
+
+    assert russian_to_english.unique_term_hits >= 6
+    assert russian_to_english.hit_ratio >= 0.8
+    assert english_to_russian.unique_term_hits >= 6
+    assert english_to_russian.hit_ratio >= 0.8
 
 
 def test_query_relevance_matches_english_plural_and_progressive_forms() -> None:
@@ -41,6 +70,39 @@ def test_query_terms_drop_question_stopwords_before_retrieval() -> None:
     )
 
 
+def test_query_terms_drop_command_stopwords_before_retrieval() -> None:
+    terms = query_terms("Пожалуйста найди вложение с документом по Project Atlas")
+    variants_by_raw = {term.raw: set(term.variants) for term in terms}
+
+    assert "пожалуйста" not in variants_by_raw
+    assert "найди" not in variants_by_raw
+    assert {"attachment", "file", "document", "artifact"}.issubset(variants_by_raw["вложение"])
+    assert "document" in variants_by_raw["документом"]
+    assert "project" in variants_by_raw["project"]
+
+
+def test_query_relevance_normalizes_absolute_date_tokens() -> None:
+    terms = query_terms("When is the Atlas deadline on 2026-08-15?")
+    variants_by_raw = {term.raw: set(term.variants) for term in terms}
+
+    correct = score_query_relevance(
+        query="Atlas launch deadline 2026-08-15",
+        text="Meeting notes: Atlas launch deadline is 2026-08-15.",
+    )
+    wrong_date = score_query_relevance(
+        query="Atlas launch deadline 2026-08-15",
+        text="Meeting notes: Atlas launch deadline is 2026-09-15.",
+    )
+    local_format = score_query_relevance(
+        query="Atlas launch deadline 2026-08-15",
+        text="Meeting notes: Atlas launch deadline is 15.08.2026.",
+    )
+
+    assert "date_2026_08_15" in variants_by_raw
+    assert correct.unique_term_hits > wrong_date.unique_term_hits
+    assert local_format.unique_term_hits == correct.unique_term_hits
+
+
 def test_query_relevance_expands_personal_identity_terms() -> None:
     relevance = score_query_relevance(
         query="What is Caroline's identity?",
@@ -52,13 +114,155 @@ def test_query_relevance_expands_personal_identity_terms() -> None:
     assert is_query_relevance_sufficient(relevance) is True
 
 
+def test_query_relevance_specific_enough_rejects_identity_only_match() -> None:
+    query = "What kind of art does Caroline make?"
+    identity_only = "D12:1 Caroline: A hiking comment upset her."
+    art_evidence = "D11:8 Caroline: Inclusivity and diversity in my art is important."
+
+    identity_relevance = score_query_relevance(query=query, text=identity_only)
+    art_relevance = score_query_relevance(query=query, text=art_evidence)
+
+    assert is_query_relevance_sufficient(identity_relevance) is True
+    assert (
+        is_query_relevance_specific_enough(
+            query=query,
+            text=identity_only,
+            relevance=identity_relevance,
+        )
+        is False
+    )
+    assert (
+        is_query_relevance_specific_enough(
+            query=query,
+            text=art_evidence,
+            relevance=art_relevance,
+        )
+        is True
+    )
+
+
+def test_query_relevance_specific_enough_rejects_lowercase_identity_only_match() -> None:
+    query = "what kind of art does caroline make?"
+    identity_only = "D12:1 Caroline: A hiking comment upset her."
+    art_evidence = "D11:8 Caroline: Inclusivity and diversity in my art is important."
+
+    identity_relevance = score_query_relevance(query=query, text=identity_only)
+    art_relevance = score_query_relevance(query=query, text=art_evidence)
+
+    assert (
+        is_query_relevance_specific_enough(
+            query=query,
+            text=identity_only,
+            relevance=identity_relevance,
+        )
+        is False
+    )
+    assert (
+        is_query_relevance_specific_enough(
+            query=query,
+            text=art_evidence,
+            relevance=art_relevance,
+        )
+        is True
+    )
+
+
+def test_chunk_candidate_relevance_accepts_exact_technical_marker_match() -> None:
+    query = "Что сказано про V1_DOCUMENT_SCOPE_MARKER?"
+    text = "V1_DOCUMENT_SCOPE_MARKER: импорт документа должен читаться из thread context."
+
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert relevance.distinctive_term_hits == 1
+    assert (
+        is_chunk_candidate_relevance_sufficient(
+            query=query,
+            text=text,
+            relevance=relevance,
+        )
+        is True
+    )
+
+
+def test_chunk_candidate_relevance_rejects_single_hit_long_no_candidate_query() -> None:
+    query = "unrelated yakutsk cooking recipe quantum aquarium warranty"
+    text = "Warranty renewal paperwork was archived for Project Atlas."
+
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert is_query_relevance_sufficient(relevance) is True
+    assert relevance.distinctive_term_hits == 1
+    assert (
+        is_chunk_candidate_relevance_sufficient(
+            query=query,
+            text=text,
+            relevance=relevance,
+        )
+        is False
+    )
+
+
+def test_chunk_candidate_relevance_keeps_multi_hit_long_query_evidence() -> None:
+    query = "full provider canary MCP smoke agent install doctor memory gates"
+    text = "Provider canary MCP smoke verified agent install doctor memory gates."
+
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert relevance.distinctive_term_hits >= 2
+    assert (
+        is_chunk_candidate_relevance_sufficient(
+            query=query,
+            text=text,
+            relevance=relevance,
+        )
+        is True
+    )
+
+
+def test_chunk_candidate_relevance_keeps_marriage_duration_evidence() -> None:
+    query = "Mel married husband wife spouse wedding anniversary years already time flies dress"
+    text = (
+        "D3:16 Melanie: 5 years already! Time flies - feels like just yesterday "
+        "I put this dress on. image caption: a bride in a wedding dress."
+    )
+
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert relevance.distinctive_term_hits >= 4
+    assert (
+        is_chunk_candidate_relevance_sufficient(
+            query=query,
+            text=text,
+            relevance=relevance,
+        )
+        is True
+    )
+
+
+def test_chunk_candidate_relevance_rejects_generic_family_duration_decoy() -> None:
+    query = "Mel married husband wife spouse wedding anniversary years already time flies dress"
+    text = (
+        "D10:12 Melanie: Every year we go to the beach with my family and make "
+        "summer memories with the kids."
+    )
+
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert relevance.distinctive_term_hits >= 1
+    assert (
+        is_chunk_candidate_relevance_sufficient(
+            query=query,
+            text=text,
+            relevance=relevance,
+        )
+        is False
+    )
+
+
 def test_query_relevance_expands_relationship_context_terms() -> None:
     relevance = score_query_relevance(
         query="What is Caroline's relationship status?",
-        text=(
-            "D2:14 Caroline: She is excited to adopt as a single parent after a "
-            "tough breakup."
-        ),
+        text=("D2:14 Caroline: She is excited to adopt as a single parent after a tough breakup."),
     )
 
     assert relevance.unique_term_hits >= 2
@@ -89,9 +293,7 @@ def test_query_relevance_expands_career_intent_to_jobs_and_counseling() -> None:
     )
 
     assert {"consider", "explore", "looking"}.issubset(variants_by_raw["pursue"])
-    assert {"job", "jobs", "work", "counseling"}.issubset(
-        variants_by_raw["career"]
-    )
+    assert {"job", "jobs", "work", "counseling"}.issubset(variants_by_raw["career"])
     assert relevance.unique_term_hits >= 3
     assert relevance.distinctive_term_hits >= 3
     assert is_query_relevance_sufficient(relevance) is True
@@ -129,8 +331,7 @@ def test_query_relevance_expands_adoption_intent_to_family_support() -> None:
     relevance = score_query_relevance(
         query="What does Melanie think about Caroline's decision to adopt?",
         text=(
-            "D2:15 Melanie: Creating a family for those kids is lovely. You'll "
-            "be an awesome mom."
+            "D2:15 Melanie: Creating a family for those kids is lovely. You'll be an awesome mom."
         ),
     )
 

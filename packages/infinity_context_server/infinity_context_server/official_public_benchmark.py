@@ -28,6 +28,7 @@ from infinity_context_server.public_benchmark import (
     CASE_SELECTION_STRATIFIED,
     run_public_memory_benchmark,
 )
+from infinity_context_server.public_benchmark_selection import normalize_requested_capabilities
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PUBLIC_MEMORY_BENCHMARK_SUITE = "public-memory-benchmark"
@@ -39,6 +40,8 @@ LONGMEMEVAL_URL = (
 DEFAULT_MAX_CASES = 2
 DEFAULT_MIN_ACCURACY = 0.5
 DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
+DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS = 30.0
 DEFAULT_CASE_SELECTION_STRATEGY = CASE_SELECTION_STRATIFIED
 
 
@@ -103,6 +106,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Case sampling policy for small public benchmark canaries.",
     )
     parser.add_argument(
+        "--case-id",
+        action="append",
+        default=_case_ids_from_env(),
+        help=(
+            "Run only matching benchmark case ids. Can be repeated or comma-separated; "
+            "prefixed ids like locomo:conv-26:qa:70 are supported."
+        ),
+    )
+    parser.add_argument(
+        "--capability",
+        action="append",
+        default=_capabilities_from_env(),
+        help=(
+            "Run only matching benchmark capabilities. Can be repeated or comma-separated; "
+            "values like temporal_reasoning or longmemeval:knowledge_update are supported."
+        ),
+    )
+    parser.add_argument(
         "--parallelism",
         type=int,
         default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_PARALLELISM", "1")),
@@ -110,6 +131,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Maximum parallel isolated cases per benchmark. Shared memory scopes "
             "automatically run sequentially to keep evidence ordering honest."
         ),
+    )
+    parser.add_argument(
+        "--request-timeout-seconds",
+        type=float,
+        default=float(
+            os.getenv(
+                "MEMORY_PUBLIC_BENCHMARK_REQUEST_TIMEOUT_SECONDS",
+                str(DEFAULT_REQUEST_TIMEOUT_SECONDS),
+            )
+        ),
+        help="HTTP request timeout for public benchmark API calls.",
     )
     parser.add_argument(
         "--api-url",
@@ -168,6 +200,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=int(os.getenv("MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES", "25")),
     )
     parser.add_argument(
+        "--checkpoint-min-interval-seconds",
+        type=float,
+        default=float(
+            os.getenv(
+                "MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_MIN_INTERVAL_SECONDS",
+                str(DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS),
+            )
+        ),
+        help=(
+            "Minimum elapsed seconds before writing a time-based checkpoint between "
+            "case-count checkpoints. Use 0 for every completed case."
+        ),
+    )
+    parser.add_argument(
         "--resume-from-checkpoint",
         action="store_true",
         default=_bool_env(os.getenv("MEMORY_PUBLIC_BENCHMARK_RESUME_FROM_CHECKPOINT")),
@@ -190,25 +236,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    result = run_official_public_benchmark_canary(
-        benchmark=args.benchmark,
-        max_cases=args.max_cases,
-        min_accuracy=args.min_accuracy,
-        competitive_floor=args.competitive_floor,
-        api_url=args.api_url,
-        auth_token=args.auth_token,
-        case_selection_strategy=args.case_selection_strategy,
-        locomo_dataset=args.locomo_dataset,
-        longmemeval_dataset=args.longmemeval_dataset,
-        download_timeout_seconds=args.download_timeout_seconds,
-        report_out=args.report_out,
-        progress_out=args.progress_out,
-        checkpoint_out=args.checkpoint_out,
-        checkpoint_every_cases=args.checkpoint_every_cases,
-        resume_from_checkpoint=args.resume_from_checkpoint,
-        local_state_dir=args.local_state_dir,
-        parallelism=args.parallelism,
-    )
+    started = time.perf_counter()
+    try:
+        result = run_official_public_benchmark_canary(
+            benchmark=args.benchmark,
+            max_cases=args.max_cases,
+            min_accuracy=args.min_accuracy,
+            competitive_floor=args.competitive_floor,
+            api_url=args.api_url,
+            auth_token=args.auth_token,
+            case_selection_strategy=args.case_selection_strategy,
+            case_ids=tuple(args.case_id or ()),
+            capabilities=tuple(args.capability or ()),
+            locomo_dataset=args.locomo_dataset,
+            longmemeval_dataset=args.longmemeval_dataset,
+            download_timeout_seconds=args.download_timeout_seconds,
+            report_out=args.report_out,
+            progress_out=args.progress_out,
+            checkpoint_out=args.checkpoint_out,
+            checkpoint_every_cases=args.checkpoint_every_cases,
+            checkpoint_min_interval_seconds=args.checkpoint_min_interval_seconds,
+            resume_from_checkpoint=args.resume_from_checkpoint,
+            local_state_dir=args.local_state_dir,
+            parallelism=args.parallelism,
+            request_timeout_seconds=args.request_timeout_seconds,
+        )
+    except KeyboardInterrupt:
+        result = _interrupted_cli_result(
+            args=args,
+            elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        result = with_report_provenance(
+            result,
+            generated_by="infinity_context_server.official_public_benchmark",
+            run_id=f"official-public-interrupted-{time.time_ns()}",
+            cwd=PROJECT_ROOT,
+        )
+        _write_report(result, args.report_out)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 130
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["ok"] else 1
 
@@ -222,6 +288,8 @@ def run_official_public_benchmark_canary(
     api_url: str | None = None,
     auth_token: str | None = None,
     case_selection_strategy: str = DEFAULT_CASE_SELECTION_STRATEGY,
+    case_ids: Sequence[str] = (),
+    capabilities: Sequence[str] = (),
     locomo_dataset: Path | None = None,
     longmemeval_dataset: Path | None = None,
     download_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -229,13 +297,17 @@ def run_official_public_benchmark_canary(
     progress_out: Path | None = None,
     checkpoint_out: Path | None = None,
     checkpoint_every_cases: int = 25,
+    checkpoint_min_interval_seconds: float = DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS,
     resume_from_checkpoint: bool = False,
     local_state_dir: Path | None = None,
     parallelism: int = 1,
+    request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     if max_cases < 1:
         raise ValueError("max_cases must be greater than zero")
     selected = _selected_benchmarks(benchmark)
+    requested_case_ids = _normalize_case_ids(case_ids)
+    requested_capabilities = normalize_requested_capabilities(capabilities)
     effective_progress_out = progress_out or _default_progress_out(report_out)
     effective_checkpoint_out = checkpoint_out or _default_checkpoint_out(report_out)
     run_id = f"official-public-{time.time_ns()}"
@@ -245,7 +317,20 @@ def run_official_public_benchmark_canary(
         reports: list[dict[str, object]] = []
         dataset_sources: dict[str, dict[str, object]] = {}
         run_policies: dict[str, dict[str, object]] = {}
+        case_id_routing: dict[str, dict[str, object]] = {}
         for name in selected:
+            benchmark_case_ids = _case_ids_for_benchmark(requested_case_ids, benchmark=name)
+            if requested_case_ids and not benchmark_case_ids:
+                case_id_routing[name] = _case_id_routing_report(
+                    requested_case_ids=benchmark_case_ids,
+                    skipped=True,
+                    reason="case_ids_target_other_benchmark",
+                )
+                continue
+            case_id_routing[name] = _case_id_routing_report(
+                requested_case_ids=benchmark_case_ids,
+                skipped=False,
+            )
             policy = _run_policy(
                 name=name,
                 requested_max_cases=max_cases,
@@ -268,6 +353,8 @@ def run_official_public_benchmark_canary(
                 max_cases=int(policy["max_cases"]),
                 min_accuracy=float(policy["min_accuracy"]),
                 case_selection_strategy=case_selection_strategy,
+                case_ids=benchmark_case_ids,
+                capabilities=requested_capabilities,
                 progress_out=effective_progress_out,
                 checkpoint_out=_benchmark_checkpoint_path(
                     effective_checkpoint_out,
@@ -275,10 +362,13 @@ def run_official_public_benchmark_canary(
                     split=len(selected) > 1,
                 ),
                 checkpoint_every_cases=checkpoint_every_cases,
+                checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
                 resume_from_checkpoint=resume_from_checkpoint,
                 local_state_dir=local_state_dir,
                 parallelism=parallelism,
+                request_timeout_seconds=request_timeout_seconds,
             )
+            report["_official_benchmark_name"] = name
             reports.append(report)
             dataset_sources[name] = _dataset_source_metadata(
                 name=name,
@@ -295,6 +385,10 @@ def run_official_public_benchmark_canary(
         competitive_floor=competitive_floor,
         run_policies=run_policies,
         case_selection_strategy=case_selection_strategy,
+        case_ids=requested_case_ids,
+        capabilities=requested_capabilities,
+        selected_benchmarks=selected,
+        case_id_routing=case_id_routing,
         api_url=api_url,
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
         progress_out=effective_progress_out,
@@ -317,6 +411,114 @@ def _selected_benchmarks(value: str) -> tuple[str, ...]:
     if normalized in OFFICIAL_DATASETS:
         return (normalized,)
     raise ValueError(f"Unsupported benchmark: {value}")
+
+
+def _interrupted_cli_result(
+    *,
+    args: argparse.Namespace,
+    elapsed_ms: float,
+) -> dict[str, object]:
+    progress_out = args.progress_out or _default_progress_out(args.report_out)
+    checkpoint_out = args.checkpoint_out or _default_checkpoint_out(args.report_out)
+    selected = _selected_benchmarks(args.benchmark)
+    return {
+        "suite": PUBLIC_MEMORY_BENCHMARK_SUITE,
+        "benchmark_scope": "official_public_memory_retrieval_canary",
+        "status": "interrupted",
+        "ok": False,
+        "interrupted": True,
+        "selected_benchmarks": list(selected),
+        "case_selection_strategy": args.case_selection_strategy,
+        "requested_max_cases": args.max_cases,
+        "requested_min_accuracy": args.min_accuracy,
+        "requested_capabilities": list(
+            normalize_requested_capabilities(args.capability or ())
+        ),
+        "competitive_floor_mode": args.competitive_floor,
+        "api_url": args.api_url,
+        "artifact_labels": {
+            "progress": progress_out.name if progress_out is not None else None,
+            "checkpoint": checkpoint_out.name if checkpoint_out is not None else None,
+        },
+        "checks": {
+            "interrupted": True,
+            "no_request_failures": False,
+        },
+        "metrics": {
+            "benchmark_count": 0,
+            "case_count": 0,
+            "accuracy": 0.0,
+        },
+        "benchmarks": [],
+        "cases": [],
+        "failures": [
+            {
+                "case_id": None,
+                "category": "setup",
+                "reason": "keyboard_interrupt",
+            }
+        ],
+        "elapsed_ms": elapsed_ms,
+    }
+
+
+def _case_ids_from_env() -> list[str]:
+    return list(_normalize_case_ids(os.getenv("MEMORY_PUBLIC_BENCHMARK_CASE_IDS") or ""))
+
+
+def _capabilities_from_env() -> list[str]:
+    return list(
+        normalize_requested_capabilities(
+            os.getenv("MEMORY_PUBLIC_BENCHMARK_CAPABILITIES") or ""
+        )
+    )
+
+
+def _normalize_case_ids(values: str | Sequence[str]) -> tuple[str, ...]:
+    raw_values = (values,) if isinstance(values, str) else tuple(values)
+    selected: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        for item in str(raw_value).split(","):
+            case_id = item.strip()
+            if not case_id or case_id in seen:
+                continue
+            selected.append(case_id)
+            seen.add(case_id)
+    return tuple(selected)
+
+
+def _case_ids_for_benchmark(
+    case_ids: Sequence[str],
+    *,
+    benchmark: str,
+) -> tuple[str, ...]:
+    normalized_benchmark = benchmark.strip().casefold()
+    selected: list[str] = []
+    for case_id in _normalize_case_ids(case_ids):
+        prefix, separator, _ = case_id.partition(":")
+        if separator and prefix.casefold() in OFFICIAL_DATASETS:
+            if prefix.casefold() == normalized_benchmark:
+                selected.append(case_id)
+            continue
+        selected.append(case_id)
+    return tuple(selected)
+
+
+def _case_id_routing_report(
+    *,
+    requested_case_ids: Sequence[str],
+    skipped: bool,
+    reason: str | None = None,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "requested_case_ids": list(requested_case_ids),
+        "requested_case_id_count": len(requested_case_ids),
+        "skipped": skipped,
+    }
+    if reason is not None:
+        report["reason"] = reason
+    return report
 
 
 def _run_policy(
@@ -371,6 +573,12 @@ def _benchmark_checkpoint_path(
     return checkpoint_out.with_name(f"{stem}.{benchmark}{suffix}")
 
 
+def _cases_per_second(*, case_count: int, elapsed_ms: float) -> float:
+    if case_count <= 0 or elapsed_ms <= 0:
+        return 0.0
+    return round(case_count / (elapsed_ms / 1000), 4)
+
+
 def _default_progress_out(report_out: Path | None) -> Path | None:
     if report_out is None:
         return None
@@ -406,6 +614,10 @@ def _merge_reports(
     competitive_floor: bool,
     run_policies: Mapping[str, Mapping[str, object]],
     case_selection_strategy: str,
+    case_ids: Sequence[str],
+    capabilities: Sequence[str],
+    selected_benchmarks: Sequence[str],
+    case_id_routing: Mapping[str, Mapping[str, object]],
     api_url: str | None,
     elapsed_ms: float,
     progress_out: Path | None = None,
@@ -422,13 +634,35 @@ def _merge_reports(
         "unique_case_ids": True,
         "minimum_accuracy_met": True,
         "no_request_failures": True,
+        "requested_case_ids_routed": True,
+        "requested_case_ids_found": True,
+        "requested_capabilities_found": True,
     }
     metrics: dict[str, object] = {
         "benchmark_count": len(reports),
+        "selected_benchmark_count": len(selected_benchmarks),
         "case_count": 0,
         "accuracy": 0.0,
     }
     ok = bool(reports)
+    normalized_case_ids = _normalize_case_ids(case_ids)
+    requested_capabilities = normalize_requested_capabilities(capabilities)
+    skipped_benchmarks = tuple(
+        name
+        for name, routing in case_id_routing.items()
+        if routing.get("skipped") is True
+    )
+    if normalized_case_ids and not reports:
+        checks["requested_case_ids_routed"] = False
+        failures.append(
+            {
+                "case_id": None,
+                "category": "setup",
+                "reason": "no_requested_case_ids_matched_selected_benchmarks",
+                "requested_case_ids": list(normalized_case_ids),
+                "selected_benchmarks": list(selected_benchmarks),
+            }
+        )
     passed_cases = 0
     total_cases = 0
     requested_parallelism_values: list[int] = []
@@ -450,6 +684,14 @@ def _merge_reports(
             checks["unique_case_ids"] = (
                 checks["unique_case_ids"]
                 and report_checks.get("unique_case_ids") is not False
+            )
+            checks["requested_case_ids_found"] = (
+                checks["requested_case_ids_found"]
+                and report_checks.get("requested_case_ids_found") is not False
+            )
+            checks["requested_capabilities_found"] = (
+                checks["requested_capabilities_found"]
+                and report_checks.get("requested_capabilities_found") is not False
             )
         report_cases = report.get("cases")
         if isinstance(report_cases, list):
@@ -473,9 +715,14 @@ def _merge_reports(
             failures.extend(report_failures)
         report_case_selection = report.get("case_selection")
         if isinstance(report_case_selection, Mapping):
+            case_selection_mapped = False
             for item in report_benchmarks if isinstance(report_benchmarks, list) else []:
                 if isinstance(item, Mapping) and isinstance(item.get("name"), str):
                     case_selection[item["name"]] = dict(report_case_selection)
+                    case_selection_mapped = True
+            benchmark_name = report.get("_official_benchmark_name")
+            if not case_selection_mapped and isinstance(benchmark_name, str):
+                case_selection[benchmark_name] = dict(report_case_selection)
         report_metrics = report.get("metrics")
         if isinstance(report_metrics, Mapping):
             for key, value in report_metrics.items():
@@ -494,6 +741,18 @@ def _merge_reports(
                     parallelism_degraded_reasons.add(degraded_reason.strip())
     metrics["case_count"] = total_cases
     metrics["accuracy"] = round(passed_cases / total_cases, 4) if total_cases else 0.0
+    metrics["cases_per_second"] = _cases_per_second(
+        case_count=total_cases,
+        elapsed_ms=elapsed_ms,
+    )
+    metrics["estimated_remaining_ms"] = 0.0
+    metrics["skipped_benchmark_count"] = len(skipped_benchmarks)
+    metrics["missing_case_id_count"] = sum(
+        _report_metric_int(report, "missing_case_id_count") for report in reports
+    )
+    metrics["missing_capability_count"] = sum(
+        _report_metric_int(report, "missing_capability_count") for report in reports
+    )
     metrics["duplicate_case_id_count"] = sum(
         _report_metric_int(report, "duplicate_case_id_count") for report in reports
     )
@@ -531,6 +790,12 @@ def _merge_reports(
         "requested_max_cases": max_cases,
         "requested_min_accuracy": min_accuracy,
         "case_selection_strategy": case_selection_strategy,
+        "requested_case_ids": list(normalized_case_ids),
+        "requested_capabilities": list(requested_capabilities),
+        "case_id_routing": {
+            name: dict(routing) for name, routing in case_id_routing.items()
+        },
+        "skipped_benchmarks": list(skipped_benchmarks),
         "case_selection": case_selection,
         "effective_case_limits": {
             name: int(policy["max_cases"]) for name, policy in run_policies.items()

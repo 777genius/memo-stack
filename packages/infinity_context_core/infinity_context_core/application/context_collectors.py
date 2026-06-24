@@ -64,9 +64,99 @@ _SENSITIVE_VALUE_MARKERS = (
     "token",
     "private_",
 )
-_MAX_DERIVED_RETRIEVAL_QUERIES = 6
+_MAX_DERIVED_RETRIEVAL_QUERIES = 8
 _FUSION_RANK_CONSTANT = 60.0
 _FUSION_MAX_RANK_PER_QUERY = 50
+_HIGH_SIGNAL_DECOMPOSITION_REASONS = frozenset(
+    {
+        "decomposition_activity_participation",
+        "decomposition_artifact_evidence",
+        "decomposition_event_context",
+        "decomposition_event_sequence",
+        "decomposition_evidence_reason",
+        "decomposition_lgbtq_pride_event",
+        "decomposition_lgbtq_school_speech_event",
+        "decomposition_lgbtq_support_group_event",
+        "decomposition_relative_time",
+        "decomposition_relocation_context",
+        "decomposition_relocation_destination",
+        "decomposition_source_evidence",
+        "decomposition_temporal_change",
+    }
+)
+_HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
+    {
+        "activity_aggregation_bridge",
+        "activity_visual_selfcare_bridge",
+        "adoption_current_goal_bridge",
+        "animal_affinity_pet_store_bridge",
+        "animal_care_instruction_bridge",
+        "animal_diet_evidence_bridge",
+        "animal_habitat_setup_bridge",
+        "attribute_calm_resourcefulness_bridge",
+        "attribute_family_support_bridge",
+        "attribute_rescue_purpose_bridge",
+        "attribute_service_helpfulness_bridge",
+        "audio_transcript_evidence_bridge",
+        "ally_support_bridge",
+        "book_reading_list_bridge",
+        "beach_count_activity_bridge",
+        "business_start_reason_bridge",
+        "camping_detail_bridge",
+        "charity_brand_sponsorship_bridge",
+        "charity_tournament_count_bridge",
+        "children_preference_bridge",
+        "community_membership_bridge",
+        "conversation_transcript_evidence_bridge",
+        "endorsement_gear_brand_bridge",
+        "event_participation_bridge",
+        "event_participation_help_bridge",
+        "family_activity_bridge",
+        "family_hike_detail_bridge",
+        "family_hike_activity_bridge",
+        "family_motivation_context_bridge",
+        "family_painting_activity_bridge",
+        "family_swimming_activity_bridge",
+        "food_preference_bridge",
+        "gaming_medium_bridge",
+        "hiking_trail_count_bridge",
+        "hobby_interest_bridge",
+        "instrument_play_bridge",
+        "item_purchase_bridge",
+        "letter_count_bridge",
+        "lgbtq_community_participation_bridge",
+        "lgbtq_pride_event_bridge",
+        "lgbtq_school_event_bridge",
+        "lgbtq_support_group_event_bridge",
+        "meteor_shower_feeling_bridge",
+        "military_service_willingness_bridge",
+        "patriotic_service_inference_bridge",
+        "pet_count_bridge",
+        "pet_inventory_bridge",
+        "public_office_service_bridge",
+        "relocation_willingness_inference_bridge",
+        "religious_inference_bridge",
+        "screenplay_count_bridge",
+        "shelter_comfort_reason_bridge",
+        "source_evidence_bridge",
+        "speaker_turn_bridge",
+        "state_residence_inference_bridge",
+        "symbol_importance_bridge",
+        "temporal_event_detail_bridge",
+        "transgender_poetry_event_bridge",
+        "transgender_youth_center_event_bridge",
+        "tournament_count_bridge",
+        "video_transcript_evidence_bridge",
+        "visual_text_evidence_bridge",
+        "volunteer_career_inference_bridge",
+        "yoga_delay_gaming_bridge",
+    }
+)
+_BROAD_AGGREGATION_EXPANSION_REASONS = frozenset(
+    {
+        "event_participation_bridge",
+    }
+)
 _T = TypeVar("_T")
 
 
@@ -88,6 +178,8 @@ class CanonicalCollectionResult:
     facts: tuple[MemoryFact, ...]
     keyword_chunks: tuple[MemoryChunk, ...]
     anchors: tuple[MemoryAnchor, ...] = ()
+    keyword_query_count: int = 0
+    keyword_query_reasons: tuple[str, ...] = ()
     anchor_lookup_keys_considered: int = 0
     anchors_loaded_by_lookup: int = 0
 
@@ -101,7 +193,7 @@ class CanonicalContextCollector:
         *,
         query: BuildContextQuery,
         memory_scope_ids: tuple[str, ...],
-        keyword_queries: tuple[str, ...] | None = None,
+        keyword_query_plan: QueryExpansionPlan | None = None,
         anchor_lookup_keys: tuple[tuple[str, str], ...] | None = None,
     ) -> CanonicalCollectionResult:
         async with self._uow_factory() as uow:
@@ -121,12 +213,16 @@ class CanonicalContextCollector:
                 query_text=query.query,
                 limit=query.max_facts,
             )
+            keyword_retrieval_queries = _bounded_derived_retrieval_queries(
+                keyword_query_plan,
+                fallback=query.query,
+            )
             keyword_chunks = await _keyword_search_chunks(
                 uow,
                 space_id=str(query.space_id),
                 memory_scope_ids=memory_scope_ids,
                 thread_id=str(query.thread_id) if query.thread_id else None,
-                queries=keyword_queries or (query.query,),
+                retrieval_queries=keyword_retrieval_queries,
                 limit=query.max_chunks,
             )
             anchors: list[MemoryAnchor] = []
@@ -167,6 +263,10 @@ class CanonicalContextCollector:
             facts=tuple(facts),
             keyword_chunks=tuple(keyword_chunks),
             anchors=tuple(anchors_by_id.values()),
+            keyword_query_count=len(keyword_retrieval_queries),
+            keyword_query_reasons=tuple(
+                query.reason for query in keyword_retrieval_queries
+            ),
             anchor_lookup_keys_considered=lookup_keys_considered,
             anchors_loaded_by_lookup=anchors_loaded_by_lookup,
         )
@@ -178,16 +278,21 @@ async def _keyword_search_chunks(
     space_id: str,
     memory_scope_ids: tuple[str, ...],
     thread_id: str | None,
-    queries: tuple[str, ...],
+    retrieval_queries: tuple[QueryExpansion, ...],
     limit: int,
 ) -> tuple[MemoryChunk, ...]:
     if limit <= 0:
         return ()
-    deduped: dict[str, MemoryChunk] = {}
+    chunks_by_id: dict[str, MemoryChunk] = {}
+    rankings: dict[str, tuple[str, ...]] = {}
     seen_queries: set[str] = set()
-    candidate_limit = min(240, max(limit * 4, limit))
-    for raw_query in queries:
-        normalized_query = " ".join(raw_query.split()).casefold()
+    candidate_limit = _keyword_candidate_pool_limit(limit)
+    search_limit = _keyword_query_search_limit(
+        total_limit=limit,
+        candidate_limit=candidate_limit,
+    )
+    for index, retrieval_query in enumerate(retrieval_queries):
+        normalized_query = " ".join(retrieval_query.query.split()).casefold()
         if not normalized_query or normalized_query in seen_queries:
             continue
         seen_queries.add(normalized_query)
@@ -195,14 +300,37 @@ async def _keyword_search_chunks(
             space_id=space_id,
             memory_scope_ids=memory_scope_ids,
             thread_id=thread_id,
-            query=raw_query,
-            limit=limit,
+            query=retrieval_query.query,
+            limit=search_limit,
         )
+        ranking_ids: list[str] = []
         for chunk in chunks:
-            deduped.setdefault(str(chunk.id), chunk)
-            if len(deduped) >= candidate_limit:
-                return tuple(deduped.values())
-    return tuple(deduped.values())
+            chunk_id = str(chunk.id)
+            chunks_by_id.setdefault(chunk_id, chunk)
+            ranking_ids.append(chunk_id)
+        rankings[_retrieval_query_rank_key(index, retrieval_query)] = tuple(ranking_ids)
+    protected_ids = _protected_query_head_keys(rankings)
+    ranked_ids = tuple(
+        dict.fromkeys(
+            (
+                *protected_ids,
+                *_fused_ranked_keys(rankings, limit=candidate_limit),
+            )
+        )
+    )[:candidate_limit]
+    return tuple(chunks_by_id[chunk_id] for chunk_id in ranked_ids if chunk_id in chunks_by_id)
+
+
+def _keyword_candidate_pool_limit(total_limit: int) -> int:
+    if total_limit <= 0:
+        return 0
+    return min(360, max(total_limit * 6, total_limit))
+
+
+def _keyword_query_search_limit(*, total_limit: int, candidate_limit: int) -> int:
+    if total_limit <= 0 or candidate_limit <= 0:
+        return 0
+    return min(candidate_limit, max(20, candidate_limit // 2))
 
 
 def _canonical_fact_candidate_limit(max_facts: int) -> int:
@@ -780,11 +908,16 @@ def _bounded_derived_retrieval_queries(
     fallback: str,
     limit: int = _MAX_DERIVED_RETRIEVAL_QUERIES,
 ) -> tuple[QueryExpansion, ...]:
-    raw_queries = (
+    raw_queries = tuple(
         plan.retrieval_queries
         if plan is not None
         else (QueryExpansion(query=fallback, reason="original_query"),)
     )
+    ranked_queries = sorted(
+        enumerate(raw_queries),
+        key=lambda item: (_retrieval_query_selection_priority(item[1]), item[0]),
+    )
+    raw_queries = tuple(query for _, query in ranked_queries)
     selected: list[QueryExpansion] = []
     seen: set[str] = set()
     for raw_query in raw_queries:
@@ -799,6 +932,22 @@ def _bounded_derived_retrieval_queries(
     if selected:
         return tuple(selected)
     return (QueryExpansion(query=fallback, reason="original_query"),)
+
+
+def _retrieval_query_selection_priority(query: QueryExpansion) -> int:
+    if query.reason == "original_query":
+        return 0
+    if query.reason == "activity_visual_selfcare_bridge":
+        return 1
+    if query.reason in _HIGH_SIGNAL_DECOMPOSITION_REASONS:
+        return 1
+    if query.reason in _BROAD_AGGREGATION_EXPANSION_REASONS:
+        return 1
+    if query.reason in _HIGH_SIGNAL_EXPANSION_REASONS:
+        return 2
+    if query.reason.startswith("decomposition_"):
+        return 4
+    return 3
 
 
 def _per_query_retrieval_limit(*, total_limit: int, query_count: int) -> int:
@@ -819,6 +968,38 @@ def _retrieval_query_rank_key(index: int, query: QueryExpansion) -> str:
     return f"{index}:{query.reason}"
 
 
+def _protected_query_head_keys(rankings: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+    protected: list[str] = []
+    seen: set[str] = set()
+    for ranking_key, ranked_keys in rankings.items():
+        _, _, reason = ranking_key.partition(":")
+        if not _protect_query_head_for_reason(reason):
+            continue
+        for raw_key in ranked_keys:
+            key = raw_key.strip()
+            if key and key not in seen:
+                seen.add(key)
+                protected.append(key)
+                break
+    return tuple(protected)
+
+
+def _protect_query_head_for_reason(reason: str) -> bool:
+    return (
+        reason in _HIGH_SIGNAL_EXPANSION_REASONS
+        or reason in _BROAD_AGGREGATION_EXPANSION_REASONS
+        or reason
+        in {
+            "decomposition_activity_participation",
+            "decomposition_artifact_evidence",
+            "decomposition_lgbtq_pride_event",
+            "decomposition_lgbtq_school_speech_event",
+            "decomposition_lgbtq_support_group_event",
+            "decomposition_source_evidence",
+        }
+    )
+
+
 def _fused_ranked_keys(
     rankings: dict[str, tuple[str, ...]],
     *,
@@ -829,7 +1010,8 @@ def _fused_ranked_keys(
     scores: dict[str, float] = {}
     first_seen: dict[str, int] = {}
     sequence = 0
-    for ranked_keys in rankings.values():
+    for ranking_key, ranked_keys in rankings.items():
+        query_weight = _retrieval_query_fusion_weight(ranking_key)
         seen_in_ranking: set[str] = set()
         for rank, raw_key in enumerate(ranked_keys, start=1):
             if rank > _FUSION_MAX_RANK_PER_QUERY:
@@ -841,7 +1023,7 @@ def _fused_ranked_keys(
             if key not in first_seen:
                 first_seen[key] = sequence
                 sequence += 1
-            scores[key] = scores.get(key, 0.0) + 1.0 / (
+            scores[key] = scores.get(key, 0.0) + query_weight / (
                 _FUSION_RANK_CONSTANT + rank
             )
     return tuple(
@@ -851,6 +1033,19 @@ def _fused_ranked_keys(
             key=lambda item: (-item[1], first_seen[item[0]], item[0]),
         )[:limit]
     )
+
+
+def _retrieval_query_fusion_weight(ranking_key: str) -> float:
+    _, _, reason = ranking_key.partition(":")
+    if reason == "original_query":
+        return 1.5
+    if reason in _HIGH_SIGNAL_EXPANSION_REASONS:
+        return 1.12
+    if reason in _HIGH_SIGNAL_DECOMPOSITION_REASONS:
+        return 1.0
+    if reason.startswith("decomposition_"):
+        return 0.7
+    return 1.0
 
 
 async def _await_with_deadline(

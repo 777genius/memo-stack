@@ -192,6 +192,26 @@ diagnostics; publishable evidence should stay clean. Floor overrides such as
 `MEMORY_TOP_EVIDENCE_MIN_PUBLIC_ACCURACY` can only make the gate stricter than
 the defaults, not weaker.
 
+For fast regression work, run explicit public benchmark cases instead of slicing
+datasets by hand:
+
+```bash
+MEMORY_PUBLIC_BENCHMARK_NAME=locomo \
+MEMORY_PUBLIC_BENCHMARK_CASE_IDS=locomo:conv-26:qa:70,locomo:conv-26:qa:67 \
+make infinity-context-official-public-benchmark-canary
+```
+
+The report records `requested_case_ids`, `missing_case_ids` and the exact
+selected case count. Any explicitly requested missing case id fails the canary,
+so typoed targeted runs cannot produce green benchmark evidence.
+For longer runs, set `MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT` and
+`MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT`; progress JSONL and checkpoint JSON
+include `cases_per_second` and `estimated_remaining_ms`, and
+`MEMORY_PUBLIC_BENCHMARK_RESUME_FROM_CHECKPOINT=true` skips compatible completed
+successful cases when dataset hash and case selection still match. Failed cases
+from the checkpoint are treated as pending and retried, so a transient failure
+does not poison later resumed reports.
+
 Local smoke variables:
 
 ```text

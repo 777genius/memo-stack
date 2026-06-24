@@ -110,6 +110,7 @@ _BUNDLE_COUNTER_KEYS = (
     "anchor_relation_candidates_considered",
     "anchor_relation_items_used",
     "keyword_chunks_considered",
+    "keyword_query_count",
     "keyword_chunks_dropped_by_relevance",
     "keyword_neighbor_chunks_considered",
     "keyword_neighbor_chunks_used",
@@ -205,12 +206,17 @@ _BUNDLE_COUNTER_KEYS = (
     "stale_context_linked_anchor_drop_count",
     "stale_context_linked_asset_drop_count",
     "stale_context_linked_extraction_artifact_drop_count",
+    "final_rank_source_item_count",
+    "final_rank_candidate_item_count",
     "hybrid_items_used",
     "items_considered",
     "items_used",
     "diversity_families_considered",
     "diversity_families_used",
     "diversity_items_used",
+    "answer_support_families_considered",
+    "answer_support_families_used",
+    "answer_support_items_used",
     "chunk_sources_considered",
     "chunk_sources_used",
     "max_chunks_used_per_source",
@@ -221,6 +227,7 @@ _BUNDLE_COUNTER_KEYS = (
     "dropped_by_instruction_flag",
     "dropped_by_budget",
     "dropped_by_source_cap",
+    "dropped_by_source_group_cap",
     "dropped_by_char_cap",
     "citations_rendered",
     "citation_quote_previews_rendered",
@@ -252,6 +259,7 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "anchor_relation_candidates_considered": 0,
     "anchor_relation_items_used": 0,
     "keyword_chunks_considered": 0,
+    "keyword_query_count": 0,
     "keyword_chunks_dropped_by_relevance": 0,
     "keyword_neighbor_chunks_considered": 0,
     "keyword_neighbor_chunks_used": 0,
@@ -353,6 +361,9 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "diversity_families_considered": 0,
     "diversity_families_used": 0,
     "diversity_items_used": 0,
+    "answer_support_families_considered": 0,
+    "answer_support_families_used": 0,
+    "answer_support_items_used": 0,
     "chunk_sources_considered": 0,
     "chunk_sources_used": 0,
     "max_chunks_used_per_source": 0,
@@ -363,6 +374,7 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "dropped_by_instruction_flag": 0,
     "dropped_by_budget": 0,
     "dropped_by_source_cap": 0,
+    "dropped_by_source_group_cap": 0,
     "dropped_by_char_cap": 0,
     "citations_rendered": 0,
     "citation_quote_previews_rendered": 0,
@@ -401,6 +413,7 @@ _BUNDLE_QUERY_PLAN_COUNTER_KEYS = (
     "query_decomposition_count",
 )
 _BUNDLE_QUERY_PLAN_LIST_KEYS = (
+    "keyword_query_reasons",
     "query_expansion_reasons",
     "query_decomposition_reasons",
 )
@@ -450,6 +463,10 @@ def context_rank_key(
 ) -> tuple[float | int | str, ...]:
     return (
         -round(item.score, 8),
+        -_score_signal_float(item, "query_expansion_reason_priority"),
+        -_score_signal_float(item, "source_sibling_group_level_seed"),
+        -_score_signal_float(item, "source_sibling_dialogue_visual_reference"),
+        -_score_signal_float(item, "source_sibling_visual_continuation"),
         -_score_signal_float(item, "phrase_bigram_hits"),
         -_score_signal_float(item, "phrase_boost"),
         -_score_signal_float(item, "distinctive_term_hits"),
@@ -609,7 +626,7 @@ def diagnostic_retrieval_sources(
 ) -> tuple[str, ...]:
     raw = _as_dict(diagnostics)
     raw_sources = raw.get("retrieval_sources")
-    if isinstance(raw_sources, (list, tuple)):
+    if isinstance(raw_sources, list | tuple):
         return _ordered_unique(
             tuple(source for value in raw_sources if (source := _safe_retrieval_source(value))),
             limit=limit,
@@ -654,22 +671,46 @@ def merge_context_diagnostics(
         secondary_raw
     )
     merged["ranking_reason"] = ranking_reason_for(prioritized_sources)
+    primary_score_signals = safe_score_signals(primary_raw.get("score_signals"))
+    secondary_score_signals = safe_score_signals(secondary_raw.get("score_signals"))
     merged["score_signals"] = {
         "dedupe_primary_score": round(primary_score, 4),
         "dedupe_secondary_score": round(secondary_score, 4),
         "hybrid_source_count": len(prioritized_sources),
         "hybrid_boost": round(hybrid_boost, 4),
         "source_ref_count": source_ref_count,
-        **safe_score_signals(secondary_raw.get("score_signals")),
-        **safe_score_signals(primary_raw.get("score_signals")),
+        **secondary_score_signals,
+        **primary_score_signals,
     }
+    _preserve_positive_score_signals(
+        merged["score_signals"],
+        primary_score_signals,
+        secondary_score_signals,
+        keys=(
+            "source_sibling_dialogue_visual_reference",
+            "source_sibling_group_level_seed",
+            "source_sibling_visual_continuation",
+        ),
+    )
+    primary_provenance = safe_diagnostic_mapping(primary_raw.get("provenance"))
+    secondary_provenance = safe_diagnostic_mapping(secondary_raw.get("provenance"))
     merged["provenance"] = {
-        **safe_diagnostic_mapping(secondary_raw.get("provenance")),
-        **safe_diagnostic_mapping(primary_raw.get("provenance")),
+        **secondary_provenance,
+        **primary_provenance,
         "retrieval_sources": list(prioritized_sources),
         "source_ref_count": source_ref_count,
         "selected_retrieval_source": selected_source or "unknown",
     }
+    _preserve_positive_provenance_flags(
+        merged["provenance"],
+        primary_provenance,
+        secondary_provenance,
+        keys=(
+            "source_sibling_dialogue_visual_reference",
+            "source_sibling_group_level_seed",
+            "source_sibling_visual_continuation",
+        ),
+    )
     return normalize_context_diagnostics(merged)
 
 
@@ -678,11 +719,45 @@ def safe_score_signals(value: object) -> dict[str, object]:
     signals = {
         key: item
         for key, item in safe.items()
-        if isinstance(item, (int, float, str, bool)) or item is None
+        if isinstance(item, int | float | str | bool) or item is None
     }
     signals.update(_safe_context_requirement_score_signals(value))
     signals.update(_safe_deterministic_rerank_score_signals(value))
     return signals
+
+
+def _preserve_positive_score_signals(
+    merged: dict[str, object],
+    primary: dict[str, object],
+    secondary: dict[str, object],
+    *,
+    keys: tuple[str, ...],
+) -> None:
+    for key in keys:
+        if _positive_numeric_signal(primary.get(key)) or _positive_numeric_signal(
+            secondary.get(key)
+        ):
+            merged[key] = 1
+
+
+def _preserve_positive_provenance_flags(
+    merged: dict[str, object],
+    primary: dict[str, object],
+    secondary: dict[str, object],
+    *,
+    keys: tuple[str, ...],
+) -> None:
+    for key in keys:
+        if primary.get(key) is True or secondary.get(key) is True:
+            merged[key] = True
+
+
+def _positive_numeric_signal(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return value > 0
+    return False
 
 
 def safe_diagnostic_mapping(value: object) -> dict[str, object]:
@@ -769,7 +844,7 @@ def _safe_deterministic_rerank_provenance(value: object) -> dict[str, object]:
 
 
 def _safe_context_requirement_list(value: object) -> tuple[object, ...]:
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return tuple(value[:_MAX_DIAGNOSTIC_LIST_ITEMS])
     return ()
 
@@ -790,7 +865,7 @@ def _safe_query_snippet_diagnostics(raw: dict[str, Any]) -> dict[str, object]:
     if unique_hits is not None:
         diagnostics["query_snippet_unique_term_hits"] = unique_hits
     terms = raw.get("query_snippet_matched_terms")
-    if isinstance(terms, (list, tuple)):
+    if isinstance(terms, list | tuple):
         diagnostics["query_snippet_matched_terms"] = [
             term
             for raw_term in terms[:_MAX_DIAGNOSTIC_LIST_ITEMS]
@@ -989,7 +1064,7 @@ def _bounded_value(
 ) -> object:
     if isinstance(value, str):
         return safe_metadata_text(value, limit=_MAX_DIAGNOSTIC_STRING_CHARS)
-    if isinstance(value, (int, float, bool)) or value is None:
+    if isinstance(value, int | float | bool) or value is None:
         return value
     if isinstance(value, dict):
         return _bounded_mapping(value, depth=depth + 1, max_items=max_items)
@@ -1004,7 +1079,7 @@ def _bounded_value(
 
 
 def _is_safe_diagnostic_value(value: object) -> bool:
-    return isinstance(value, (str, int, float, bool, dict, list)) or value is None
+    return isinstance(value, str | int | float | bool | dict | list) or value is None
 
 
 def _safe_retrieval_source(value: object) -> str | None:

@@ -33,6 +33,7 @@ _GENERIC_MEMORY_QUERY_TERMS = frozenset(
     {
         "about",
         "audio",
+        "are",
         "call",
         "chat",
         "citation",
@@ -45,6 +46,7 @@ _GENERIC_MEMORY_QUERY_TERMS = frozenset(
         "evidence",
         "file",
         "image",
+        "is",
         "link",
         "meeting",
         "memory",
@@ -62,6 +64,11 @@ _GENERIC_MEMORY_QUERY_TERMS = frozenset(
         "sources",
         "task",
         "thread",
+        "was",
+        "were",
+        "what",
+        "which",
+        "who",
         "transcript",
         "video",
         "аудио",
@@ -86,6 +93,27 @@ _GENERIC_MEMORY_QUERY_TERMS = frozenset(
     }
 )
 _IDENTITY_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+_TEXT_IDENTITY_LABEL_RE = re.compile(
+    r"\b(?:D\d+:\d+\s+|person:\s*|speaker:\s*|name:\s*)"
+    r"(?P<label>[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39})\b",
+    re.IGNORECASE,
+)
+_RELATIONSHIP_DURATION_QUERY_RE = re.compile(
+    r"\b(?:married|marriage|husband|wife|spouse|wedding|anniversary)\b",
+    re.IGNORECASE,
+)
+_RELATIONSHIP_DURATION_QUERY_TIME_RE = re.compile(
+    r"\b(?:how\s+long|duration|years?|anniversary|already|time\s+flies)\b",
+    re.IGNORECASE,
+)
+_RELATIONSHIP_DURATION_TEXT_RELATION_RE = re.compile(
+    r"\b(?:married|marriage|husband|wife|spouse|wedding|bride|dress|partner)\b",
+    re.IGNORECASE,
+)
+_RELATIONSHIP_DURATION_TEXT_TIME_RE = re.compile(
+    r"\b(?:\d+\s+years?|years?\s+already|anniversary|time\s+flies)\b",
+    re.IGNORECASE,
+)
 
 
 def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> QueryRelevance:
@@ -105,9 +133,7 @@ def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> 
     hit_ratio = unique_hits / len(terms)
     distinctive_terms = tuple(term for term in terms if _is_distinctive_term(term))
     distinctive_hits = sum(
-        1
-        for term in distinctive_terms
-        if query_term_frequency(term, counts) > 0
+        1 for term in distinctive_terms if query_term_frequency(term, counts) > 0
     )
     phrase_bigram_count = max(0, len(terms) - 1)
     phrase_bigram_hits = _phrase_bigram_hits(
@@ -146,6 +172,30 @@ def is_query_relevance_sufficient(relevance: QueryRelevance) -> bool:
     return relevance.distinctive_term_count <= 0 or relevance.distinctive_term_hits > 0
 
 
+def is_query_relevance_specific_enough(
+    *,
+    query: str,
+    text: str,
+    relevance: QueryRelevance,
+) -> bool:
+    """Reject identity-only hits when a query also asks for specific evidence."""
+
+    if not is_query_relevance_sufficient(relevance):
+        return False
+    identity_variants = _query_identity_variants(query=query, text=text)
+    if not identity_variants:
+        return True
+    specific_terms = tuple(
+        term
+        for term in query_terms(query)
+        if not set(term.variants).intersection(identity_variants)
+    )
+    if not specific_terms:
+        return True
+    counts = text_variant_counts(text)
+    return any(query_term_frequency(term, counts) > 0 for term in specific_terms)
+
+
 def is_fact_candidate_relevance_sufficient(relevance: QueryRelevance) -> bool:
     if not is_query_relevance_sufficient(relevance):
         return False
@@ -159,6 +209,41 @@ def is_fact_candidate_relevance_sufficient(relevance: QueryRelevance) -> bool:
             and relevance.distinctive_term_hits >= 1
             and relevance.hit_ratio >= 0.25
         )
+    )
+
+
+def is_chunk_candidate_relevance_sufficient(
+    *,
+    query: str,
+    text: str,
+    relevance: QueryRelevance,
+) -> bool:
+    if not is_query_relevance_specific_enough(query=query, text=text, relevance=relevance):
+        return False
+    if not _is_relationship_duration_candidate_specific_enough(query=query, text=text):
+        return False
+    if relevance.query_term_count < 6:
+        return True
+    return (
+        relevance.phrase_bigram_hits > 0
+        or relevance.distinctive_term_hits >= 2
+        or (
+            relevance.unique_term_hits >= 3
+            and relevance.distinctive_term_hits >= 2
+            and relevance.hit_ratio >= 0.3
+        )
+    )
+
+
+def _is_relationship_duration_candidate_specific_enough(*, query: str, text: str) -> bool:
+    if not (
+        _RELATIONSHIP_DURATION_QUERY_RE.search(query)
+        and _RELATIONSHIP_DURATION_QUERY_TIME_RE.search(query)
+    ):
+        return True
+    return (
+        _RELATIONSHIP_DURATION_TEXT_RELATION_RE.search(text) is not None
+        and _RELATIONSHIP_DURATION_TEXT_TIME_RE.search(text) is not None
     )
 
 
@@ -191,6 +276,35 @@ def query_relevance_score_signals(relevance: QueryRelevance) -> dict[str, int | 
 
 def _is_distinctive_term(term: LexicalQueryTerm) -> bool:
     return not any(variant in _GENERIC_MEMORY_QUERY_TERMS for variant in term.variants)
+
+
+def _query_identity_variants(*, query: str, text: str) -> frozenset[str]:
+    variants: set[str] = set()
+    text_identity_variants = _text_identity_variants(text)
+    for match in _IDENTITY_TOKEN_RE.finditer(query):
+        token = match.group(0).strip("_")
+        if "_" in token or any(character.isdigit() for character in token):
+            continue
+        token_variants = lexical_variants(token)
+        if not token_variants or any(
+            variant in _GENERIC_MEMORY_QUERY_TERMS for variant in token_variants
+        ):
+            continue
+        if token[:1].isupper() or set(token_variants).intersection(text_identity_variants):
+            variants.update(token_variants)
+    return frozenset(variants)
+
+
+def _text_identity_variants(text: str) -> frozenset[str]:
+    variants: set[str] = set()
+    for match in _TEXT_IDENTITY_LABEL_RE.finditer(text):
+        label_variants = lexical_variants(match.group("label"))
+        if not label_variants or any(
+            variant in _GENERIC_MEMORY_QUERY_TERMS for variant in label_variants
+        ):
+            continue
+        variants.update(label_variants)
+    return frozenset(variants)
 
 
 def _project_identity_variant_sets(text: str) -> tuple[tuple[str, ...], ...]:

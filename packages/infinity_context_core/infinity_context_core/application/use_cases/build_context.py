@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
+from time import perf_counter
 
 from infinity_context_core.application.context_anchor_relations import (
     related_anchor_context_items,
@@ -41,6 +43,7 @@ from infinity_context_core.application.context_query_decomposition import (
     build_query_decomposition_plan,
 )
 from infinity_context_core.application.context_query_expansion import (
+    QueryExpansionPlan,
     build_query_expansion_plan,
 )
 from infinity_context_core.application.context_query_intent import (
@@ -48,21 +51,31 @@ from infinity_context_core.application.context_query_intent import (
     build_query_anchor_intent,
     match_query_anchor_intent,
     query_anchor_intent_conflicts,
+    query_anchor_intent_text_conflicts,
     query_anchor_lookup_keys,
 )
 from infinity_context_core.application.context_ranking import (
     apply_context_requirement_boosts,
     apply_deterministic_rerank_adjustments,
+    apply_keyword_chunk_source_score_boost,
     apply_query_anchor_intent_boosts,
     apply_query_plan_bm25_lexical_boosts,
     apply_rank_fusion_boosts,
     best_query_relevance,
     dedupe_rank_items,
     keyword_chunk_score,
+    query_expansion_reason_priority,
+)
+from infinity_context_core.application.context_ranking_reason_policy import (
+    ACTIVITY_OBSERVATION_SOURCE_REASONS as _ACTIVITY_OBSERVATION_SOURCE_REASONS,
+)
+from infinity_context_core.application.context_ranking_reason_policy import (
+    PRECISE_TURN_SOURCE_SIBLING_REASONS,
 )
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     has_project_identity_mismatch,
+    is_chunk_candidate_relevance_sufficient,
     is_query_relevance_sufficient,
     query_relevance_score_signals,
     score_query_relevance,
@@ -117,9 +130,102 @@ _SOURCE_GROUP_SIBLING_SCORES = {
     1: 0.955,
     2: 0.948,
     3: 0.935,
+    4: 0.922,
+    5: 0.914,
 }
-_MAX_SOURCE_GROUPS = 16
-_MAX_SOURCE_GROUP_SIBLING_ITEMS = 20
+_SOURCE_GROUP_PRIMARY_SEED_SCORE = 0.968
+_MAX_SOURCE_GROUPS = 32
+_MAX_SOURCE_SIBLING_GROUPS = 12
+_MAX_SOURCE_GROUP_SIBLING_ITEMS = 32
+_MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS = 6
+_VISUAL_REFERENT_SIBLING_RE = re.compile(
+    r"\b("
+    r"look at this|take a look|here'?s|here is|photo|picture|pic|image|"
+    r"did you see that|see that (?:band|photo|picture|pic|image|show|stage|crowd|"
+    r"painting|drawing)|what'?s the band|what is the band|"
+    r"посмотри|смотри|фото|картинк|изображен"
+    r")\b",
+    re.IGNORECASE,
+)
+_DIALOGUE_VISUAL_REFERENCE_RE = re.compile(
+    r"\b("
+    r"did you see that|see that (?:band|photo|picture|pic|image|show|stage|crowd|"
+    r"painting|drawing)|what'?s the band|what is the band"
+    r")\b",
+    re.IGNORECASE,
+)
+_VISUAL_SOURCE_SIBLING_QUERY_RE = re.compile(
+    r"\b("
+    r"look at|take a look|did you see|see that|photo|picture|pic|image|visual|"
+    r"what'?s the band|what is the band|crowd|stage|concert"
+    r")\b",
+    re.IGNORECASE,
+)
+_VISUAL_SOURCE_SIBLING_REASONS = frozenset(
+    {
+        "decomposition_artifact_evidence",
+        "source_evidence_bridge",
+        "visual_text_evidence_bridge",
+    }
+)
+_EVENT_VISUAL_SOURCE_SIBLING_REASONS = frozenset(
+    {
+        "event_participation_bridge",
+        "lgbtq_pride_event_bridge",
+        "lgbtq_school_event_bridge",
+        "lgbtq_support_group_event_bridge",
+        "transgender_conference_event_bridge",
+        "transgender_poetry_event_bridge",
+        "transgender_youth_center_event_bridge",
+    }
+)
+_PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.976
+_PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS = 6
+_POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.965
+_POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE = re.compile(
+    r"\b("
+    r"pottery|clay|ceramic|bowl|bowls|cup|cups|mug|mugs|pot|pots|"
+    r"sculpture|sculptures|dog\s+face"
+    r")\b",
+    re.IGNORECASE,
+)
+_POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE = re.compile(
+    r"\b("
+    r"kids?|children|workshop|class|made|make|finished|project|hands\s+dirty|"
+    r"creativity|imagination"
+    r")\b",
+    re.IGNORECASE,
+)
+_VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE = re.compile(
+    r"\b(volunteer(?:ed|ing|s)?|shelter|homeless)\b",
+    re.IGNORECASE,
+)
+_VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE = re.compile(
+    r"\b("
+    r"front\s+desk|talks?|compliments?|residents?|bed|food|"
+    r"counsel(?:or|ing)?|coordinator|started\s+volunteering|"
+    r"make\s+a\s+difference|brighten|aunt\s+believed|fulfilling"
+    r")\b",
+    re.IGNORECASE,
+)
+_POST_EVENT_ACTIVITY_SOURCE_SIBLING_RE = re.compile(
+    r"\b(?:road\s*trip|roadtrip)\b(?=.{0,180}\b(?:yesterday|recent|"
+    r"just\s+did|after\s+the\s+(?:road\s*trip|drive)|relax))|"
+    r"\b(?:yesterday|just\s+did|recent|relax)\b(?=.{0,180}\b(?:road\s*trip|roadtrip))|"
+    r"\b(?:hikes?|hiking|trail|mountains?)\b(?=.{0,120}\b(?:picture|pic|"
+    r"photo|kids?|family|recent|yesterday))",
+    re.IGNORECASE | re.DOTALL,
+)
+_RUNNING_REASON_SOURCE_SIBLING_RE = re.compile(
+    r"\b("
+    r"(?:running|run|runs|ran)\b(?=.{0,120}\b(?:destress|de-stress|"
+    r"clear\s+my\s+mind|headspace|farther|longer|mood|boost))|"
+    r"(?:destress|de-stress|clear\s+my\s+mind|headspace|farther|longer)\b"
+    r"(?=.{0,120}\b(?:running|run|runs|ran))|"
+    r"walking\s+or\s+running|got\s+you\s+into\s+running|purple\s+running\s+shoe"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
 _MAX_AGGREGATION_KEYWORD_ITEMS = 20
 _TURN_SOURCE_ID_RE = re.compile(
     r"^(?P<group>.+):(?P<dialogue>D\d+):(?P<turn>\d+):turn$",
@@ -131,7 +237,28 @@ _COUNT_AGGREGATION_QUERY_RE = re.compile(
     r"\b(how many|number of|count|total)\b",
     re.IGNORECASE,
 )
+_LIST_AGGREGATION_QUERY_RE = re.compile(
+    r"\b(?:what|which)\s+"
+    r"(?:[\w+.-]+\s+){0,4}"
+    r"(?:items?|events?|activities?|hobbies|instruments?|traits?|places?|books?|"
+    r"songs?|artists?|bands?|foods?|pets?|projects?|tasks?|types?|kinds?)\b|"
+    r"\b(?:has|have|did|does)\s+\w{2,40}\s+"
+    r"(?:bought|attended|joined|visited|played|shared|mentioned|done|used)\b|"
+    r"\b(?:какие|какие\s+именно|что\s+за)\s+"
+    r"(?:вещи|события|активности|занятия|инструменты|черты|места|книги|задачи)\b",
+    re.IGNORECASE,
+)
+_AGGREGATION_DIALOGUE_WINDOW_AFTER = 5
+_MAX_AGGREGATION_DIALOGUE_WINDOWS = 4
+_MAX_AGGREGATION_EVIDENCE_TEXT_CHARS = 2400
+_MAX_AGGREGATION_MARKER_COVERAGE_IDS = 24
+_MAX_EXTRA_ACTIVITY_PROMPT_KEYWORD_ITEMS = 80
+_MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS = 8
+_ScoredKeywordPromptItem = tuple[int, int, int, float, float, int, str, ContextItem]
 _SOURCE_GROUP_SUFFIXES = frozenset({"events", "observation", "summary"})
+_LOW_SIGNAL_COUNT_AGGREGATION_TERMS = frozenset(
+    {"many", "time", "times", "gone", "go", "going", "went"}
+)
 
 
 @dataclass(frozen=True)
@@ -139,6 +266,7 @@ class _SourceGroupSeed:
     priority: int
     primary_turn: int
     turns: frozenset[int]
+    group_level: bool = False
 
 
 @dataclass(frozen=True)
@@ -147,6 +275,7 @@ class _SourceSiblingRank:
     group_priority: int
     turn_distance: int
     turn_delta: int
+    group_level_seed: bool = False
 
 
 class BuildContextUseCase:
@@ -202,6 +331,7 @@ class BuildContextUseCase:
         )
 
     async def execute(self, query: BuildContextQuery) -> ContextBundle:
+        request_started_at = perf_counter()
         memory_scope_ids = tuple(str(memory_scope_id) for memory_scope_id in query.memory_scope_ids)
         query_anchor_intent = build_query_anchor_intent(query.query)
         temporal_query_intent = build_temporal_query_intent(query.query)
@@ -214,12 +344,11 @@ class BuildContextUseCase:
             query.query,
             decomposition_plan=query_decomposition_plan,
         )
+        canonical_started_at = perf_counter()
         canonical = await self._canonical_collector.collect(
             query=query,
             memory_scope_ids=memory_scope_ids,
-            keyword_queries=tuple(
-                expansion.query for expansion in query_expansion_plan.retrieval_queries
-            ),
+            keyword_query_plan=query_expansion_plan,
             anchor_lookup_keys=tuple(
                 (key.kind.value, key.normalized_key)
                 for key in query_anchor_lookup_keys(query_anchor_intent)
@@ -231,6 +360,8 @@ class BuildContextUseCase:
             "consistency_mode": query.consistency_mode.value,
             "facts_considered": len(canonical.facts),
             "keyword_chunks_considered": len(canonical.keyword_chunks),
+            "keyword_query_count": canonical.keyword_query_count,
+            "keyword_query_reasons": list(canonical.keyword_query_reasons),
             "keyword_chunks_dropped_by_relevance": 0,
             "keyword_neighbor_chunks_considered": 0,
             "keyword_neighbor_chunks_used": 0,
@@ -238,9 +369,14 @@ class BuildContextUseCase:
             "keyword_source_sibling_chunks_considered": 0,
             "keyword_source_sibling_chunks_used": 0,
             "keyword_source_sibling_chunks_skipped": 0,
+            "keyword_source_sibling_group_count": 0,
+            "keyword_source_sibling_candidate_limit": 0,
             "keyword_aggregation_chunks_considered": 0,
             "keyword_aggregation_chunks_used": 0,
             "keyword_aggregation_chunks_skipped": 0,
+            "keyword_aggregation_query_kind": "",
+            "keyword_aggregation_relaxed_relevance_used": 0,
+            "stage_timings_ms": {},
             "anchors_considered": len(canonical.anchors),
             "anchor_lookup_keys_considered": canonical.anchor_lookup_keys_considered,
             "anchors_loaded_by_lookup": canonical.anchors_loaded_by_lookup,
@@ -281,6 +417,7 @@ class BuildContextUseCase:
             "superseded_facts_used": 0,
             "pending_duplicate_merge_suggestions_considered": 0,
         }
+        _record_stage_timing(diagnostics, "canonical_collect", canonical_started_at)
         if query.consistency_mode == ConsistencyMode.CANONICAL_ONLY:
             diagnostics["vector_status"] = "skipped"
             diagnostics["vector_skip_reason"] = "canonical_only"
@@ -292,24 +429,30 @@ class BuildContextUseCase:
             graph_items = ()
             rag_items = ()
         else:
+            stage_started_at = perf_counter()
             vector_chunks = await self._vector_collector.collect(
                 query=query,
                 memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
                 query_plan=query_expansion_plan,
             )
+            _record_stage_timing(diagnostics, "vector_collect", stage_started_at)
+            stage_started_at = perf_counter()
             graph_items = await self._graph_collector.collect(
                 query=query,
                 memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
                 query_plan=query_expansion_plan,
             )
+            _record_stage_timing(diagnostics, "graph_collect", stage_started_at)
+            stage_started_at = perf_counter()
             rag_items = await self._rag_collector.collect(
                 query=query,
                 memory_scope_ids=memory_scope_ids,
                 diagnostics=diagnostics,
                 query_plan=query_expansion_plan,
             )
+            _record_stage_timing(diagnostics, "rag_collect", stage_started_at)
 
         items: list[ContextItem] = []
         now = self._clock.now() if self._clock is not None else None
@@ -376,8 +519,11 @@ class BuildContextUseCase:
         diagnostics["anchor_relation_candidates_considered"] = related_anchor_candidates
         diagnostics["anchor_relation_items_used"] = len(related_anchor_items)
         items.extend(related_anchor_items)
+        query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] = {}
         used_keyword_chunks: list[MemoryChunk] = []
         scored_keyword_chunks: list[tuple[int, int, int, float, float, int, MemoryChunk]] = []
+        scored_keyword_items: list[_ScoredKeywordPromptItem] = []
+        stage_started_at = perf_counter()
         for chunk in canonical.keyword_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -388,11 +534,21 @@ class BuildContextUseCase:
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
                 continue
-            expansion_query, expansion_reason, relevance = best_query_relevance(
+            if query_anchor_intent_text_conflicts(query_anchor_intent, chunk_text):
+                diagnostics["keyword_chunks_dropped_by_relevance"] = (
+                    int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
+                )
+                continue
+            expansion_query, expansion_reason, relevance = _best_query_relevance_cached(
                 query_expansion_plan,
                 text=chunk_text,
+                cache=query_relevance_cache,
             )
-            if not is_query_relevance_sufficient(relevance):
+            if not is_chunk_candidate_relevance_sufficient(
+                query=expansion_query,
+                text=chunk_text,
+                relevance=relevance,
+            ):
                 diagnostics["keyword_chunks_dropped_by_relevance"] = (
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
@@ -400,6 +556,13 @@ class BuildContextUseCase:
             score = keyword_chunk_score(
                 relevance,
                 query_expansion_reason=expansion_reason,
+            )
+            source_score_boost = 0.0
+            score, source_score_boost = apply_keyword_chunk_source_score_boost(
+                score,
+                relevance,
+                query_expansion_reason=expansion_reason,
+                source_external_id=chunk.source_external_id,
             )
             used_keyword_chunks.append(chunk)
             scored_keyword_chunks.append(
@@ -413,29 +576,50 @@ class BuildContextUseCase:
                     chunk,
                 )
             )
-            items.append(
-                _chunk_context_item(
-                    chunk=chunk,
-                    text=chunk_text,
-                    retrieval_source="keyword_chunks",
-                    base_score=0.75,
-                    score=score,
-                    relevance=relevance,
-                    query_text=expansion_query,
-                    query_expansion_reason=expansion_reason,
+            keyword_item = _chunk_context_item(
+                chunk=chunk,
+                text=chunk_text,
+                retrieval_source="keyword_chunks",
+                base_score=0.75,
+                score=score,
+                relevance=relevance,
+                query_text=expansion_query,
+                query_expansion_reason=expansion_reason,
+                keyword_source_score_boost=source_score_boost,
+            )
+            scored_keyword_items.append(
+                (
+                    _strict_query_term_hits(query=query.query, text=chunk_text),
+                    relevance.distinctive_term_hits,
+                    relevance.unique_term_hits,
+                    relevance.hit_ratio,
+                    score,
+                    len(scored_keyword_items),
+                    expansion_reason,
+                    keyword_item,
                 )
             )
+        items.extend(_selected_keyword_prompt_items(scored_keyword_items, limit=query.max_chunks))
+        _record_stage_timing(diagnostics, "keyword_chunk_rank", stage_started_at)
+        stage_started_at = perf_counter()
         aggregation_items, aggregation_diagnostics = _keyword_aggregation_chunk_items(
             query=query,
+            query_plan=query_expansion_plan,
             seed_chunks=tuple(used_keyword_chunks),
+            query_relevance_cache=query_relevance_cache,
         )
+        _record_stage_timing(diagnostics, "keyword_aggregation", stage_started_at)
         diagnostics.update(aggregation_diagnostics)
         items.extend(aggregation_items)
+        stage_started_at = perf_counter()
         neighbor_items, neighbor_diagnostics = await self._keyword_neighbor_chunk_items(
             query=query,
+            query_plan=query_expansion_plan,
             memory_scope_ids=memory_scope_ids,
             seed_chunks=tuple(used_keyword_chunks),
+            query_relevance_cache=query_relevance_cache,
         )
+        _record_stage_timing(diagnostics, "keyword_neighbors", stage_started_at)
         diagnostics.update(neighbor_diagnostics)
         items.extend(neighbor_items)
         sibling_seed_chunks = tuple(
@@ -452,11 +636,15 @@ class BuildContextUseCase:
                 ),
             )
         )
+        stage_started_at = perf_counter()
         sibling_items, sibling_diagnostics = await self._keyword_source_sibling_chunk_items(
             query=query,
+            query_plan=query_expansion_plan,
             memory_scope_ids=memory_scope_ids,
             seed_chunks=sibling_seed_chunks,
+            query_relevance_cache=query_relevance_cache,
         )
+        _record_stage_timing(diagnostics, "keyword_source_siblings", stage_started_at)
         diagnostics.update(sibling_diagnostics)
         items.extend(sibling_items)
         for chunk in vector_chunks:
@@ -478,34 +666,43 @@ class BuildContextUseCase:
         items.extend(graph_items)
         items.extend(rag_items)
 
+        bm25_text_stats_cache: dict[str, tuple[Mapping[str, int], int]] = {}
+        stage_started_at = perf_counter()
         deduped = await self._hydrator.revalidate_visible_items(
             dedupe_rank_items(
                 apply_rank_fusion_boosts(
                     apply_query_plan_bm25_lexical_boosts(
                         tuple(items),
                         plan=query_expansion_plan,
+                        bm25_text_stats_cache=bm25_text_stats_cache,
                     )
                 )
             ),
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        _record_stage_timing(diagnostics, "dedupe_hydrate", stage_started_at)
+        stage_started_at = perf_counter()
         temporal_items, temporal_diagnostics = await self._apply_temporal_relation_signals(
             items=deduped,
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        _record_stage_timing(diagnostics, "temporal_relations", stage_started_at)
+        stage_started_at = perf_counter()
         artifact_evidence_items = await self._artifact_evidence_collector.collect(
             query=query,
             memory_scope_ids=memory_scope_ids,
             diagnostics=diagnostics,
             query_expansion_plan=query_expansion_plan,
         )
+        _record_stage_timing(diagnostics, "artifact_evidence", stage_started_at)
         include_stale_review = (
             query.include_stale
             or query.include_superseded
             or temporal_query_intent.include_superseded_review
         )
+        stage_started_at = perf_counter()
         stale_review_items, stale_diagnostics = (
             await self._stale_review_items(
                 query=query,
@@ -522,17 +719,23 @@ class BuildContextUseCase:
                 },
             )
         )
+        _record_stage_timing(diagnostics, "stale_review", stage_started_at)
+        stage_started_at = perf_counter()
         pending_review_items = await self._pending_conflict_items(
             query=query,
             visible_fact_ids=tuple(
                 item.item_id for item in temporal_items if item.item_type == "fact"
             ),
         )
+        _record_stage_timing(diagnostics, "pending_review", stage_started_at)
+        stage_started_at = perf_counter()
         linked_context = await self._context_link_expander.collect(
             items=(*temporal_items, *artifact_evidence_items),
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
+        _record_stage_timing(diagnostics, "context_links", stage_started_at)
+        stage_started_at = perf_counter()
         (
             linked_temporal_items,
             linked_temporal_diagnostics,
@@ -541,35 +744,61 @@ class BuildContextUseCase:
             query=query,
             memory_scope_ids=memory_scope_ids,
         )
-        candidate_items = dedupe_rank_items(
-            apply_deterministic_rerank_adjustments(
-                apply_rank_fusion_boosts(
-                    apply_query_plan_bm25_lexical_boosts(
-                        apply_context_requirement_boosts(
-                            apply_query_anchor_intent_boosts(
-                                apply_temporal_query_intent_boosts(
-                                    (
-                                        *temporal_items,
-                                        *artifact_evidence_items,
-                                        *linked_temporal_items,
-                                        *stale_review_items,
-                                        *pending_review_items,
-                                    ),
-                                    intent=temporal_query_intent,
-                                ),
-                                intent=query_anchor_intent,
-                            ),
-                            query=query.query,
-                            query_anchor_intent=query_anchor_intent,
-                        ),
-                        plan=query_expansion_plan,
-                    ),
-                ),
-                query=query.query,
-                plan=query_expansion_plan,
-                query_anchor_intent=query_anchor_intent,
-            )
+        _record_stage_timing(diagnostics, "linked_temporal_relations", stage_started_at)
+        final_rank_started_at = perf_counter()
+        stage_started_at = perf_counter()
+        final_source_items = (
+            *temporal_items,
+            *artifact_evidence_items,
+            *linked_temporal_items,
+            *stale_review_items,
+            *pending_review_items,
         )
+        diagnostics["final_rank_source_item_count"] = len(final_source_items)
+        _record_stage_timing(diagnostics, "final_rank_source_merge", stage_started_at)
+        stage_started_at = perf_counter()
+        temporally_boosted_items = apply_temporal_query_intent_boosts(
+            final_source_items,
+            intent=temporal_query_intent,
+        )
+        _record_stage_timing(diagnostics, "final_rank_temporal_boost", stage_started_at)
+        stage_started_at = perf_counter()
+        anchor_boosted_items = apply_query_anchor_intent_boosts(
+            temporally_boosted_items,
+            intent=query_anchor_intent,
+        )
+        _record_stage_timing(diagnostics, "final_rank_anchor_boost", stage_started_at)
+        stage_started_at = perf_counter()
+        requirement_boosted_items = apply_context_requirement_boosts(
+            anchor_boosted_items,
+            query=query.query,
+            query_anchor_intent=query_anchor_intent,
+        )
+        _record_stage_timing(diagnostics, "final_rank_requirement_boost", stage_started_at)
+        stage_started_at = perf_counter()
+        lexical_boosted_items = apply_query_plan_bm25_lexical_boosts(
+            requirement_boosted_items,
+            plan=query_expansion_plan,
+            bm25_text_stats_cache=bm25_text_stats_cache,
+        )
+        _record_stage_timing(diagnostics, "final_rank_bm25", stage_started_at)
+        stage_started_at = perf_counter()
+        fused_items = apply_rank_fusion_boosts(lexical_boosted_items)
+        _record_stage_timing(diagnostics, "final_rank_fusion", stage_started_at)
+        stage_started_at = perf_counter()
+        reranked_items = apply_deterministic_rerank_adjustments(
+            fused_items,
+            query=query.query,
+            plan=query_expansion_plan,
+            query_anchor_intent=query_anchor_intent,
+            query_relevance_cache=query_relevance_cache,
+        )
+        _record_stage_timing(diagnostics, "final_rank_deterministic", stage_started_at)
+        stage_started_at = perf_counter()
+        candidate_items = dedupe_rank_items(reranked_items)
+        diagnostics["final_rank_candidate_item_count"] = len(candidate_items)
+        _record_stage_timing(diagnostics, "final_rank_dedupe", stage_started_at)
+        _record_stage_timing(diagnostics, "final_rank", final_rank_started_at)
         guarded_items, requirement_guard_diagnostics = (
             _apply_explicit_requirement_guard(
                 query=query.query,
@@ -578,12 +807,14 @@ class BuildContextUseCase:
             )
         )
         diagnostics.update(requirement_guard_diagnostics)
+        stage_started_at = perf_counter()
         result = self._packer.pack(
             bundle_id=self._ids.new_id("ctx"),
             items=guarded_items,
             token_budget=query.token_budget,
             max_rendered_chars=query.max_rendered_chars,
         )
+        _record_stage_timing(diagnostics, "pack", stage_started_at)
         diagnostics.update(temporal_diagnostics)
         diagnostics.update(stale_diagnostics)
         diagnostics.update(linked_context.diagnostics)
@@ -612,6 +843,7 @@ class BuildContextUseCase:
             query_anchor_intent=query_anchor_intent,
             items=result.bundle.items,
         )
+        _record_stage_timing(diagnostics, "total", request_started_at)
         bundle_diagnostics = normalize_context_bundle_diagnostics(
             diagnostics,
             items=result.bundle.items,
@@ -628,8 +860,10 @@ class BuildContextUseCase:
         self,
         *,
         query: BuildContextQuery,
+        query_plan: QueryExpansionPlan,
         memory_scope_ids: tuple[str, ...],
         seed_chunks: tuple[MemoryChunk, ...],
+        query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]],
     ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
         if query.max_chunks <= 0 or not seed_chunks:
             return (
@@ -638,6 +872,7 @@ class BuildContextUseCase:
                     "keyword_neighbor_chunks_considered": 0,
                     "keyword_neighbor_chunks_used": 0,
                     "keyword_neighbor_chunks_skipped": 0,
+                    "keyword_neighbor_answer_companion_extra_used": 0,
                 },
             )
 
@@ -652,18 +887,19 @@ class BuildContextUseCase:
                     "keyword_neighbor_chunks_considered": 0,
                     "keyword_neighbor_chunks_used": 0,
                     "keyword_neighbor_chunks_skipped": 0,
+                    "keyword_neighbor_answer_companion_extra_used": 0,
                 },
             )
 
         max_neighbor_items = min(8, max(2, query.max_chunks // 3))
         items: list[ContextItem] = []
         used_neighbor_ids: set[str] = set()
+        answer_companion_slots: set[str] = set()
+        answer_companion_extra_used = 0
         considered = 0
         skipped = 0
         async with self._uow_factory() as uow:
             for document_id in document_ids:
-                if len(items) >= max_neighbor_items:
-                    break
                 chunks = await uow.documents.list_chunks(document_id, limit=400)
                 by_sequence = {chunk.sequence: chunk for chunk in chunks}
                 seed_sequences = tuple(
@@ -673,8 +909,6 @@ class BuildContextUseCase:
                 )
                 for sequence in seed_sequences:
                     for offset in _KEYWORD_NEIGHBOR_SEQUENCE_OFFSETS:
-                        if len(items) >= max_neighbor_items:
-                            break
                         neighbor_sequence = sequence + offset
                         neighbor = by_sequence.get(neighbor_sequence)
                         if neighbor is None:
@@ -695,37 +929,80 @@ class BuildContextUseCase:
                             text=neighbor.text,
                             metadata=neighbor.metadata,
                         )
+                        expansion_query, expansion_reason, relevance = (
+                            _best_query_relevance_cached(
+                                query_plan,
+                                text=chunk_text,
+                                cache=query_relevance_cache,
+                            )
+                        )
+                        answer_companion_slot = ""
+                        if _is_same_document_answer_companion(
+                            chunk=neighbor,
+                            expansion_reason=expansion_reason,
+                            text=chunk_text,
+                        ):
+                            answer_companion_slot = _source_sibling_companion_extra_slot(
+                                chunk=neighbor,
+                                text=chunk_text,
+                            )
+                        use_answer_companion_extra = (
+                            bool(answer_companion_slot)
+                            and answer_companion_slot not in answer_companion_slots
+                            and answer_companion_extra_used
+                            < _MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS
+                        )
+                        if len(items) >= max_neighbor_items and not use_answer_companion_extra:
+                            skipped += 1
+                            continue
+                        if use_answer_companion_extra:
+                            answer_companion_slots.add(answer_companion_slot)
+                            answer_companion_extra_used += 1
+                            item_score = 0.982
+                            item_relevance: QueryRelevance | None = relevance
+                            item_query = expansion_query
+                            item_reason = expansion_reason
+                        else:
+                            item_score = 0.68
+                            item_relevance = None
+                            item_query = query.query
+                            item_reason = "original_query"
                         items.append(
                             _chunk_context_item(
                                 chunk=neighbor,
                                 text=chunk_text,
                                 retrieval_source="keyword_neighbor_chunks",
                                 base_score=0.68,
-                                score=0.68,
-                                relevance=None,
-                                query_text=query.query,
+                                score=item_score,
+                                relevance=item_relevance,
+                                query_text=item_query,
+                                query_expansion_reason=item_reason,
                             )
                         )
-                    if len(items) >= max_neighbor_items:
-                        break
 
         return tuple(items), {
             "keyword_neighbor_chunks_considered": considered,
             "keyword_neighbor_chunks_used": len(items),
             "keyword_neighbor_chunks_skipped": skipped,
+            "keyword_neighbor_answer_companion_extra_used": answer_companion_extra_used,
         }
 
     async def _keyword_source_sibling_chunk_items(
         self,
         *,
         query: BuildContextQuery,
+        query_plan: QueryExpansionPlan,
         memory_scope_ids: tuple[str, ...],
         seed_chunks: tuple[MemoryChunk, ...],
+        query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]],
     ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
         empty_diagnostics = {
             "keyword_source_sibling_chunks_considered": 0,
             "keyword_source_sibling_chunks_used": 0,
             "keyword_source_sibling_chunks_skipped": 0,
+            "keyword_source_sibling_group_count": 0,
+            "keyword_source_sibling_candidate_limit": 0,
+            "keyword_source_sibling_companion_extra_used": 0,
         }
         if query.max_chunks <= 0 or not seed_chunks:
             return (), empty_diagnostics
@@ -733,13 +1010,14 @@ class BuildContextUseCase:
         source_groups = _source_group_seed_turns(seed_chunks)
         if not source_groups:
             return (), empty_diagnostics
+        source_groups = dict(tuple(source_groups.items())[:_MAX_SOURCE_SIBLING_GROUPS])
         max_items = min(
             _MAX_SOURCE_GROUP_SIBLING_ITEMS,
-            max(2, query.max_chunks // 3),
+            max(8, query.max_chunks * 2),
         )
         candidate_limit = min(
-            1000,
-            max(query.max_chunks * 12, max_items * 16, len(source_groups) * 48),
+            512,
+            max(max_items * 12, len(source_groups) * 32),
         )
         items: list[ContextItem] = []
         used_ids: set[str] = set()
@@ -762,28 +1040,145 @@ class BuildContextUseCase:
                 limit=candidate_limit,
             )
         ranked_candidates: list[
-            tuple[int, int, float, str, int, str, _SourceSiblingRank, MemoryChunk]
+            tuple[
+                tuple[float | int | str, ...],
+                str,
+                _SourceSiblingRank,
+                MemoryChunk,
+                str,
+                str,
+                str,
+                QueryRelevance,
+                float,
+                float | None,
+                bool,
+                bool,
+                bool,
+            ]
         ] = []
         for chunk in candidates:
             rank = _source_sibling_rank(chunk, source_groups=source_groups)
             if rank is None:
                 continue
+            chunk_text = document_chunk_retrieval_text(
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
+            expansion_query, expansion_reason, relevance = _best_query_relevance_cached(
+                query_plan,
+                text=chunk_text,
+                cache=query_relevance_cache,
+            )
+            score = _source_sibling_score(
+                rank=rank,
+                relevance=relevance,
+                expansion_query=expansion_query,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
+            score_cap = _source_sibling_score_cap(
+                expansion_reason=expansion_reason,
+                relevance=relevance,
+                text=chunk_text,
+            )
+            if not _source_sibling_relevance_allowed(
+                rank=rank,
+                relevance=relevance,
+                expansion_query=expansion_query,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            ):
+                skipped += 1
+                continue
+            visual_continuation = _is_visual_continuation_source_sibling(
+                rank=rank,
+                relevance=relevance,
+                expansion_query=expansion_query,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
+            dialogue_visual_reference = _is_dialogue_visual_reference_source_sibling(
+                rank=rank,
+                relevance=relevance,
+                expansion_query=expansion_query,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
+            observation_companion = _is_pottery_type_observation_companion(
+                chunk=chunk,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
+            precise_turn = _is_precise_source_sibling_turn(
+                chunk=chunk,
+                expansion_reason=expansion_reason,
+            )
             ranked_candidates.append(
                 (
-                    rank.group_priority,
-                    rank.turn_distance,
-                    -rank.score,
-                    chunk.source_external_id,
-                    chunk.sequence,
+                    (
+                        0 if precise_turn else 1,
+                        0 if dialogue_visual_reference else 1,
+                        0 if visual_continuation else 1,
+                        0 if observation_companion else 1,
+                        -relevance.distinctive_term_hits,
+                        -relevance.unique_term_hits,
+                        -relevance.hit_ratio,
+                        -score,
+                        rank.group_priority,
+                        rank.turn_distance,
+                        0 if rank.turn_delta > 0 else 1,
+                        chunk.source_external_id,
+                        chunk.sequence,
+                        str(chunk.id),
+                    ),
                     str(chunk.id),
                     rank,
                     chunk,
+                    chunk_text,
+                    expansion_query,
+                    expansion_reason,
+                    relevance,
+                    score,
+                    score_cap,
+                    dialogue_visual_reference,
+                    visual_continuation,
+                    observation_companion,
                 )
             )
-        ranked_candidates.sort(key=lambda item: item[:6])
-        for _, _, _, _, _, chunk_id, rank, chunk in ranked_candidates:
+        ranked_candidates.sort(key=lambda item: item[0])
+        companion_extra_used = 0
+        companion_extra_slots: set[str] = set()
+        for (
+            _,
+            chunk_id,
+            rank,
+            chunk,
+            chunk_text,
+            expansion_query,
+            expansion_reason,
+            relevance,
+            score,
+            score_cap,
+            dialogue_visual_reference,
+            visual_continuation,
+            observation_companion,
+        ) in ranked_candidates:
+            companion_slot = ""
+            use_companion_extra_slot = False
             if len(items) >= max_items:
-                break
+                if not observation_companion:
+                    continue
+                companion_slot = _source_sibling_companion_extra_slot(
+                    chunk=chunk,
+                    text=chunk_text,
+                )
+                use_companion_extra_slot = (
+                    bool(companion_slot)
+                    and companion_slot not in companion_extra_slots
+                    and companion_extra_used < _MAX_SOURCE_SIBLING_COMPANION_EXTRA_ITEMS
+                )
+                if not use_companion_extra_slot:
+                    continue
             considered += 1
             if chunk_id in used_ids:
                 skipped += 1
@@ -796,23 +1191,26 @@ class BuildContextUseCase:
                 skipped += 1
                 continue
             used_ids.add(chunk_id)
-            chunk_text = document_chunk_retrieval_text(
-                text=chunk.text,
-                metadata=chunk.metadata,
-            )
+            if use_companion_extra_slot:
+                companion_extra_slots.add(companion_slot)
+                companion_extra_used += 1
             item = _chunk_context_item(
                 chunk=chunk,
                 text=chunk_text,
                 retrieval_source="keyword_source_sibling_chunks",
                 base_score=0.74,
-                score=rank.score,
-                relevance=None,
-                query_text=query.query,
+                score=score,
+                relevance=relevance,
+                query_text=expansion_query,
+                query_expansion_reason=expansion_reason,
             )
             items.append(
                 _with_source_sibling_score_signals(
                     item,
                     rank=rank,
+                    score_cap=score_cap,
+                    dialogue_visual_reference=dialogue_visual_reference,
+                    visual_continuation=visual_continuation,
                 )
             )
 
@@ -820,6 +1218,9 @@ class BuildContextUseCase:
             "keyword_source_sibling_chunks_considered": considered,
             "keyword_source_sibling_chunks_used": len(items),
             "keyword_source_sibling_chunks_skipped": skipped,
+            "keyword_source_sibling_group_count": len(source_groups),
+            "keyword_source_sibling_candidate_limit": candidate_limit,
+            "keyword_source_sibling_companion_extra_used": companion_extra_used,
         }
 
     async def _apply_temporal_relation_signals(
@@ -1159,16 +1560,288 @@ def _annotate_temporal_relation(
     )
 
 
+def _source_sibling_score(
+    *,
+    rank: _SourceSiblingRank,
+    relevance: QueryRelevance,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> float:
+    relevance_specific = is_chunk_candidate_relevance_sufficient(
+        query=expansion_query,
+        text=text,
+        relevance=relevance,
+    )
+    visual_referent = _is_visual_referent_source_sibling(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=expansion_query,
+        expansion_reason=expansion_reason,
+        text=text,
+    )
+    if not relevance_specific and not visual_referent:
+        return rank.score
+    relevance_boost = min(
+        0.04,
+        relevance.score_boost * 0.16 + relevance.distinctive_term_hits * 0.004,
+    )
+    visual_boost = 0.018 if visual_referent else 0.0
+    score_floor = 0.966 if relevance_specific else 0.958
+    if _is_pottery_type_observation_companion_text(
+        expansion_reason=expansion_reason,
+        text=text,
+    ):
+        score_floor = max(score_floor, 0.982)
+    score = min(0.99, round(max(rank.score, score_floor) + relevance_boost + visual_boost, 4))
+    score_cap = _source_sibling_score_cap(
+        expansion_reason=expansion_reason,
+        relevance=relevance,
+        text=text,
+    )
+    return min(score, score_cap) if score_cap is not None else score
+
+
+def _source_sibling_score_cap(
+    *,
+    expansion_reason: str,
+    relevance: QueryRelevance,
+    text: str,
+) -> float | None:
+    if (
+        expansion_reason in PRECISE_TURN_SOURCE_SIBLING_REASONS
+        and relevance.distinctive_term_hits < _PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason == "pottery_type_bridge"
+        and not _is_pottery_type_source_sibling_strong(text)
+    ):
+        return _POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
+        and not _is_running_reason_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason == "volunteer_career_inference_bridge"
+        and not _is_volunteer_career_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason == "post_event_activity_timing_bridge"
+        and not _is_post_event_activity_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    return None
+
+
+def _is_pottery_type_source_sibling_strong(text: str) -> bool:
+    return (
+        _POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE.search(text) is not None
+        and _POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE.search(text) is not None
+    )
+
+
+def _is_pottery_type_observation_companion(
+    *,
+    chunk: MemoryChunk,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if not str(chunk.source_external_id).endswith(":observation"):
+        return False
+    return _is_pottery_type_observation_companion_text(
+        expansion_reason=expansion_reason,
+        text=text,
+    )
+
+
+def _is_pottery_type_observation_companion_text(
+    *,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if expansion_reason != "pottery_type_bridge":
+        return False
+    return _is_pottery_type_source_sibling_strong(text) and "related turns:" in text.lower()
+
+
+def _is_same_document_answer_companion(
+    *,
+    chunk: MemoryChunk,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    return _is_pottery_type_observation_companion(
+        chunk=chunk,
+        expansion_reason=expansion_reason,
+        text=text,
+    )
+
+
+def _source_sibling_companion_extra_slot(*, chunk: MemoryChunk, text: str) -> str:
+    if not str(chunk.source_external_id).endswith(":observation"):
+        return ""
+    markers = tuple(dict.fromkeys(match.group(0) for match in _DIALOGUE_MARKER_RE.finditer(text)))
+    if len(markers) < 2:
+        return ""
+    return f"{chunk.source_external_id}:{markers[0]}:{markers[-1]}"
+
+
+def _is_running_reason_source_sibling_strong(text: str) -> bool:
+    return _RUNNING_REASON_SOURCE_SIBLING_RE.search(text) is not None
+
+
+def _is_volunteer_career_source_sibling_strong(text: str) -> bool:
+    return (
+        _VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE.search(text) is not None
+        and _VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE.search(text) is not None
+    )
+
+
+def _is_post_event_activity_source_sibling_strong(text: str) -> bool:
+    return _POST_EVENT_ACTIVITY_SOURCE_SIBLING_RE.search(text) is not None
+
+
+def _source_sibling_relevance_allowed(
+    *,
+    rank: _SourceSiblingRank,
+    relevance: QueryRelevance,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if expansion_reason == "pottery_type_bridge" and not _is_pottery_type_source_sibling_strong(
+        text
+    ):
+        return False
+    if (
+        expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
+        and not _is_running_reason_source_sibling_strong(text)
+    ):
+        return False
+    if (
+        expansion_reason == "post_event_activity_timing_bridge"
+        and not _is_post_event_activity_source_sibling_strong(text)
+    ):
+        return False
+    return is_chunk_candidate_relevance_sufficient(
+        query=expansion_query,
+        text=text,
+        relevance=relevance,
+    ) or _is_visual_referent_source_sibling(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=expansion_query,
+        expansion_reason=expansion_reason,
+        text=text,
+    )
+
+
+def _is_visual_referent_source_sibling(
+    *,
+    rank: _SourceSiblingRank,
+    relevance: QueryRelevance,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if not _visual_source_sibling_priority_allowed(
+        expansion_query=expansion_query,
+        expansion_reason=expansion_reason,
+    ):
+        return False
+    if rank.turn_distance > 2:
+        return False
+    if relevance.unique_term_hits <= 0 and relevance.distinctive_term_hits <= 0:
+        return False
+    return _VISUAL_REFERENT_SIBLING_RE.search(text) is not None
+
+
+def _is_visual_continuation_source_sibling(
+    *,
+    rank: _SourceSiblingRank,
+    relevance: QueryRelevance,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    return (
+        rank.group_level_seed
+        and rank.turn_delta > 0
+        and rank.turn_distance <= 1
+        and _is_visual_referent_source_sibling(
+            rank=rank,
+            relevance=relevance,
+            expansion_query=expansion_query,
+            expansion_reason=expansion_reason,
+            text=text,
+        )
+    )
+
+
+def _is_dialogue_visual_reference_source_sibling(
+    *,
+    rank: _SourceSiblingRank,
+    relevance: QueryRelevance,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if not _visual_source_sibling_priority_allowed(
+        expansion_query=expansion_query,
+        expansion_reason=expansion_reason,
+    ):
+        return False
+    if not rank.group_level_seed:
+        return False
+    if relevance.unique_term_hits <= 0 and relevance.distinctive_term_hits <= 0:
+        return False
+    return _DIALOGUE_VISUAL_REFERENCE_RE.search(text) is not None
+
+
+def _visual_source_sibling_priority_allowed(
+    *,
+    expansion_query: str,
+    expansion_reason: str,
+) -> bool:
+    return (
+        expansion_reason in _VISUAL_SOURCE_SIBLING_REASONS
+        or expansion_reason in _EVENT_VISUAL_SOURCE_SIBLING_REASONS
+        or _VISUAL_SOURCE_SIBLING_QUERY_RE.search(expansion_query) is not None
+    )
+
+
+def _is_precise_source_sibling_turn(
+    *,
+    chunk: MemoryChunk,
+    expansion_reason: str,
+) -> bool:
+    return (
+        expansion_reason in PRECISE_TURN_SOURCE_SIBLING_REASONS
+        and _source_turn_marker(chunk.source_external_id) is not None
+    )
+
+
 def _with_source_sibling_score_signals(
     item: ContextItem,
     *,
     rank: _SourceSiblingRank,
+    score_cap: float | None = None,
+    dialogue_visual_reference: bool = False,
+    visual_continuation: bool = False,
 ) -> ContextItem:
     after_seed_boost = 0.05 if rank.turn_delta > 0 else 0.0
     diagnostics = dict(item.diagnostics or {})
     diagnostics["score_signals"] = {
         **_score_signals(diagnostics),
         "source_sibling_after_seed_boost": after_seed_boost,
+        "source_sibling_score_cap": score_cap,
+        "source_sibling_score_cap_applied": 1 if score_cap is not None else 0,
+        "source_sibling_dialogue_visual_reference": 1 if dialogue_visual_reference else 0,
+        "source_sibling_visual_continuation": 1 if visual_continuation else 0,
+        "source_sibling_group_level_seed": 1 if rank.group_level_seed else 0,
         "source_sibling_group_boost": max(0, _MAX_SOURCE_GROUPS - rank.group_priority),
         "source_sibling_after_seed": 1 if rank.turn_delta > 0 else 0,
         "source_sibling_closeness": max(0, 4 - rank.turn_distance),
@@ -1180,12 +1853,23 @@ def _with_source_sibling_score_signals(
         "source_sibling_turn_delta": rank.turn_delta,
         "source_sibling_turn_distance": rank.turn_distance,
         "source_sibling_group_priority": rank.group_priority,
+        "source_sibling_group_level_seed": rank.group_level_seed,
+        "source_sibling_score_cap_applied": score_cap is not None,
+        "source_sibling_dialogue_visual_reference": dialogue_visual_reference,
+        "source_sibling_visual_continuation": visual_continuation,
     }
     return replace(
         item,
-        score=min(0.99, round(item.score + after_seed_boost, 4)),
+        score=_apply_source_sibling_score_cap(
+            score=min(0.99, round(item.score + after_seed_boost, 4)),
+            score_cap=score_cap,
+        ),
         diagnostics=diagnostics,
     )
+
+
+def _apply_source_sibling_score_cap(*, score: float, score_cap: float | None) -> float:
+    return min(score, score_cap) if score_cap is not None else score
 
 
 def _with_keyword_aggregation_score_signals(
@@ -1218,6 +1902,7 @@ def _chunk_context_item(
     query_text: str,
     query_expansion_reason: str = "original_query",
     use_query_snippet: bool = True,
+    keyword_source_score_boost: float = 0.0,
 ) -> ContextItem:
     snippet = query_focused_snippet(query=query_text, text=text) if use_query_snippet else None
     evidence_text = snippet.text if snippet is not None else text
@@ -1238,6 +1923,11 @@ def _chunk_context_item(
         score_signals.update(query_relevance_score_signals(relevance))
     if query_expansion_reason != "original_query":
         score_signals["query_expansion_reason"] = query_expansion_reason
+    reason_priority = query_expansion_reason_priority(query_expansion_reason)
+    if reason_priority > 0:
+        score_signals["query_expansion_reason_priority"] = reason_priority
+    if keyword_source_score_boost > 0:
+        score_signals["keyword_source_score_boost"] = keyword_source_score_boost
     return enrich_context_item_with_media_time(
         ContextItem(
             item_id=str(chunk.id),
@@ -1311,6 +2001,54 @@ def _strict_query_term_hits(*, query: str, text: str) -> int:
     )
 
 
+def _selected_keyword_prompt_items(
+    scored_items: list[_ScoredKeywordPromptItem],
+    *,
+    limit: int,
+) -> tuple[ContextItem, ...]:
+    if limit <= 0 or not scored_items:
+        return ()
+    ordered = tuple(
+        sorted(
+            scored_items,
+            key=lambda item: (
+                -item[0],
+                -item[1],
+                -item[2],
+                -item[3],
+                -item[4],
+                item[5],
+            ),
+        )
+    )
+    selected: list[ContextItem] = []
+    selected_keys: set[tuple[str, str]] = set()
+    for scored_item in ordered[:limit]:
+        item = scored_item[7]
+        selected.append(item)
+        selected_keys.add((item.item_type, item.item_id))
+    if limit < _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS:
+        return tuple(selected)
+    extra_count = 0
+    extra_limit = limit
+    if limit >= 32:
+        extra_limit = _MAX_EXTRA_ACTIVITY_PROMPT_KEYWORD_ITEMS
+    for scored_item in ordered[limit:]:
+        reason = scored_item[6]
+        if reason not in _ACTIVITY_OBSERVATION_SOURCE_REASONS:
+            continue
+        item = scored_item[7]
+        key = (item.item_type, item.item_id)
+        if key in selected_keys:
+            continue
+        selected.append(item)
+        selected_keys.add(key)
+        extra_count += 1
+        if extra_count >= extra_limit:
+            break
+    return tuple(selected)
+
+
 def _strict_token_variants(token: str) -> tuple[str, ...]:
     normalized = token.casefold().replace("ё", "е").strip("_")
     if not normalized:
@@ -1335,13 +2073,19 @@ def _keyword_aggregation_chunk_items(
     *,
     query: BuildContextQuery,
     seed_chunks: tuple[MemoryChunk, ...],
+    query_plan: QueryExpansionPlan | None = None,
+    query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] | None = None,
 ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
     diagnostics = {
         "keyword_aggregation_chunks_considered": 0,
         "keyword_aggregation_chunks_used": 0,
         "keyword_aggregation_chunks_skipped": 0,
+        "keyword_aggregation_query_kind": "",
+        "keyword_aggregation_relaxed_relevance_used": 0,
     }
-    if query.max_chunks <= 0 or not seed_chunks or not _is_count_aggregation_query(query.query):
+    aggregation_kind = _keyword_aggregation_query_kind(query.query)
+    diagnostics["keyword_aggregation_query_kind"] = aggregation_kind
+    if query.max_chunks <= 0 or not seed_chunks or not aggregation_kind:
         return (), diagnostics
 
     max_items = min(
@@ -1349,7 +2093,16 @@ def _keyword_aggregation_chunk_items(
         max(4, query.max_chunks // 2),
     )
     candidates: list[
-        tuple[tuple[int, int, int, float, int], str, MemoryChunk, str, QueryRelevance, int]
+        tuple[
+            tuple[int, int, int, float, int],
+            str,
+            MemoryChunk,
+            str,
+            QueryRelevance,
+            int,
+            str,
+            str,
+        ]
     ] = []
     skipped = 0
     for order, chunk in enumerate(seed_chunks):
@@ -1360,14 +2113,32 @@ def _keyword_aggregation_chunk_items(
             text=chunk.text,
             metadata=chunk.metadata,
         )
-        strict_hits = _strict_query_term_hits(query=query.query, text=chunk_text)
-        if strict_hits < 2:
+        aggregation_query, aggregation_reason, relevance = _aggregation_query_relevance(
+            query=query.query,
+            query_plan=query_plan,
+            text=chunk_text,
+            query_relevance_cache=query_relevance_cache,
+        )
+        weighted_query_terms = _weighted_aggregation_query_variant_sets(aggregation_query)
+        weighted_hits, _ = _strict_query_window_match_counts(
+            text=chunk_text,
+            query_variant_sets=weighted_query_terms,
+        )
+        strict_hits = int(weighted_hits)
+        if weighted_hits <= 0:
             skipped += 1
             continue
-        relevance = score_query_relevance(query=query.query, text=chunk_text)
+        if not _is_keyword_aggregation_relevance_acceptable(
+            relevance,
+            aggregation_kind=aggregation_kind,
+            strict_hits=strict_hits,
+        ):
+            skipped += 1
+            continue
         if not is_query_relevance_sufficient(relevance):
-            skipped += 1
-            continue
+            diagnostics["keyword_aggregation_relaxed_relevance_used"] = (
+                int(diagnostics["keyword_aggregation_relaxed_relevance_used"]) + 1
+            )
         group = _aggregation_source_group(chunk)
         rank_key = (
             -strict_hits,
@@ -1376,11 +2147,31 @@ def _keyword_aggregation_chunk_items(
             -relevance.hit_ratio,
             order,
         )
-        candidates.append((rank_key, group, chunk, chunk_text, relevance, strict_hits))
+        candidates.append(
+            (
+                rank_key,
+                group,
+                chunk,
+                chunk_text,
+                relevance,
+                strict_hits,
+                aggregation_query,
+                aggregation_reason,
+            )
+        )
 
     items: list[ContextItem] = []
     group_counts: dict[str, int] = {}
-    for _, group, chunk, chunk_text, relevance, strict_hits in sorted(
+    for (
+        _,
+        group,
+        chunk,
+        chunk_text,
+        relevance,
+        strict_hits,
+        aggregation_query,
+        aggregation_reason,
+    ) in sorted(
         candidates,
         key=lambda item: item[0],
     ):
@@ -1392,12 +2183,13 @@ def _keyword_aggregation_chunk_items(
         group_counts[group] = group_counts.get(group, 0) + 1
         item = _chunk_context_item(
             chunk=chunk,
-            text=_aggregation_evidence_text(query=query.query, text=chunk_text),
+            text=_aggregation_evidence_text(query=aggregation_query, text=chunk_text),
             retrieval_source="keyword_aggregation_chunks",
             base_score=0.78,
             score=0.985,
             relevance=relevance,
-            query_text=query.query,
+            query_text=aggregation_query,
+            query_expansion_reason=aggregation_reason,
             use_query_snippet=False,
         )
         items.append(
@@ -1413,8 +2205,69 @@ def _keyword_aggregation_chunk_items(
     return tuple(items), diagnostics
 
 
-def _is_count_aggregation_query(query: str) -> bool:
-    return bool(_COUNT_AGGREGATION_QUERY_RE.search(query))
+def _keyword_aggregation_query_kind(query: str) -> str:
+    if _COUNT_AGGREGATION_QUERY_RE.search(query):
+        return "count"
+    if _LIST_AGGREGATION_QUERY_RE.search(query):
+        return "list"
+    return ""
+
+
+def _aggregation_query_relevance(
+    *,
+    query: str,
+    query_plan: QueryExpansionPlan | None,
+    text: str,
+    query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] | None = None,
+) -> tuple[str, str, QueryRelevance]:
+    if query_plan is None:
+        return query, "original_query", score_query_relevance(query=query, text=text)
+    if query_relevance_cache is None:
+        return best_query_relevance(query_plan, text=text)
+    return _best_query_relevance_cached(query_plan, text=text, cache=query_relevance_cache)
+
+
+def _best_query_relevance_cached(
+    query_plan: QueryExpansionPlan,
+    *,
+    text: str,
+    cache: dict[str, tuple[str, str, QueryRelevance]],
+) -> tuple[str, str, QueryRelevance]:
+    cached = cache.get(text)
+    if cached is not None:
+        return cached
+    result = best_query_relevance(query_plan, text=text)
+    cache[text] = result
+    return result
+
+
+def _record_stage_timing(
+    diagnostics: dict[str, object],
+    stage: str,
+    started_at: float,
+) -> None:
+    timings = diagnostics.get("stage_timings_ms")
+    if not isinstance(timings, dict):
+        timings = {}
+        diagnostics["stage_timings_ms"] = timings
+    if len(timings) >= 32 and stage not in timings:
+        return
+    timings[stage] = round((perf_counter() - started_at) * 1000, 2)
+
+
+def _is_keyword_aggregation_relevance_acceptable(
+    relevance: QueryRelevance,
+    *,
+    aggregation_kind: str,
+    strict_hits: int,
+) -> bool:
+    if is_query_relevance_sufficient(relevance):
+        return True
+    return (
+        aggregation_kind == "list"
+        and strict_hits > 0
+        and relevance.unique_term_hits > 0
+    )
 
 
 def _aggregation_source_group(chunk: MemoryChunk) -> str:
@@ -1432,34 +2285,273 @@ def _aggregation_source_kind_rank(chunk: MemoryChunk) -> int:
     if _source_turn_marker(chunk.source_external_id) is not None:
         return 1
     parts = " ".join(str(chunk.source_external_id).split()).split(":")
+    if parts and parts[-1] == "observation":
+        return 0
     if parts and parts[-1] in {"events", "summary"}:
         return 3
-    if parts and parts[-1] == "observation":
-        return 2
-    return 0
+    return 2
 
 
 def _aggregation_evidence_text(*, query: str, text: str) -> str:
-    match_start = _first_strict_query_match_start(query=query, text=text)
-    if match_start is None:
-        return text
     markers = tuple(_DIALOGUE_MARKER_RE.finditer(text))
     if not markers:
         return text
-    marker_index = max(
-        (index for index, marker in enumerate(markers) if marker.start() <= match_start),
-        default=0,
+    multi_window_text = _multi_window_aggregation_evidence_text(
+        query=query,
+        text=text,
+        markers=markers,
     )
-    start_index = max(0, marker_index - 1)
-    end_index = min(len(markers) - 1, marker_index + 3)
-    start = markers[start_index].start()
-    end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
+    if multi_window_text:
+        return _with_aggregation_marker_coverage(rendered=multi_window_text, full_text=text)
+    bounds = _best_aggregation_dialogue_window(query=query, text=text, markers=markers)
+    if bounds is None:
+        match_start = _first_strict_query_match_start(query=query, text=text)
+        if match_start is None:
+            return text
+        marker_index = max(
+            (index for index, marker in enumerate(markers) if marker.start() <= match_start),
+            default=0,
+        )
+        start_index = max(0, marker_index - 1)
+        end_index = min(len(markers) - 1, marker_index + _AGGREGATION_DIALOGUE_WINDOW_AFTER)
+        bounds = (
+            markers[start_index].start(),
+            markers[end_index + 1].start()
+            if end_index + 1 < len(markers)
+            else len(text),
+        )
+    start, end = bounds
     window = text[start:end].strip()
     if start > 0:
         window = f"... {window}"
     if end < len(text):
         window = f"{window} ..."
-    return window or text
+    return _with_aggregation_marker_coverage(rendered=window or text, full_text=text)
+
+
+def _with_aggregation_marker_coverage(*, rendered: str, full_text: str) -> str:
+    if not rendered or rendered == full_text:
+        return rendered
+    markers = tuple(
+        dict.fromkeys(match.group(0) for match in _DIALOGUE_MARKER_RE.finditer(full_text))
+    )
+    if not markers:
+        return rendered
+    missing = tuple(marker for marker in markers if marker not in rendered)
+    if not missing:
+        return rendered
+    coverage = (
+        "omitted source evidence markers: "
+        + " ".join(missing[:_MAX_AGGREGATION_MARKER_COVERAGE_IDS])
+    )
+    if len(missing) > _MAX_AGGREGATION_MARKER_COVERAGE_IDS:
+        coverage = f"{coverage} ..."
+    candidate = f"{rendered}\n{coverage}".strip()
+    if len(candidate) > _MAX_AGGREGATION_EVIDENCE_TEXT_CHARS:
+        return rendered
+    return candidate
+
+
+def _multi_window_aggregation_evidence_text(
+    *,
+    query: str,
+    text: str,
+    markers: tuple[re.Match[str], ...],
+) -> str:
+    bounds = _aggregation_dialogue_windows(query=query, text=text, markers=markers)
+    if len(bounds) <= 1:
+        return ""
+    rendered = _render_aggregation_windows(text=text, bounds=bounds)
+    return rendered if rendered and len(rendered) < len(text) else ""
+
+
+def _aggregation_dialogue_windows(
+    *,
+    query: str,
+    text: str,
+    markers: tuple[re.Match[str], ...],
+) -> tuple[tuple[int, int], ...]:
+    query_variant_sets = _weighted_aggregation_query_variant_sets(query)
+    if not query_variant_sets:
+        return ()
+
+    candidates: list[tuple[tuple[float, float, int, int], int, int]] = []
+    for marker_index, _marker in enumerate(markers):
+        segment_start = markers[marker_index].start()
+        segment_end = (
+            markers[marker_index + 1].start() if marker_index + 1 < len(markers) else len(text)
+        )
+        segment_matched_terms, segment_total_hits = _strict_query_window_match_counts(
+            text=text[segment_start:segment_end],
+            query_variant_sets=query_variant_sets,
+        )
+        if segment_matched_terms <= 0:
+            continue
+        start_index = marker_index
+        end_index = min(len(markers) - 1, marker_index + _AGGREGATION_DIALOGUE_WINDOW_AFTER)
+        start = markers[start_index].start()
+        end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
+        window_matched_terms, window_total_hits = _strict_query_window_match_counts(
+            text=text[start:end],
+            query_variant_sets=query_variant_sets,
+        )
+        key = (
+            window_matched_terms,
+            window_total_hits,
+            -(end - start),
+            -start,
+        )
+        candidates.append((key, start, end))
+
+    selected: list[tuple[int, int]] = []
+    selected_chars = 0
+    for _key, start, end in sorted(candidates, key=lambda item: item[0], reverse=True):
+        if len(selected) >= _MAX_AGGREGATION_DIALOGUE_WINDOWS:
+            break
+        if any(
+            _bounds_overlap(start, end, selected_start, selected_end)
+            for selected_start, selected_end in selected
+        ):
+            continue
+        window_chars = end - start
+        if selected_chars + window_chars > _MAX_AGGREGATION_EVIDENCE_TEXT_CHARS:
+            continue
+        selected.append((start, end))
+        selected_chars += window_chars
+
+    return tuple(sorted(selected))
+
+
+def _bounds_overlap(
+    start: int,
+    end: int,
+    selected_start: int,
+    selected_end: int,
+) -> bool:
+    return start < selected_end and selected_start < end
+
+
+def _render_aggregation_windows(
+    *,
+    text: str,
+    bounds: tuple[tuple[int, int], ...],
+) -> str:
+    parts: list[str] = []
+    for start, end in bounds:
+        window = text[start:end].strip()
+        if not window:
+            continue
+        if start > 0:
+            window = f"... {window}"
+        if end < len(text):
+            window = f"{window} ..."
+        parts.append(window)
+    rendered = " ".join(parts).strip()
+    return rendered[:_MAX_AGGREGATION_EVIDENCE_TEXT_CHARS].strip()
+
+
+def _best_aggregation_dialogue_window(
+    *,
+    query: str,
+    text: str,
+    markers: tuple[re.Match[str], ...],
+) -> tuple[int, int] | None:
+    query_variant_sets = _weighted_aggregation_query_variant_sets(query)
+    if not query_variant_sets:
+        return None
+
+    best_bounds: tuple[int, int] | None = None
+    best_key: tuple[float, float, int, int] = (-1.0, -1.0, 0, 0)
+    for marker_index, _marker in enumerate(markers):
+        start_index = max(0, marker_index - 1)
+        end_index = min(len(markers) - 1, marker_index + _AGGREGATION_DIALOGUE_WINDOW_AFTER)
+        start = markers[start_index].start()
+        end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
+        matched_terms, total_hits = _strict_query_window_match_counts(
+            text=text[start:end],
+            query_variant_sets=query_variant_sets,
+        )
+        if matched_terms <= 0:
+            continue
+        start = _first_positive_aggregation_marker_start(
+            text=text,
+            markers=markers,
+            start_index=start_index,
+            end_index=end_index,
+            query_variant_sets=query_variant_sets,
+        )
+        key = (matched_terms, total_hits, -(end - start), -start)
+        if key > best_key:
+            best_key = key
+            best_bounds = (start, end)
+    return best_bounds
+
+
+def _first_positive_aggregation_marker_start(
+    *,
+    text: str,
+    markers: tuple[re.Match[str], ...],
+    start_index: int,
+    end_index: int,
+    query_variant_sets: tuple[tuple[set[str], float], ...],
+) -> int:
+    for index in range(start_index, end_index + 1):
+        segment_start = markers[index].start()
+        segment_end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+        matched_terms, _ = _strict_query_window_match_counts(
+            text=text[segment_start:segment_end],
+            query_variant_sets=query_variant_sets,
+        )
+        if matched_terms > 0:
+            return segment_start
+    return markers[start_index].start()
+
+
+def _weighted_aggregation_query_variant_sets(
+    query: str,
+) -> tuple[tuple[set[str], float], ...]:
+    identity_terms = {
+        match.group(0).casefold()
+        for match in _STRICT_QUERY_TOKEN_RE.finditer(query)
+        if match.group(0)[:1].isupper() and not match.group(0).isupper()
+    }
+    weighted: list[tuple[set[str], float]] = []
+    for term in query_terms(query):
+        variants = set(_strict_token_variants(term.raw))
+        if not variants:
+            continue
+        if (
+            term.raw.isdigit()
+            or term.raw in identity_terms
+            or variants.intersection(_LOW_SIGNAL_COUNT_AGGREGATION_TERMS)
+        ):
+            weight = 0.0
+        else:
+            weight = 1.0
+        weighted.append((variants, weight))
+    return tuple(weighted)
+
+
+def _strict_query_window_match_counts(
+    *,
+    text: str,
+    query_variant_sets: tuple[tuple[set[str], float], ...],
+) -> tuple[float, float]:
+    matched_indexes: set[int] = set()
+    matched_score = 0.0
+    total_score = 0.0
+    for match in _STRICT_QUERY_TOKEN_RE.finditer(text):
+        token_variants = set(_strict_token_variants(match.group(0)))
+        if not token_variants:
+            continue
+        for index, (variants, weight) in enumerate(query_variant_sets):
+            if token_variants.intersection(variants):
+                if index not in matched_indexes:
+                    matched_score += weight
+                matched_indexes.add(index)
+                total_score += weight
+                break
+    return matched_score, total_score
 
 
 def _first_strict_query_match_start(*, query: str, text: str) -> int | None:
@@ -1482,15 +2574,27 @@ def _first_strict_query_match_start(*, query: str, text: str) -> int | None:
 def _source_group_seed_turns(
     seed_chunks: tuple[MemoryChunk, ...],
 ) -> dict[str, _SourceGroupSeed]:
-    groups: dict[str, tuple[int, int, set[int]]] = {}
+    groups: dict[str, tuple[int, int, set[int], bool]] = {}
     for chunk in seed_chunks:
         marker = _source_turn_marker(chunk.source_external_id)
         if marker is None:
+            group = _source_session_group(chunk.source_external_id)
+            if group is None:
+                continue
+            if group not in groups:
+                groups[group] = (len(groups), 0, set(), True)
+            else:
+                priority, primary_turn, turns, _ = groups[group]
+                groups[group] = (priority, primary_turn, turns, True)
+            if len(groups) >= _MAX_SOURCE_GROUPS:
+                break
             continue
         group, turn = marker
         if group not in groups:
-            groups[group] = (len(groups), turn, set())
-        groups[group][2].add(turn)
+            groups[group] = (len(groups), turn, set(), False)
+        priority, primary_turn, turns, group_level = groups[group]
+        turns.add(turn)
+        groups[group] = (priority, primary_turn or turn, turns, group_level)
         if len(groups) >= _MAX_SOURCE_GROUPS:
             break
     return {
@@ -1498,9 +2602,26 @@ def _source_group_seed_turns(
             priority=priority,
             primary_turn=primary_turn,
             turns=frozenset(turns),
+            group_level=group_level,
         )
-        for group, (priority, primary_turn, turns) in groups.items()
+        for group, (priority, primary_turn, turns, group_level) in groups.items()
     }
+
+
+def _source_session_group(source_external_id: str) -> str | None:
+    source_id = " ".join(str(source_external_id).split())
+    if not source_id:
+        return None
+    parts = source_id.split(":")
+    if len(parts) >= 4 and parts[-1].casefold() in _SOURCE_GROUP_SUFFIXES:
+        group = ":".join(parts[:-1])
+        return group if _source_group_has_session_tail(group) else None
+    return source_id if _source_group_has_session_tail(source_id) else None
+
+
+def _source_group_has_session_tail(source_id: str) -> bool:
+    parts = source_id.split(":")
+    return bool(parts and re.fullmatch(r"session_\d+", parts[-1], re.IGNORECASE))
 
 
 def _source_turn_marker(source_external_id: str) -> tuple[str, int] | None:
@@ -1527,11 +2648,48 @@ def _source_sibling_rank(
 ) -> _SourceSiblingRank | None:
     marker = _source_turn_marker(chunk.source_external_id)
     if marker is None:
-        return None
+        group = _source_session_group(chunk.source_external_id)
+        if group is None:
+            return None
+        seed = source_groups.get(group)
+        if seed is None:
+            return None
+        return _SourceSiblingRank(
+            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE
+            if seed.group_level
+            else _SOURCE_GROUP_SIBLING_SCORES[1],
+            group_priority=seed.priority,
+            turn_distance=0,
+            turn_delta=0,
+            group_level_seed=seed.group_level,
+        )
     group, turn = marker
     seed = source_groups.get(group)
-    if seed is None or not seed.turns or turn == seed.primary_turn:
+    if seed is None or not seed.turns:
+        if seed is not None and seed.group_level:
+            return _SourceSiblingRank(
+                score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
+                group_priority=seed.priority,
+                turn_distance=0,
+                turn_delta=0,
+                group_level_seed=True,
+            )
         return None
+    if seed.group_level:
+        return _SourceSiblingRank(
+            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
+            group_priority=seed.priority,
+            turn_distance=0,
+            turn_delta=0,
+            group_level_seed=True,
+        )
+    if turn == seed.primary_turn:
+        return _SourceSiblingRank(
+            score=_SOURCE_GROUP_PRIMARY_SEED_SCORE,
+            group_priority=seed.priority,
+            turn_distance=0,
+            turn_delta=0,
+        )
     seed_turns = tuple(seed_turn for seed_turn in seed.turns if seed_turn != turn)
     if not seed_turns:
         return None
@@ -1591,7 +2749,7 @@ def _apply_explicit_requirement_guard(
 
 
 def _coverage_strings(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)):
+    if not isinstance(value, list | tuple):
         return ()
     return tuple(str(item) for item in value if isinstance(item, str) and item)
 

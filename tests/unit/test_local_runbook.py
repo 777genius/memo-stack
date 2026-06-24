@@ -1048,6 +1048,8 @@ def test_makefile_has_official_public_benchmark_canary() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_MAX_CASES" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_CASE_IDS" in recipe
+    assert "--case-id" in recipe
     assert "--competitive-floor" in recipe
     assert "infinity_context_server.official_public_benchmark import main" in script
     assert "snap-research/locomo" in module

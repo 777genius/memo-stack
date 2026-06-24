@@ -102,9 +102,7 @@ def retrieval_quality_summary(
         pending_review_items=pending_review_items,
         stale_items=stale_items,
         missing_requirement_count=_missing_requirement_count(diagnostics),
-        critical_missing_evidence_requirement_count=(
-            _critical_missing_evidence_requirement_count(diagnostics)
-        ),
+        critical_missing_requirement_count=_critical_missing_requirement_count(diagnostics),
     )
     return {
         "schema_version": "retrieval-quality-v1",
@@ -223,13 +221,13 @@ def _answerability_status(
     pending_review_items: int,
     stale_items: int,
     missing_requirement_count: int,
-    critical_missing_evidence_requirement_count: int,
+    critical_missing_requirement_count: int,
 ) -> str:
     if item_count <= 0:
         return "insufficient_context"
     if review_only_items + pending_review_items >= item_count or stale_items >= item_count:
         return "needs_review"
-    if critical_missing_evidence_requirement_count > 0:
+    if critical_missing_requirement_count > 0:
         return "insufficient_evidence"
     if missing_requirement_count > 0 and evidence_strength == "strong":
         return "usable_with_caveats"
@@ -354,6 +352,8 @@ def _requirement_coverage_gaps(diagnostics: dict[str, object]) -> list[str]:
         gaps.append(f"missing_{feature}_requirement")
     for modality in _safe_string_list(coverage.get("missing_modalities")):
         gaps.append(f"missing_{modality}_modality_requirement")
+    for shape in _safe_string_list(coverage.get("missing_answer_shapes")):
+        gaps.append(f"missing_{shape}_answer_shape_requirement")
     for kind in _safe_string_list(coverage.get("missing_anchor_kinds")):
         gaps.append(f"missing_{kind}_anchor_requirement")
     return gaps
@@ -364,7 +364,7 @@ def _missing_requirement_count(diagnostics: dict[str, object]) -> int:
     return _non_negative_int(coverage.get("missing_total"), default=0)
 
 
-def _critical_missing_evidence_requirement_count(diagnostics: dict[str, object]) -> int:
+def _critical_missing_requirement_count(diagnostics: dict[str, object]) -> int:
     coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
     critical_features = {
         "citation",
@@ -373,11 +373,38 @@ def _critical_missing_evidence_requirement_count(diagnostics: dict[str, object])
         "time_range",
         "visual_region",
     }
-    return sum(
+    critical_answer_shapes = {
+        "action_role",
+        "causal",
+        "choice",
+        "commonality",
+        "commitment",
+        "constraint",
+        "conversation_participant",
+        "conversation_topic",
+        "count",
+        "existence",
+        "gotcha",
+        "inference",
+        "location",
+        "ordinal",
+        "preference",
+        "relationship",
+        "speaker",
+        "state_update",
+        "temporal",
+    }
+    missing_critical_features = sum(
         1
         for feature in _safe_string_list(coverage.get("missing_evidence_features"))
         if feature in critical_features
     )
+    missing_critical_shapes = sum(
+        1
+        for shape in _safe_string_list(coverage.get("missing_answer_shapes"))
+        if shape in critical_answer_shapes
+    )
+    return missing_critical_features + missing_critical_shapes
 
 
 def _safe_item_score(item: ContextItem) -> float:

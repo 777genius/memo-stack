@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+_MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
+_MAX_CHECKPOINT_CASES = 50_000
+
 
 @dataclass(frozen=True)
 class CaseRunResult:
@@ -23,6 +26,7 @@ class CaseRunResult:
     leaked_terms: tuple[str, ...]
     item_ids: tuple[str, ...]
     latency_ms: float
+    question_preview: str = ""
 
 
 @dataclass
@@ -55,6 +59,9 @@ class BenchmarkResumeLoadResult:
     reason: str
     selected_case_count: int
     checkpoint_case_count: int = 0
+    checkpoint_success_case_count: int = 0
+    checkpoint_failed_case_count: int = 0
+    checkpoint_invalid_case_count: int = 0
 
 
 def load_checkpoint_resume_state(
@@ -83,6 +90,17 @@ def load_checkpoint_resume_state_with_diagnostics(
     if checkpoint_out is None or not checkpoint_out.exists():
         return _resume_load_skipped(
             "checkpoint_missing" if checkpoint_out is not None else "checkpoint_not_configured",
+            selected_case_count=selected_case_count,
+        )
+    try:
+        if checkpoint_out.stat().st_size > _MAX_CHECKPOINT_BYTES:
+            return _resume_load_skipped(
+                "checkpoint_too_large",
+                selected_case_count=selected_case_count,
+            )
+    except OSError:
+        return _resume_load_skipped(
+            "checkpoint_unreadable",
             selected_case_count=selected_case_count,
         )
     try:
@@ -119,22 +137,38 @@ def load_checkpoint_resume_state_with_diagnostics(
             "checkpoint_cases_invalid",
             selected_case_count=selected_case_count,
         )
+    if len(raw_cases) > _MAX_CHECKPOINT_CASES:
+        return _resume_load_skipped(
+            "checkpoint_case_count_exceeds_limit",
+            selected_case_count=selected_case_count,
+            checkpoint_case_count=len(raw_cases),
+        )
     run_results: list[CaseRunResult] = []
     seen: set[tuple[str, str]] = set()
+    seen_checkpoint_keys: set[tuple[str, str]] = set()
+    checkpoint_failed_case_count = 0
+    checkpoint_invalid_case_count = 0
     for raw_case in raw_cases:
         result = _case_run_result_from_payload(raw_case)
         if result is None:
+            checkpoint_invalid_case_count += 1
             continue
         key = case_result_key(result.benchmark, result.case_id)
-        if key not in selected_cases or key in seen:
+        if key not in selected_cases or key in seen_checkpoint_keys:
+            continue
+        seen_checkpoint_keys.add(key)
+        if not result.ok:
+            checkpoint_failed_case_count += 1
             continue
         run_results.append(result)
         seen.add(key)
     if not run_results:
         return _resume_load_skipped(
-            "no_selected_case_results",
+            "no_selected_successful_case_results",
             selected_case_count=selected_case_count,
             checkpoint_case_count=len(raw_cases),
+            checkpoint_failed_case_count=checkpoint_failed_case_count,
+            checkpoint_invalid_case_count=checkpoint_invalid_case_count,
         )
     seeded_source_keys, seeded_corpus_identities = resume_seed_state(
         cases=(selected_cases[key] for key in seen),
@@ -153,15 +187,10 @@ def load_checkpoint_resume_state_with_diagnostics(
         ),
         seed_cache_hit_count=_int_field(progress, "seed_cache_hit_count", default=0),
     )
-    failures = tuple(
-        dict(item)
-        for item in _as_sequence(payload.get("failures"))
-        if isinstance(item, Mapping)
-    )
     return BenchmarkResumeLoadResult(
         state=BenchmarkResumeState(
             run_results=tuple(run_results),
-            failures=failures,
+            failures=(),
             seeded_source_keys=frozenset(seeded_source_keys),
             seeded_corpus_identities=frozenset(seeded_corpus_identities),
             seed_stats=seed_stats,
@@ -170,6 +199,9 @@ def load_checkpoint_resume_state_with_diagnostics(
         reason="compatible_checkpoint",
         selected_case_count=selected_case_count,
         checkpoint_case_count=len(raw_cases),
+        checkpoint_success_case_count=len(run_results),
+        checkpoint_failed_case_count=checkpoint_failed_case_count,
+        checkpoint_invalid_case_count=checkpoint_invalid_case_count,
     )
 
 
@@ -178,6 +210,9 @@ def _resume_load_skipped(
     *,
     selected_case_count: int,
     checkpoint_case_count: int = 0,
+    checkpoint_success_case_count: int = 0,
+    checkpoint_failed_case_count: int = 0,
+    checkpoint_invalid_case_count: int = 0,
 ) -> BenchmarkResumeLoadResult:
     return BenchmarkResumeLoadResult(
         state=None,
@@ -185,6 +220,9 @@ def _resume_load_skipped(
         reason=reason,
         selected_case_count=selected_case_count,
         checkpoint_case_count=checkpoint_case_count,
+        checkpoint_success_case_count=checkpoint_success_case_count,
+        checkpoint_failed_case_count=checkpoint_failed_case_count,
+        checkpoint_invalid_case_count=checkpoint_invalid_case_count,
     )
 
 
@@ -201,15 +239,13 @@ def resume_seed_state(
         thread_ref = case.thread_external_ref or f"{case.benchmark}-{case.case_id}"
         for index, memory in enumerate(case.memories):
             source_id = safe_identifier(
-                memory.source_external_id
-                or f"{dataset_hash}:{case.case_id}:memory:{index}",
+                memory.source_external_id or f"{dataset_hash}:{case.case_id}:memory:{index}",
                 max_chars=160,
             )
             source_keys.add((memory_scope_ref, thread_ref, "fact", source_id))
         for index, document in enumerate(case.documents):
             source_id = safe_identifier(
-                document.source_external_id
-                or f"{dataset_hash}:{case.case_id}:doc:{index}",
+                document.source_external_id or f"{dataset_hash}:{case.case_id}:doc:{index}",
                 max_chars=240,
             )
             source_keys.add((memory_scope_ref, thread_ref, "document", source_id))
@@ -250,9 +286,7 @@ def _seed_corpus_fingerprint(case: Any) -> str:
             index=index,
             fields=(memory.kind, memory.text),
         )
-        parts.append(
-            ("fact", index, memory.kind, safe_identifier(source_id, max_chars=160))
-        )
+        parts.append(("fact", index, memory.kind, safe_identifier(source_id, max_chars=160)))
     for index, document in enumerate(case.documents):
         source_id = document.source_external_id or _content_fingerprint(
             "document",
@@ -312,9 +346,7 @@ def seed_corpus_metadata(
             and all(source.source_external_id for source in (*case.memories, *case.documents))
         ),
         source_count=len(case.memories) + len(case.documents),
-        source_kind_counts={
-            key: count for key, count in kind_counts.items() if count > 0
-        },
+        source_kind_counts={key: count for key, count in kind_counts.items() if count > 0},
     )
     cache[cache_key] = metadata
     return metadata
@@ -349,6 +381,7 @@ def _case_run_result_from_payload(raw: object) -> CaseRunResult | None:
         leaked_terms=_str_tuple(raw.get("leaked_terms")),
         item_ids=_str_tuple(raw.get("item_ids")),
         latency_ms=_float_field(raw, "latency_ms", default=0.0),
+        question_preview=str(raw.get("question_preview") or "")[:240],
     )
 
 

@@ -1,10 +1,48 @@
 from infinity_context_core.application.context_diagnostics import (
     context_rank_key,
+    merge_context_diagnostics,
     normalize_context_bundle_diagnostics,
     normalize_context_item_diagnostics,
 )
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import SourceRef
+
+
+def test_merge_context_diagnostics_preserves_positive_source_sibling_flags() -> None:
+    merged = merge_context_diagnostics(
+        primary={
+            "score_signals": {
+                "source_sibling_dialogue_visual_reference": 0,
+                "source_sibling_group_level_seed": 1,
+            },
+            "provenance": {
+                "source_sibling_dialogue_visual_reference": False,
+                "source_sibling_group_level_seed": True,
+            },
+        },
+        secondary={
+            "score_signals": {
+                "source_sibling_dialogue_visual_reference": 1,
+                "source_sibling_visual_continuation": 1,
+            },
+            "provenance": {
+                "source_sibling_dialogue_visual_reference": True,
+                "source_sibling_visual_continuation": True,
+            },
+        },
+        retrieval_sources=("keyword_source_sibling_chunks",),
+        source_ref_count=1,
+        primary_score=0.99,
+        secondary_score=0.98,
+        hybrid_boost=0.0,
+    )
+
+    assert merged["score_signals"]["source_sibling_dialogue_visual_reference"] == 1
+    assert merged["score_signals"]["source_sibling_group_level_seed"] == 1
+    assert merged["score_signals"]["source_sibling_visual_continuation"] == 1
+    assert merged["provenance"]["source_sibling_dialogue_visual_reference"] is True
+    assert merged["provenance"]["source_sibling_group_level_seed"] is True
+    assert merged["provenance"]["source_sibling_visual_continuation"] is True
 
 
 def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
@@ -26,6 +64,9 @@ def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
         "temporal_replacements_applied": 1,
         "stale_facts_considered": 3,
         "stale_facts_used": 1,
+        "answer_support_families_considered": 4,
+        "answer_support_families_used": 3,
+        "answer_support_items_used": 2,
         "api_key": "SECRET_VALUE_SHOULD_NOT_LEAK",
         **{f"extra_{index}": "x" * 500 for index in range(80)},
     }
@@ -42,6 +83,9 @@ def test_context_bundle_diagnostics_are_bounded_redacted_and_typed() -> None:
     assert diagnostics["temporal_replacements_applied"] == 1
     assert diagnostics["stale_facts_considered"] == 3
     assert diagnostics["stale_facts_used"] == 1
+    assert diagnostics["answer_support_families_considered"] == 4
+    assert diagnostics["answer_support_families_used"] == 3
+    assert diagnostics["answer_support_items_used"] == 2
     assert diagnostics["diagnostics_truncated"] is True
     assert "api_key" not in diagnostics
     assert "SECRET_VALUE_SHOULD_NOT_LEAK" not in str(diagnostics)
@@ -91,6 +135,9 @@ def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
         "requested_evidence_features": [],
         "covered_evidence_features": [],
         "missing_evidence_features": [],
+        "requested_answer_shapes": [],
+        "covered_answer_shapes": [],
+        "missing_answer_shapes": [],
         "item_count": 0,
     }
     assert secret not in str(diagnostics)
@@ -230,6 +277,12 @@ def test_context_bundle_diagnostics_preserve_derived_multi_query_counters() -> N
     diagnostics = normalize_context_bundle_diagnostics(
         {
             **{f"extra_{index}": "x" * 500 for index in range(90)},
+            "keyword_query_count": 4,
+            "keyword_query_reasons": [
+                "original_query",
+                "decomposition_relative_time",
+                "source_evidence_bridge",
+            ],
             "vector_query_count": 6,
             "vector_embedding_vector_count": 6,
             "vector_search_count": 6,
@@ -248,6 +301,12 @@ def test_context_bundle_diagnostics_preserve_derived_multi_query_counters() -> N
     )
 
     assert diagnostics["diagnostics_truncated"] is True
+    assert diagnostics["keyword_query_count"] == 4
+    assert diagnostics["keyword_query_reasons"] == [
+        "original_query",
+        "decomposition_relative_time",
+        "source_evidence_bridge",
+    ]
     assert diagnostics["vector_query_count"] == 6
     assert diagnostics["vector_embedding_vector_count"] == 6
     assert diagnostics["vector_search_count"] == 6
@@ -610,6 +669,9 @@ def test_context_bundle_diagnostics_defaults_empty_contract() -> None:
     assert diagnostics["diversity_families_considered"] == 0
     assert diagnostics["diversity_families_used"] == 0
     assert diagnostics["diversity_items_used"] == 0
+    assert diagnostics["answer_support_families_considered"] == 0
+    assert diagnostics["answer_support_families_used"] == 0
+    assert diagnostics["answer_support_items_used"] == 0
     assert diagnostics["chunk_sources_considered"] == 0
     assert diagnostics["chunk_sources_used"] == 0
     assert diagnostics["max_chunks_used_per_source"] == 0
@@ -843,6 +905,426 @@ def test_context_quality_downgrades_when_explicit_extracted_text_requirement_mis
     assert summary["recommended_response_policy"] == "ask_for_more_context"
     assert "missing_extracted_text_requirement" in summary["actionable_gaps"]
     assert "missing_extracted_text_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_choice_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="john_option_echo",
+        item_type="chunk",
+        text="John discussed whether a beach or mountains sounded nice someday.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D8:3",
+                char_start=0,
+                char_end=62,
+                quote_preview="John discussed whether a beach or mountains sounded nice someday.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "beach or mountains",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["choice"],
+                "missing_answer_shapes": ["choice"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_choice_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_choice_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_constraint_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="alex_positive_food_note",
+        item_type="chunk",
+        text="Alex eats peanuts and enjoys shellfish at weekend dinners.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="note",
+                source_id="food_note",
+                char_start=0,
+                char_end=58,
+                quote_preview="Alex eats peanuts and enjoys shellfish at weekend dinners.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "Alex eats peanuts and enjoys shellfish.",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["constraint"],
+                "missing_answer_shapes": ["constraint"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_constraint_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_constraint_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_action_role_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="passive_recommendation",
+        item_type="chunk",
+        text="Becoming Nicole was recommended during the reading discussion.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D5:3",
+                char_start=0,
+                char_end=62,
+                quote_preview="Becoming Nicole was recommended during the reading discussion.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "recommended Becoming Nicole to Melanie",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["action_role"],
+                "missing_answer_shapes": ["action_role"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_action_role_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_action_role_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_location_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="alex_generic_move",
+        item_type="chunk",
+        text="Alex discussed moving someday but did not name a city.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D9:3",
+                char_start=0,
+                char_end=54,
+                quote_preview="Alex discussed moving someday but did not name a city.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "where Alex live now",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["location"],
+                "missing_answer_shapes": ["location"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_location_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_location_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_preference_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="alex_music_mention",
+        item_type="chunk",
+        text="Alex discussed ambient music during the studio call.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D11:3",
+                char_start=0,
+                char_end=53,
+                quote_preview="Alex discussed ambient music during the studio call.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "what music Alex like",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["preference"],
+                "missing_answer_shapes": ["preference"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_preference_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_preference_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_relationship_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="alex_school_note",
+        item_type="chunk",
+        text="Alex went to school with Maria.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D4:3",
+                char_start=0,
+                char_end=31,
+                quote_preview="Alex went to school with Maria.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "Alex old friend school",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["relationship"],
+                "missing_answer_shapes": ["relationship"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_relationship_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_relationship_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_commitment_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="atlas_discussion",
+        item_type="chunk",
+        text="Atlas was discussed during the meeting with Alex.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="meeting_notes",
+                source_id="D14:4",
+                char_start=0,
+                char_end=49,
+                quote_preview="Atlas was discussed during the meeting with Alex.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "Atlas meeting action items",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["commitment"],
+                "missing_answer_shapes": ["commitment"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_commitment_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_commitment_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_gotcha_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="atlas_deployment_plain",
+        item_type="chunk",
+        text="Atlas deployment uses Docker, Postgres, Qdrant, and the API worker.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="runbook",
+                source_id="atlas_deploy",
+                char_start=0,
+                char_end=68,
+                quote_preview="Atlas deployment uses Docker, Postgres, Qdrant, and the API worker.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "Atlas deployment known issues",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["gotcha"],
+                "missing_answer_shapes": ["gotcha"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_gotcha_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_gotcha_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_existence_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="atlas_topic_note",
+        item_type="chunk",
+        text="Project Atlas was approved after the billing call.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="note",
+                source_id="atlas_note",
+                char_start=0,
+                char_end=49,
+                quote_preview="Project Atlas was approved after the billing call.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "query_snippet": "Alex ever mentioned Project Atlas",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["existence"],
+                "missing_answer_shapes": ["existence"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_existence_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_existence_answer_shape_requirement" in summary["answerability_reasons"]
+
+
+def test_context_quality_downgrades_when_state_update_answer_shape_missing() -> None:
+    item = ContextItem(
+        item_id="atlas_provider_without_current_marker",
+        item_type="chunk",
+        text="Atlas provider is OpenAI.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="fact",
+                source_id="provider_plain",
+                char_start=0,
+                char_end=25,
+                quote_preview="Atlas provider is OpenAI.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["postgres_facts"],
+            "query_snippet": "latest current Atlas provider",
+        },
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_assembly_version": "context-v2-hybrid-explainable",
+            "query_snippet_items_used": 1,
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 0,
+                "requested_answer_shapes": ["state_update"],
+                "missing_answer_shapes": ["state_update"],
+            },
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["answerability_status"] == "insufficient_evidence"
+    assert summary["recommended_response_policy"] == "ask_for_more_context"
+    assert "missing_state_update_answer_shape_requirement" in summary["actionable_gaps"]
+    assert "missing_state_update_answer_shape_requirement" in summary["answerability_reasons"]
 
 
 def test_context_quality_keeps_caveat_for_noncritical_missing_anchor_requirement() -> None:

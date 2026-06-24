@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from math import log
 
+from infinity_context_core.application.context_lexical import date_tokens
 from infinity_context_core.application.context_temporal_hints import (
     TemporalHint,
     temporal_hint_windows,
@@ -160,7 +161,10 @@ _PROMPT_INJECTION_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 def terms(text: str) -> tuple[str, ...]:
     seen: dict[str, None] = {}
-    for raw in _TERM_PATTERN.findall(redact_sensitive_text(text).lower()):
+    redacted_text = redact_sensitive_text(text)
+    for term in date_tokens(redacted_text):
+        _add_term(seen, term)
+    for raw in _TERM_PATTERN.findall(redacted_text.lower()):
         if len(seen) >= _MAX_QUERY_TERMS:
             break
         _add_term(seen, raw.strip("._-:/#"))

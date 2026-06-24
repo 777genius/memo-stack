@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import infinity_context_server.public_benchmark as public_benchmark_module
+import infinity_context_server.public_benchmark_checkpoint as checkpoint_module
 import pytest
 from infinity_context_server.public_benchmark import (
     CASE_SELECTION_FIRST,
@@ -18,9 +20,13 @@ from infinity_context_server.public_benchmark import (
     PublicBenchmarkCase,
     _execute_cases,
     _load_cases,
+    _write_json_atomic,
     load_public_benchmark_case_count,
     load_public_benchmark_dataset_profile,
     run_public_memory_benchmark,
+)
+from infinity_context_server.public_benchmark_checkpoint import (
+    load_checkpoint_resume_state_with_diagnostics,
 )
 
 
@@ -58,6 +64,137 @@ class _CountingBenchmarkAdapter:
                 },
             )
         return _FakeBenchmarkResponse(201, {"data": {}})
+
+
+class _RecordingHttpClient:
+    created: list[dict[str, object]] = []
+
+    def __init__(self, *, base_url: str, timeout: float) -> None:
+        self.base_url = base_url
+        self.timeout = timeout
+        self.posts: list[tuple[str, Mapping[str, object], Mapping[str, str]]] = []
+        type(self).created.append(
+            {"base_url": base_url, "timeout": timeout, "client": self}
+        )
+
+    def __enter__(self) -> _RecordingHttpClient:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+        return False
+
+    def post(
+        self,
+        path: str,
+        *,
+        json: Mapping[str, object],
+        headers: Mapping[str, str],
+    ) -> _FakeBenchmarkResponse:
+        self.posts.append((path, dict(json), dict(headers)))
+        if path == "/v1/context":
+            return _FakeBenchmarkResponse(
+                200,
+                {
+                    "data": {
+                        "rendered_text": "SHARED_MARKER",
+                        "items": [{"item_id": "chunk_shared", "text": "SHARED_MARKER"}],
+                    }
+                },
+            )
+        return _FakeBenchmarkResponse(201, {"data": {}})
+
+
+def test_public_benchmark_evidence_text_includes_item_source_refs() -> None:
+    evidence = public_benchmark_module._evidence_text(
+        {
+            "rendered_text": "",
+            "items": [
+                {
+                    "text": "snippet without the exact dialogue marker",
+                    "source_refs": [
+                        {
+                            "source_type": "locomo_turn",
+                            "source_id": "locomo:conv-42:session_5:D5:8:turn",
+                            "chunk_id": "chunk-D5-8",
+                            "quote_preview": "D5:8 Nate should clean the tank",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert "D5:8" in evidence
+    assert "clean the tank" in evidence
+
+
+def test_public_benchmark_evidence_text_includes_citation_sources() -> None:
+    evidence = public_benchmark_module._evidence_text(
+        {
+            "items": [
+                {
+                    "text": "snippet without the exact dialogue marker",
+                    "citations": [
+                        {
+                            "source": {
+                                "source_type": "locomo_turn",
+                                "source_id": "locomo:conv-26:session_4:D4:8:turn",
+                                "quote_preview": "D4:8 Melanie went to Canada in June",
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert "D4:8" in evidence
+    assert "Canada in June" in evidence
+
+
+def test_official_locomo_event_summaries_include_related_turn_markers() -> None:
+    documents = public_benchmark_module._official_locomo_event_summary_documents(
+        {
+            "conversation": {
+                "session_7": [
+                    {
+                        "dia_id": "D7:2",
+                        "speaker": "John",
+                        "text": (
+                            "I am running for office again. It has been a wild ride, "
+                            "but I am more excited than ever."
+                        ),
+                    },
+                    {
+                        "dia_id": "D7:4",
+                        "speaker": "John",
+                        "text": (
+                            "I saw the impact I could make in the community through "
+                            "politics and positive changes."
+                        ),
+                    },
+                ],
+                "session_7_date_time": "25 February, 2023",
+            },
+            "event_summary": {
+                "events_session_7": {
+                    "John": [
+                        (
+                            "John runs for office again, with even more zeal and "
+                            "enthusiasm than his first run, inspired by the social "
+                            "impact one can make in office."
+                        )
+                    ],
+                    "date": "25 February, 2023",
+                }
+            },
+        },
+        sample_id="conv-test",
+    )
+
+    assert len(documents) == 1
+    assert "D7:2" in documents[0].text
+    assert "D7:4" in documents[0].text
 
 
 class _ParallelBenchmarkAdapter:
@@ -175,6 +312,8 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert result["provenance"]["run_id"] == result["dataset_hash"][:16]
     assert result["provenance"]["git"]["dirty"] in {True, False}
     assert report.exists()
+    assert not (tmp_path / ".public-benchmark-report.json.tmp").exists()
+    assert not list(tmp_path.glob(".public-benchmark-report.json.*.tmp"))
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["ok"] is True
     assert "dataset_path" not in written
@@ -183,6 +322,19 @@ def test_public_memory_benchmark_runs_locomo_and_longmemeval_like_cases(
     assert written["dataset_hash"] == result["dataset_hash"]
     assert written["dataset_sources"] == result["dataset_sources"]
     assert written["provenance"]["generated_by"] == "infinity_context_server.public_benchmark"
+
+
+def test_public_benchmark_json_atomic_write_preserves_existing_file_on_failure(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.json"
+    _write_json_atomic(report, {"status": "previous"})
+
+    with pytest.raises(TypeError):
+        _write_json_atomic(report, {"bad": object()})
+
+    assert json.loads(report.read_text(encoding="utf-8")) == {"status": "previous"}
+    assert not list(tmp_path.glob(".report.json.*.tmp"))
 
 
 def test_public_memory_benchmark_can_use_persistent_local_state(tmp_path: Path) -> None:
@@ -256,10 +408,7 @@ def test_public_memory_benchmark_counts_normalized_cases_without_running(
 
     assert load_public_benchmark_case_count(dataset_path=dataset) == 2
     assert load_public_benchmark_case_count(dataset_path=dataset, benchmark="locomo") == 1
-    assert (
-        load_public_benchmark_case_count(dataset_path=dataset, benchmark="longmemeval")
-        == 1
-    )
+    assert load_public_benchmark_case_count(dataset_path=dataset, benchmark="longmemeval") == 1
     profile = load_public_benchmark_dataset_profile(dataset_path=dataset)
     assert profile["case_count"] == 2
     assert profile["unique_case_id_count"] == 2
@@ -361,6 +510,259 @@ def test_public_memory_benchmark_first_case_selection_preserves_old_order(
     assert result["case_selection"]["selected_capability_count"] == 1
 
 
+def test_public_memory_benchmark_filters_explicit_case_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-case-ids.json"
+    rows = [
+        _longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1"),
+        _longmemeval_row("info-2", "single-session-user", "Where is marker 2?", "MARKER_2"),
+        _longmemeval_row(
+            "temporal-1",
+            "temporal-reasoning",
+            "Where is marker 3?",
+            "MARKER_3",
+        ),
+    ]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        max_cases=1,
+        case_selection_strategy=CASE_SELECTION_FIRST,
+        case_ids=("longmemeval:temporal-1",),
+    )
+
+    assert result["ok"] is True
+    assert result["requested_case_ids"] == ["longmemeval:temporal-1"]
+    assert result["requested_capabilities"] == []
+    assert [case["case_id"] for case in result["cases"]] == ["temporal-1"]
+    assert result["case_selection"]["strategy"] == "case-id"
+    assert result["case_selection"]["requested_case_ids"] == [
+        "longmemeval:temporal-1",
+    ]
+    assert result["case_selection"]["missing_case_ids"] == []
+    assert result["case_selection"]["requested_max_cases"] == 1
+    assert result["checks"]["requested_case_ids_found"] is True
+
+
+def test_public_memory_benchmark_filters_requested_capabilities(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-capability-filter.json"
+    rows = [
+        _longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1"),
+        _longmemeval_row(
+            "temporal-1",
+            "temporal-reasoning",
+            "Where is marker 2?",
+            "MARKER_2",
+        ),
+        _longmemeval_row(
+            "knowledge-1",
+            "knowledge-update",
+            "Where is marker 3?",
+            "MARKER_3",
+        ),
+    ]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        capabilities=("temporal-reasoning",),
+    )
+
+    assert result["ok"] is True
+    assert result["requested_case_ids"] == []
+    assert result["requested_capabilities"] == ["temporal_reasoning"]
+    assert [case["case_id"] for case in result["cases"]] == ["temporal-1"]
+    assert result["case_selection"]["requested_capabilities"] == ["temporal_reasoning"]
+    assert result["case_selection"]["selection_pool_case_count"] == 1
+    assert result["case_selection"]["selected_capability_counts"] == {
+        "longmemeval:temporal_reasoning": 1
+    }
+    assert result["checks"]["requested_capabilities_found"] is True
+    assert result["metrics"]["missing_capability_count"] == 0
+
+
+def test_public_memory_benchmark_reports_missing_requested_capabilities(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-missing-capability.json"
+    rows = [
+        _longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1")
+    ]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        capabilities=("temporal_reasoning",),
+    )
+
+    assert result["ok"] is False
+    assert result["requested_case_ids"] == []
+    assert result["requested_capabilities"] == ["temporal_reasoning"]
+    assert result["checks"]["requested_capabilities_found"] is False
+    assert result["metrics"]["case_count"] == 0
+    assert result["metrics"]["missing_capability_count"] == 1
+    assert result["case_selection"]["missing_capabilities"] == ["temporal_reasoning"]
+    assert result["failures"] == [
+        {
+            "case_id": "case_selection",
+            "category": "setup",
+            "reason": "requested_capability_not_found",
+            "capability": "temporal_reasoning",
+        }
+    ]
+
+
+def test_public_memory_benchmark_fails_missing_explicit_case_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-missing-case-id.json"
+    rows = [_longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1")]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        max_cases=1,
+        case_selection_strategy=CASE_SELECTION_FIRST,
+        case_ids=("longmemeval:info-1", "missing-case"),
+    )
+
+    assert result["ok"] is False
+    assert result["checks"]["minimum_accuracy_met"] is True
+    assert result["checks"]["requested_case_ids_found"] is False
+    assert result["checks"]["no_request_failures"] is False
+    assert result["metrics"]["missing_case_id_count"] == 1
+    assert result["case_selection"]["missing_case_ids"] == ["missing-case"]
+    assert result["failures"] == [
+        {
+            "case_id": "missing-case",
+            "category": "setup",
+            "reason": "requested_case_id_not_found",
+        }
+    ]
+
+
+def test_public_memory_benchmark_fails_when_all_explicit_case_ids_are_missing(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-all-missing-case-ids.json"
+    rows = [_longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1")]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        max_cases=1,
+        case_selection_strategy=CASE_SELECTION_FIRST,
+        case_ids=("missing-case",),
+    )
+
+    assert result["ok"] is False
+    assert result["cases"] == []
+    assert result["checks"]["requested_case_ids_found"] is False
+    assert result["metrics"]["missing_case_id_count"] == 1
+    assert result["case_selection"]["selected_case_count"] == 0
+    assert result["failures"] == [
+        {
+            "case_id": "missing-case",
+            "category": "setup",
+            "reason": "requested_case_id_not_found",
+        }
+    ]
+
+
+def test_public_memory_benchmark_rejects_invalid_max_cases_with_case_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval-case-ids-invalid-limit.json"
+    rows = [_longmemeval_row("info-1", "single-session-user", "Where is marker 1?", "MARKER_1")]
+    dataset.write_text(json.dumps(rows), encoding="utf-8")
+
+    with pytest.raises(BenchmarkValidationError, match="max_cases"):
+        run_public_memory_benchmark(
+            dataset_path=dataset,
+            min_accuracy=1.0,
+            max_cases=0,
+            case_selection_strategy=CASE_SELECTION_FIRST,
+            case_ids=("longmemeval:info-1",),
+        )
+
+
+def test_public_memory_benchmark_external_api_uses_configured_request_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset = tmp_path / "external-timeout.jsonl"
+    progress_out = tmp_path / "progress.jsonl"
+    row = {
+        "benchmark": "locomo",
+        "case_id": "external-timeout",
+        "memory_scope_external_ref": "external-timeout-scope",
+        "thread_external_ref": "external-timeout-thread",
+        "question": "Where is the shared marker?",
+        "documents": [
+            {
+                "title": "External timeout marker",
+                "text": "SHARED_MARKER lives in this benchmark document.",
+            }
+        ],
+        "expected_terms": ["SHARED_MARKER"],
+    }
+    dataset.write_text(json.dumps(row), encoding="utf-8")
+    _RecordingHttpClient.created = []
+    monkeypatch.setattr(public_benchmark_module.httpx, "Client", _RecordingHttpClient)
+
+    result = run_public_memory_benchmark(
+        dataset_path=dataset,
+        api_url="http://benchmark.test/",
+        auth_token="token",
+        min_accuracy=1.0,
+        request_timeout_seconds=7.5,
+        progress_out=progress_out,
+    )
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+    run_started = next(event for event in progress_events if event["event_type"] == "run_started")
+    execution_configured = next(
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
+    )
+
+    assert result["ok"] is True
+    assert result["metrics"]["request_timeout_seconds"] == 7.5
+    assert _RecordingHttpClient.created[0]["timeout"] == 7.5
+    assert _RecordingHttpClient.created[0]["base_url"] == "http://benchmark.test"
+    assert run_started["request_timeout_seconds"] == 7.5
+    assert execution_configured["request_timeout_seconds"] == 7.5
+
+
+def test_public_memory_benchmark_rejects_non_positive_request_timeout(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "invalid-timeout.jsonl"
+    row = _longmemeval_row(
+        "invalid-timeout",
+        "single-session-user",
+        "Where is marker 1?",
+        "MARKER_1",
+    )
+    dataset.write_text(json.dumps(row), encoding="utf-8")
+
+    with pytest.raises(BenchmarkValidationError, match="request_timeout_seconds"):
+        run_public_memory_benchmark(
+            dataset_path=dataset,
+            min_accuracy=1.0,
+            request_timeout_seconds=0,
+        )
+
+
 def test_public_memory_benchmark_local_parallel_degrades_to_safe_transport(
     tmp_path: Path,
 ) -> None:
@@ -398,23 +800,17 @@ def test_public_memory_benchmark_local_parallel_degrades_to_safe_transport(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     execution_configured = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "run_execution_configured"
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
     )
 
     assert result["ok"] is True
     assert result["metrics"]["requested_parallelism"] == 2
     assert result["metrics"]["effective_parallelism"] == 1
     assert result["metrics"]["parallelism_degraded"] is True
-    assert result["metrics"]["parallelism_degraded_reason"] == (
-        "local_in_process_transport"
-    )
+    assert result["metrics"]["parallelism_degraded_reason"] == ("local_in_process_transport")
     assert result["metrics"]["accuracy"] == 1.0
     assert execution_configured["effective_parallelism"] == 1
-    assert execution_configured["parallelism_degraded_reason"] == (
-        "local_in_process_transport"
-    )
+    assert execution_configured["parallelism_degraded_reason"] == ("local_in_process_transport")
 
 
 def test_public_memory_benchmark_rejects_unknown_case_selection_strategy(
@@ -515,6 +911,113 @@ def test_public_memory_benchmark_reports_missing_expected_terms(tmp_path: Path) 
     assert result["benchmarks"][0]["ok"] is False
     assert result["cases"][0]["missing_terms"] == ["Notion"]
     assert result["failures"][0]["reason"] == "missing_expected_terms"
+
+
+def test_public_memory_benchmark_accepts_normalized_abstention_case(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "public-benchmark-abstention.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "benchmark": "longmemeval",
+                        "id": "hard-negative",
+                        "question": "What hamster did I mention?",
+                        "documents": [{"title": "safe", "text": "I mentioned my cat Luna."}],
+                        "answerable": False,
+                        "forbidden_terms": ["hamster"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    cases = _load_cases(dataset)
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+    )
+
+    assert cases[0].expected_terms == ()
+    assert cases[0].forbidden_terms == ("hamster",)
+    assert result["ok"] is True
+    assert result["metrics"]["accuracy"] == 1.0
+
+
+def test_public_memory_benchmark_reports_abstention_forbidden_leak(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "public-benchmark-abstention-leak.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "benchmark": "longmemeval",
+                        "id": "hard-negative-leak",
+                        "question": "What shared marker should not be retrieved?",
+                        "documents": [{"title": "safe", "text": "The answer is unavailable."}],
+                        "abstention": True,
+                        "forbidden_terms": ["SHARED_MARKER"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=_load_cases(dataset),
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+    )
+
+    assert result["ok"] is False
+    assert result["metrics"]["accuracy"] == 0.0
+    assert result["metrics"]["failure_count"] == 1
+    assert result["metrics"]["capability_failure_count"] == {
+        "longmemeval:unknown_capability": 1,
+    }
+    assert result["cases"][0]["missing_terms"] == []
+    assert result["cases"][0]["leaked_terms"] == ["SHARED_MARKER"]
+    assert result["failures"][0]["reason"] == "forbidden_terms_leaked"
+
+
+def test_public_memory_benchmark_rejects_abstention_without_forbidden_terms(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "public-benchmark-abstention-invalid.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "benchmark": "longmemeval",
+                        "id": "hard-negative-invalid",
+                        "question": "What hamster did I mention?",
+                        "documents": [{"title": "safe", "text": "I mentioned my cat Luna."}],
+                        "answerable": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="forbidden_terms for abstention"):
+        _load_cases(dataset)
 
 
 def test_public_memory_benchmark_seeds_duplicate_sources_once(tmp_path: Path) -> None:
@@ -618,9 +1121,7 @@ def test_public_memory_benchmark_bounds_reused_source_progress_details(
         event for event in progress_events if event["event_type"] == "source_seed_reused"
     ]
     summary = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "source_seed_reuse_summary"
+        event for event in progress_events if event["event_type"] == "source_seed_reuse_summary"
     )
     rendered = progress_out.read_text(encoding="utf-8")
 
@@ -689,9 +1190,7 @@ def test_public_memory_benchmark_reuses_seeded_corpus_without_per_source_scan(
         }
     }
     corpus_reused = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "source_seed_corpus_reused"
+        event for event in progress_events if event["event_type"] == "source_seed_corpus_reused"
     )
 
     assert result["ok"] is True
@@ -786,9 +1285,7 @@ def test_public_memory_benchmark_runs_isolated_cases_in_parallel(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     execution_configured = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "run_execution_configured"
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
     )
     checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
 
@@ -883,9 +1380,7 @@ def test_public_memory_benchmark_parallelizes_independent_context_groups(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     execution_configured = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "run_execution_configured"
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
     )
     checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
 
@@ -952,9 +1447,7 @@ def test_public_memory_benchmark_degrades_parallelism_for_shared_contexts(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     execution_configured = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "run_execution_configured"
+        event for event in progress_events if event["event_type"] == "run_execution_configured"
     )
 
     assert result["ok"] is True
@@ -978,7 +1471,7 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
     dataset.write_text("[]", encoding="utf-8")
     cases = (
         PublicBenchmarkCase(
-            benchmark="locomo",
+            benchmark="longmemeval",
             case_id="progress-one",
             question="Where is the shared marker?",
             expected_terms=("SHARED_MARKER",),
@@ -991,9 +1484,10 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
             ),
             memory_scope_external_ref="progress-scope",
             thread_external_ref="progress-thread",
+            metadata={"question_type": "single-session-user"},
         ),
         PublicBenchmarkCase(
-            benchmark="locomo",
+            benchmark="longmemeval",
             case_id="progress-two",
             question="Where is the shared marker?",
             expected_terms=("SHARED_MARKER",),
@@ -1006,6 +1500,7 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
             ),
             memory_scope_external_ref="progress-scope",
             thread_external_ref="progress-thread",
+            metadata={"question_type": "knowledge-update"},
         ),
     )
 
@@ -1025,15 +1520,32 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     checkpoint = json.loads(checkpoint_out.read_text(encoding="utf-8"))
-    rendered = checkpoint_out.read_text(encoding="utf-8") + progress_out.read_text(
-        encoding="utf-8"
-    )
+    rendered = checkpoint_out.read_text(encoding="utf-8") + progress_out.read_text(encoding="utf-8")
 
     assert result["ok"] is True
+    assert result["metrics"]["cases_per_second"] > 0
+    assert result["metrics"]["estimated_remaining_ms"] == 0.0
+    assert result["metrics"]["capability_accuracy"] == {
+        "longmemeval:information_extraction": 1.0,
+        "longmemeval:knowledge_update": 1.0,
+    }
+    assert result["metrics"]["capability_case_count"] == {
+        "longmemeval:information_extraction": 1,
+        "longmemeval:knowledge_update": 1,
+    }
+    assert result["metrics"]["capability_failure_count"] == {
+        "longmemeval:information_extraction": 0,
+        "longmemeval:knowledge_update": 0,
+    }
+    assert result["metrics"]["benchmark_metrics"]["longmemeval"]["capability_breakdown"][
+        "knowledge_update"
+    ]["case_count"] == 1
+    assert [event["event_index"] for event in progress_events] == list(
+        range(1, len(progress_events) + 1)
+    )
     assert [event["event_type"] for event in progress_events].count("case_started") == 2
     assert any(
-        event["event_type"] == "source_seed_started"
-        and event["source_kind"] == "document"
+        event["event_type"] == "source_seed_started" and event["source_kind"] == "document"
         for event in progress_events
     )
     assert any(
@@ -1048,21 +1560,259 @@ def test_public_memory_benchmark_writes_progress_and_checkpoint(
     ]
     assert [event["processed_case_count"] for event in progress_snapshots] == [1, 2]
     assert [event["processed_case_ratio"] for event in progress_snapshots] == [0.5, 1.0]
+    assert all(event["cases_per_second"] > 0 for event in progress_snapshots)
+    assert progress_snapshots[0]["estimated_remaining_ms"] > 0
+    assert progress_snapshots[-1]["estimated_remaining_ms"] == 0.0
     assert progress_snapshots[-1]["accuracy_so_far"] == 1.0
+    assert progress_snapshots[0]["capability_accuracy_so_far"] == {
+        "longmemeval:information_extraction": 1.0,
+    }
+    assert progress_snapshots[-1]["capability_accuracy_so_far"] == {
+        "longmemeval:information_extraction": 1.0,
+        "longmemeval:knowledge_update": 1.0,
+    }
+    assert progress_snapshots[-1]["capability_case_count_so_far"] == {
+        "longmemeval:information_extraction": 1,
+        "longmemeval:knowledge_update": 1,
+    }
+    assert progress_snapshots[-1]["capability_failure_count_so_far"] == {
+        "longmemeval:information_extraction": 0,
+        "longmemeval:knowledge_update": 0,
+    }
     assert checkpoint["status"] == "completed"
     assert checkpoint["progress"]["processed_case_count"] == 2
     assert checkpoint["progress"]["processed_case_ratio"] == 1.0
+    assert checkpoint["progress"]["cases_per_second"] > 0
+    assert checkpoint["progress"]["estimated_remaining_ms"] == 0.0
     assert checkpoint["progress"]["seeded_source_count"] == 1
     assert checkpoint["progress"]["seed_source_attempt_count"] == 2
     assert checkpoint["progress"]["seed_cache_hit_count"] == 1
     assert checkpoint["metrics_so_far"]["accuracy"] == 1.0
+    assert checkpoint["metrics_so_far"]["capability_accuracy"] == {
+        "longmemeval:information_extraction": 1.0,
+        "longmemeval:knowledge_update": 1.0,
+    }
+    assert checkpoint["metrics_so_far"]["capability_failure_count"] == {
+        "longmemeval:information_extraction": 0,
+        "longmemeval:knowledge_update": 0,
+    }
+    assert checkpoint["metrics_so_far"]["benchmark_metrics"]["longmemeval"][
+        "capability_breakdown"
+    ]["information_extraction"]["case_count"] == 1
     assert [item["case_id"] for item in checkpoint["cases"]] == [
         "progress-one",
         "progress-two",
     ]
     assert not (tmp_path / ".checkpoint.json.tmp").exists()
+    assert not list(tmp_path.glob(".checkpoint.json.*.tmp"))
     assert str(tmp_path) not in rendered
     assert "shared-document" not in rendered
+
+
+def test_public_memory_benchmark_rejects_overlapping_artifact_paths(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "dataset.jsonl"
+    artifact = tmp_path / "benchmark-artifact.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "benchmark": "locomo",
+                "case_id": "artifact-paths",
+                "question": "Where is the marker?",
+                "memories": ["The marker is in Atlas."],
+                "expected_terms": ["Atlas"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="artifact paths must be distinct"):
+        run_public_memory_benchmark(
+            dataset_path=dataset,
+            report_out=artifact,
+            checkpoint_out=artifact,
+        )
+
+
+def test_public_memory_benchmark_rejects_artifact_path_over_dataset(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "dataset.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "benchmark": "locomo",
+                "case_id": "dataset-overwrite",
+                "question": "Where is the marker?",
+                "memories": ["The marker is in Atlas."],
+                "expected_terms": ["Atlas"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="must not overwrite dataset_path"):
+        run_public_memory_benchmark(
+            dataset_path=dataset,
+            report_out=dataset,
+        )
+
+
+def test_execute_cases_rejects_overlapping_progress_checkpoint_paths(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    artifact = tmp_path / "progress-and-checkpoint.json"
+    dataset.write_text("[]", encoding="utf-8")
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="overlap",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(
+                BenchmarkDocumentInput(
+                    title="Shared document",
+                    text="SHARED_MARKER lives in a shared public benchmark document.",
+                    source_external_id="shared-document",
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="artifact paths must be distinct"):
+        _execute_cases(
+            adapter=adapter,
+            headers={"Authorization": "Bearer test-token"},
+            cases=cases,
+            dataset_path=dataset,
+            min_accuracy=1.0,
+            started=time.perf_counter(),
+            progress_out=artifact,
+            checkpoint_out=artifact,
+        )
+
+
+def test_execute_cases_rejects_progress_path_over_dataset(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text("[]", encoding="utf-8")
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="dataset-overwrite",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+        ),
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="must not overwrite dataset_path"):
+        _execute_cases(
+            adapter=adapter,
+            headers={"Authorization": "Bearer test-token"},
+            cases=cases,
+            dataset_path=dataset,
+            min_accuracy=1.0,
+            started=time.perf_counter(),
+            progress_out=dataset,
+        )
+
+
+def test_checkpoint_resume_skips_oversized_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint_out = tmp_path / "checkpoint.json"
+    checkpoint_out.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(checkpoint_module, "_MAX_CHECKPOINT_BYTES", 1)
+
+    result = load_checkpoint_resume_state_with_diagnostics(
+        checkpoint_out=checkpoint_out,
+        dataset_hash="dataset-hash",
+        case_selection=None,
+        cases=(),
+    )
+
+    assert result.state is None
+    assert result.status == "skipped"
+    assert result.reason == "checkpoint_too_large"
+
+
+def test_checkpoint_resume_skips_excessive_case_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint_out = tmp_path / "checkpoint.json"
+    checkpoint_out.write_text(
+        json.dumps(
+            {
+                "schema_version": "public-benchmark-checkpoint-v1",
+                "dataset_hash": "dataset-hash",
+                "case_selection": {},
+                "cases": [{}, {}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checkpoint_module, "_MAX_CHECKPOINT_CASES", 1)
+
+    result = load_checkpoint_resume_state_with_diagnostics(
+        checkpoint_out=checkpoint_out,
+        dataset_hash="dataset-hash",
+        case_selection=None,
+        cases=(),
+    )
+
+    assert result.state is None
+    assert result.status == "skipped"
+    assert result.reason == "checkpoint_case_count_exceeds_limit"
+    assert result.checkpoint_case_count == 2
+
+
+def test_checkpoint_resume_reports_invalid_case_payload_count(tmp_path: Path) -> None:
+    checkpoint_out = tmp_path / "checkpoint.json"
+    checkpoint_out.write_text(
+        json.dumps(
+            {
+                "schema_version": "public-benchmark-checkpoint-v1",
+                "dataset_hash": "dataset-hash",
+                "case_selection": {},
+                "cases": [
+                    {
+                        "benchmark": "locomo",
+                        "case_id": "",
+                        "status": "ok",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="resume-invalid",
+            question="Where is the marker?",
+            expected_terms=("SHARED_MARKER",),
+        ),
+    )
+
+    result = load_checkpoint_resume_state_with_diagnostics(
+        checkpoint_out=checkpoint_out,
+        dataset_hash="dataset-hash",
+        case_selection=None,
+        cases=cases,
+    )
+
+    assert result.state is None
+    assert result.status == "skipped"
+    assert result.reason == "no_selected_successful_case_results"
+    assert result.checkpoint_case_count == 1
+    assert result.checkpoint_invalid_case_count == 1
 
 
 def test_public_memory_benchmark_resumes_from_compatible_checkpoint(
@@ -1172,10 +1922,139 @@ def test_public_memory_benchmark_resumes_from_compatible_checkpoint(
         "resumed_case_count": 1,
         "selected_case_count": 2,
         "checkpoint_case_count": 1,
+        "checkpoint_success_case_count": 1,
+        "checkpoint_failed_case_count": 0,
+        "checkpoint_invalid_case_count": 0,
     }
     assert any(event["event_type"] == "run_resumed" for event in progress_events)
     assert not any(
         event["event_type"] == "case_started" and event["case_id"] == "resume-one"
+        for event in progress_events
+    )
+
+
+def test_public_memory_benchmark_resume_retries_checkpoint_failed_cases(
+    tmp_path: Path,
+) -> None:
+    adapter = _CountingBenchmarkAdapter()
+    dataset = tmp_path / "dataset.json"
+    progress_out = tmp_path / "progress.jsonl"
+    checkpoint_out = tmp_path / "checkpoint.json"
+    dataset.write_text("[]", encoding="utf-8")
+    dataset_hash = hashlib.sha256(dataset.read_bytes()).hexdigest()
+    shared_document = BenchmarkDocumentInput(
+        title="Shared document",
+        text="SHARED_MARKER lives in a shared public benchmark document.",
+        source_external_id="shared-document",
+    )
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="resume-ok",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(shared_document,),
+            memory_scope_external_ref="resume-retry-scope",
+            thread_external_ref="resume-retry-thread",
+        ),
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="resume-failed",
+            question="Where is the shared marker?",
+            expected_terms=("SHARED_MARKER",),
+            documents=(shared_document,),
+            memory_scope_external_ref="resume-retry-scope",
+            thread_external_ref="resume-retry-thread",
+        ),
+    )
+    checkpoint_out.write_text(
+        json.dumps(
+            {
+                "schema_version": "public-benchmark-checkpoint-v1",
+                "status": "running",
+                "dataset_hash": dataset_hash,
+                "case_selection": {},
+                "progress": {
+                    "processed_case_count": 2,
+                    "total_case_count": 2,
+                    "seeded_source_count": 1,
+                    "seed_source_attempt_count": 1,
+                    "seed_cache_hit_count": 0,
+                },
+                "cases": [
+                    {
+                        "benchmark": "locomo",
+                        "case_id": "resume-ok",
+                        "capability": "locomo_unknown",
+                        "status": "ok",
+                        "expected_ok": True,
+                        "forbidden_ok": True,
+                        "missing_terms": [],
+                        "leaked_terms": [],
+                        "item_ids": ["chunk_shared"],
+                        "latency_ms": 10.0,
+                    },
+                    {
+                        "benchmark": "locomo",
+                        "case_id": "resume-failed",
+                        "capability": "locomo_unknown",
+                        "status": "failed",
+                        "expected_ok": False,
+                        "forbidden_ok": True,
+                        "missing_terms": ["SHARED_MARKER"],
+                        "leaked_terms": [],
+                        "item_ids": [],
+                        "latency_ms": 20.0,
+                    },
+                ],
+                "failures": [
+                    {
+                        "case_id": "resume-failed",
+                        "category": "locomo",
+                        "reason": "missing_expected_terms",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _execute_cases(
+        adapter=adapter,
+        headers={"Authorization": "Bearer test-token"},
+        cases=cases,
+        dataset_path=dataset,
+        min_accuracy=1.0,
+        started=time.perf_counter(),
+        progress_out=progress_out,
+        checkpoint_out=checkpoint_out,
+        checkpoint_every_cases=1,
+        resume_from_checkpoint=True,
+    )
+
+    progress_events = [
+        json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert result["ok"] is True
+    assert [case["case_id"] for case in result["cases"]] == [
+        "resume-ok",
+        "resume-failed",
+    ]
+    assert all(case["status"] == "ok" for case in result["cases"])
+    assert result["failures"] == []
+    assert [path for path, _ in adapter.posts] == ["/v1/context"]
+    assert result["metrics"]["resumed_case_count"] == 1
+    assert result["metrics"]["pending_case_count"] == 1
+    assert result["resume"]["checkpoint_success_case_count"] == 1
+    assert result["resume"]["checkpoint_failed_case_count"] == 1
+    assert result["resume"]["checkpoint_invalid_case_count"] == 0
+    assert any(
+        event["event_type"] == "case_started" and event["case_id"] == "resume-failed"
+        for event in progress_events
+    )
+    assert not any(
+        event["event_type"] == "case_started" and event["case_id"] == "resume-ok"
         for event in progress_events
     )
 
@@ -1271,9 +2150,7 @@ def test_public_memory_benchmark_resumes_seeded_corpus_by_stable_fingerprint(
         json.loads(line) for line in progress_out.read_text(encoding="utf-8").splitlines()
     ]
     corpus_reused = next(
-        event
-        for event in progress_events
-        if event["event_type"] == "source_seed_corpus_reused"
+        event for event in progress_events if event["event_type"] == "source_seed_corpus_reused"
     )
 
     assert result["ok"] is True
@@ -1285,9 +2162,7 @@ def test_public_memory_benchmark_resumes_seeded_corpus_by_stable_fingerprint(
     assert corpus_reused["case_id"] == "resume-corpus-two"
     assert corpus_reused["reused_source_count"] == 3
     assert corpus_reused["reused_source_kind_counts"] == {"document": 3}
-    assert not any(
-        event["event_type"] == "source_seed_reused" for event in progress_events
-    )
+    assert not any(event["event_type"] == "source_seed_reused" for event in progress_events)
 
 
 def test_public_memory_benchmark_reports_resume_skip_reason(
@@ -1365,6 +2240,9 @@ def test_public_memory_benchmark_reports_resume_skip_reason(
         "resumed_case_count": 0,
         "selected_case_count": 1,
         "checkpoint_case_count": 0,
+        "checkpoint_success_case_count": 0,
+        "checkpoint_failed_case_count": 0,
+        "checkpoint_invalid_case_count": 0,
     }
     assert result["metrics"]["resumed_case_count"] == 0
     assert result["metrics"]["pending_case_count"] == 1
@@ -1484,9 +2362,7 @@ def test_public_memory_benchmark_indexes_official_locomo_visual_queries(
                                 "speaker": "Melanie",
                                 "dia_id": "D1:12",
                                 "text": "I made something new. Take a look at this.",
-                                "blip_caption": (
-                                    "a photo of a painting of a sunset over a lake"
-                                ),
+                                "blip_caption": ("a photo of a painting of a sunset over a lake"),
                                 "query": "painting sunrise",
                             }
                         ],
@@ -1613,8 +2489,7 @@ def test_public_memory_benchmark_recalls_locomo_classical_music_preference(
                     "qa": [
                         {
                             "question": (
-                                'Would Melanie likely enjoy the song "The Four '
-                                'Seasons" by Vivaldi?'
+                                'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
                             ),
                             "answer": "Yes; it's classical music",
                             "evidence": ["D15:28"],
@@ -1661,8 +2536,7 @@ def test_public_memory_benchmark_recalls_locomo_bought_items_aggregation(
                                 "speaker": "Melanie",
                                 "dia_id": "D19:2",
                                 "text": (
-                                    "These figurines I bought yesterday remind me "
-                                    "of family love."
+                                    "These figurines I bought yesterday remind me of family love."
                                 ),
                             }
                         ],
@@ -1724,8 +2598,7 @@ def test_public_memory_benchmark_recalls_locomo_event_help_aggregation(
                     "qa": [
                         {
                             "question": (
-                                "What events has Caroline participated in to help "
-                                "children?"
+                                "What events has Caroline participated in to help children?"
                             ),
                             "answer": "Mentoring program, school speech",
                             "evidence": ["D9:2", "D3:3"],
@@ -1793,9 +2666,7 @@ def test_public_memory_benchmark_recalls_locomo_lgbtq_events_aggregation(
                     },
                     "qa": [
                         {
-                            "question": (
-                                "What LGBTQ+ events has Caroline participated in?"
-                            ),
+                            "question": ("What LGBTQ+ events has Caroline participated in?"),
                             "answer": "Pride parade, school speech, support group",
                             "evidence": ["D5:1", "D3:1", "D1:3"],
                             "category": 1,
@@ -1933,8 +2804,7 @@ def test_public_memory_benchmark_recalls_locomo_reliable_failure_bridges(
                                 "speaker": "Melanie",
                                 "dia_id": "D1:8",
                                 "text": (
-                                    "We love painting nature-inspired scenes "
-                                    "together as a family."
+                                    "We love painting nature-inspired scenes together as a family."
                                 ),
                             },
                         ],
@@ -1970,9 +2840,7 @@ def test_public_memory_benchmark_recalls_locomo_reliable_failure_bridges(
                     },
                     "qa": [
                         {
-                            "question": (
-                                "What activities has Melanie done with her family?"
-                            ),
+                            "question": ("What activities has Melanie done with her family?"),
                             "answer": "Museum visits and painting.",
                             "evidence": ["D1:4", "D1:8"],
                             "category": 1,
@@ -1987,10 +2855,7 @@ def test_public_memory_benchmark_recalls_locomo_reliable_failure_bridges(
                             "category": 3,
                         },
                         {
-                            "question": (
-                                "What book did Melanie read from Caroline's "
-                                "suggestion?"
-                            ),
+                            "question": ("What book did Melanie read from Caroline's suggestion?"),
                             "answer": "Becoming Nicole by Amy Ellis Nutt.",
                             "evidence": ["D3:11"],
                             "category": 1,
@@ -2045,12 +2910,9 @@ def test_public_memory_benchmark_recalls_locomo_current_goal_inference(
                     "qa": [
                         {
                             "question": (
-                                "Would Caroline want to move back to her home country "
-                                "soon?"
+                                "Would Caroline want to move back to her home country soon?"
                             ),
-                            "answer": (
-                                "No; she is in the process of adopting children."
-                            ),
+                            "answer": ("No; she is in the process of adopting children."),
                             "evidence": ["D19:1", "D19:3"],
                             "category": 3,
                         }
@@ -2107,8 +2969,7 @@ def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
                     "qa": [
                         {
                             "question": (
-                                "What fields would Caroline be likely to pursue in her "
-                                "educaton?"
+                                "What fields would Caroline be likely to pursue in her educaton?"
                             ),
                             "answer": "Psychology, counseling certification",
                             "evidence": ["D1:9", "D1:11"],
@@ -2143,9 +3004,80 @@ def test_public_memory_benchmark_links_observations_to_related_locomo_turn_ids(
     )
     result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
 
-    assert "D1:9 D1:11 Caroline:" in observation_doc.text
+    assert "D1:9 Caroline:" in observation_doc.text
+    assert "Related turns: D1:11." in observation_doc.text
     assert "D1:10" not in observation_doc.text
     assert result["ok"] is True
+
+
+def test_public_memory_benchmark_links_observations_to_adjacent_same_speaker_turn_ids(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "locomo10-adjacent-observation-mini.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "sample_id": "conv-adjacent-observation-mini",
+                    "conversation": {
+                        "session_14": [
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D14:19",
+                                "text": (
+                                    "I'm hiking with some buddies this weekend and "
+                                    "checking out a new trail with a waterfall."
+                                ),
+                            },
+                            {
+                                "speaker": "Nate",
+                                "dia_id": "D14:20",
+                                "text": "Sounds great! Have fun with that.",
+                            },
+                            {
+                                "speaker": "Joanna",
+                                "dia_id": "D14:21",
+                                "text": "Are you going to invite your tournament friends?",
+                            },
+                        ],
+                    },
+                    "qa": [
+                        {
+                            "question": "How many hikes has Joanna been on?",
+                            "answer": "one",
+                            "evidence": ["D14:21"],
+                            "category": 2,
+                        }
+                    ],
+                    "observation": {
+                        "session_14_observation": {
+                            "Joanna": [
+                                [
+                                    (
+                                        "Joanna is planning to go hiking with buddies "
+                                        "to check out a new trail with a waterfall."
+                                    ),
+                                    "D14:19",
+                                ]
+                            ]
+                        }
+                    },
+                    "event_summary": [],
+                    "session_summary": [],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    case = _load_cases(dataset)[0]
+    observation_doc = next(
+        document for document in case.documents if document.source_type == "locomo_observation"
+    )
+
+    assert "D14:19 Joanna:" in observation_doc.text
+    assert "Related turns: D14:21." in observation_doc.text
+    assert "D14:20" not in observation_doc.text
 
 
 def test_public_memory_benchmark_recalls_locomo_career_intent_synonyms(
@@ -2173,9 +3105,7 @@ def test_public_memory_benchmark_recalls_locomo_career_intent_synonyms(
                     },
                     "qa": [
                         {
-                            "question": (
-                                "Would Caroline pursue writing as a career option?"
-                            ),
+                            "question": ("Would Caroline pursue writing as a career option?"),
                             "answer": "No, she was looking into counseling jobs.",
                             "evidence": ["D7:5"],
                             "category": 3,
@@ -2185,10 +3115,7 @@ def test_public_memory_benchmark_recalls_locomo_career_intent_synonyms(
                         "session_7_observation": {
                             "Caroline": [
                                 [
-                                    (
-                                        "Caroline is looking into counseling and mental "
-                                        "health jobs."
-                                    ),
+                                    ("Caroline is looking into counseling and mental health jobs."),
                                     "D7:5",
                                 ]
                             ]
@@ -2281,12 +3208,8 @@ def test_public_memory_benchmark_indexes_official_locomo_summaries(
     assert any("Atlas migration fallback" in document.text for document in summary_docs)
     assert result["ok"] is True
     assert result["benchmarks"][0]["metrics"]["capability_count"] == 2
-    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_2"][
-        "accuracy"
-    ] == 1.0
-    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_3"][
-        "case_count"
-    ] == 1
+    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_2"]["accuracy"] == 1.0
+    assert result["benchmarks"][0]["capability_breakdown"]["locomo_category_3"]["case_count"] == 1
 
 
 def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Path) -> None:
@@ -2328,9 +3251,9 @@ def test_public_memory_benchmark_accepts_official_longmemeval_shape(tmp_path: Pa
     assert result["metrics"]["longmemeval_case_count"] == 1
     assert result["cases"][0]["case_id"] == "long-mini"
     assert result["cases"][0]["capability"] == "information_extraction"
-    assert result["benchmarks"][0]["capability_breakdown"]["information_extraction"][
-        "accuracy"
-    ] == 1.0
+    assert (
+        result["benchmarks"][0]["capability_breakdown"]["information_extraction"]["accuracy"] == 1.0
+    )
 
 
 def test_public_memory_benchmark_reports_longmemeval_capability_breakdown(
@@ -2392,6 +3315,57 @@ def test_public_memory_benchmark_reports_longmemeval_capability_breakdown(
         "knowledge_update",
         "temporal_reasoning",
     }
+
+
+def test_public_memory_benchmark_recalls_longmemeval_current_decision_without_now(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "longmemeval_current_decision_no_now.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "long-current-decision-no-now",
+                    "question_type": "knowledge-update",
+                    "question": "What did I decide to use?",
+                    "question_date": "2023/06/01 (Thu) 10:00",
+                    "answer": "Qdrant",
+                    "answer_session_ids": ["new_session"],
+                    "haystack_session_ids": ["old_session", "new_session"],
+                    "haystack_dates": [
+                        "2023/05/20 (Sat) 10:00",
+                        "2023/05/31 (Wed) 18:00",
+                    ],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Earlier I used Pinecone as the retrieval provider."
+                                ),
+                            }
+                        ],
+                        [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "I switched away from Pinecone. Qdrant is the "
+                                    "current retrieval provider I selected."
+                                ),
+                            }
+                        ],
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_public_memory_benchmark(dataset_path=dataset, min_accuracy=1.0)
+
+    assert result["ok"] is True
+    assert result["cases"][0]["capability"] == "knowledge_update"
+    assert result["cases"][0]["missing_terms"] == []
 
 
 def test_public_memory_benchmark_accepts_longmemeval_numeric_answer(tmp_path: Path) -> None:

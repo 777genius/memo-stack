@@ -29,6 +29,23 @@ def test_anchor_extraction_keeps_real_people_projects_and_events() -> None:
     assert ("event", "meeting last week") in keys
 
 
+def test_anchor_extraction_treats_technical_context_labels_as_projects() -> None:
+    anchors = extract_observed_anchors(
+        "Alice keeps Kubernetes manifests in helmfile overlays for project Atlas. "
+        "Falcon migration notes mention Alice."
+    )
+
+    project_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "project"}
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "alice" in person_keys
+    assert "atlas" in project_keys
+    assert "kubernetes" in project_keys
+    assert "falcon" in project_keys
+    assert "kubernetes" not in person_keys
+    assert "falcon" not in person_keys
+
+
 def test_anchor_metadata_includes_bounded_alias_identity_terms() -> None:
     metadata = structured_anchor_metadata_for_label(
         MemoryAnchorKind.PERSON,
@@ -83,6 +100,112 @@ def test_anchor_extraction_strips_question_modal_prefix_from_person() -> None:
     assert "would melanie" not in person_keys
 
 
+def test_anchor_extraction_ignores_russian_question_words_as_people() -> None:
+    anchors = extract_observed_anchors("Что сказано про V1_DOCUMENT_SCOPE_MARKER?")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "chto" not in person_keys
+    assert "что" not in person_keys
+
+
+def test_anchor_extraction_handles_relocation_life_events_without_location_people() -> None:
+    anchors = extract_observed_anchors(
+        "Caroline moved from Sweden 4 years ago. Мария переехала из Киева четыре года назад."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    event_metadata = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "caroline" in person_keys
+    assert "мария" in person_keys
+    assert "sweden" not in person_keys
+    assert "киева" not in person_keys
+    assert event_metadata["moved with caroline 4 years ago"]["event_identity_terms"] == [
+        "moved",
+        "caroline",
+        "years_ago:4:year",
+    ]
+    assert event_metadata["переехала с мария четыре года назад"]["event_identity_terms"] == [
+        "pereehala",
+        "mariya",
+        "years_ago:4:year",
+    ]
+
+
+def test_anchor_extraction_suppresses_generic_relocation_origin_places_as_people() -> None:
+    anchors = extract_observed_anchors(
+        "Dana moved from France 3 years ago. "
+        "Ольга переехала из Парижа три года назад. "
+        "Email from Alex included the invoice."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    event_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "event"}
+
+    assert "dana" in person_keys
+    assert "ольга" in person_keys
+    assert "alex" in person_keys
+    assert "france" not in person_keys
+    assert "парижа" not in person_keys
+    assert "email" not in person_keys
+    assert "moved with dana 3 years ago" in event_keys
+    assert "переехала с ольга три года назад" in event_keys
+
+
+def test_anchor_extraction_structures_activity_life_events() -> None:
+    anchors = extract_observed_anchors(
+        "D1:3 Caroline: I went to a LGBTQ support group yesterday. "
+        "D9:2 Caroline joined a mentorship program last weekend."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert events["went yesterday"]["event_identity_terms"] == [
+        "went",
+        "yesterday:1:day",
+    ]
+    assert events["joined with caroline last weekend"]["event_identity_terms"] == [
+        "joined",
+        "caroline",
+        "last_weekend:1:weekend",
+    ]
+
+
+def test_anchor_extraction_structures_last_weekday_events_without_weekday_person() -> None:
+    anchors = extract_observed_anchors(
+        "Caroline passed the adoption agency interviews last Friday."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "caroline" in person_keys
+    assert "friday" not in person_keys
+    assert events["interviews with caroline last friday"]["event_participant_label"] == ("caroline")
+    assert (
+        events["interviews with caroline last friday"]["event_participant_canonical_key"]
+        == "caroline"
+    )
+    assert events["interviews with caroline last friday"]["event_identity_terms"] == [
+        "interviews",
+        "caroline",
+        "last_friday:1:weekday",
+    ]
+    assert events["interviews last friday"]["event_temporal_hint_code"] == "last_friday"
+    assert events["interviews last friday"]["event_temporal_unit"] == "weekday"
+    assert events["interviews last friday"]["event_identity_terms"] == [
+        "interviews",
+        "last_friday:1:weekday",
+    ]
+
+
 def test_anchor_extraction_keeps_same_name_people_and_projects_separate() -> None:
     anchors = extract_observed_anchors("Alex wrote that Project Alex is a separate workspace.")
 
@@ -125,6 +248,14 @@ def test_anchor_extraction_stops_project_labels_at_sentence_boundaries() -> None
     assert "atlas час" not in project_keys
 
 
+def test_anchor_extraction_ignores_question_project_stopword_label() -> None:
+    anchors = extract_observed_anchors("Which project is not blocked?")
+
+    project_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "project"}
+    assert "is" not in project_keys
+    assert project_keys == set()
+
+
 def test_anchor_extraction_keeps_organizations_separate_from_people() -> None:
     anchors = extract_observed_anchors(
         "Alex shared OpenAI notes with company Acme Corp and GitHub team updates."
@@ -138,6 +269,24 @@ def test_anchor_extraction_keeps_organizations_separate_from_people() -> None:
     assert ("organization", "acme corp") in keys
     assert "openai" not in person_keys
     assert "github" not in person_keys
+
+
+def test_anchor_extraction_keeps_game_platforms_separate_from_people() -> None:
+    anchors = extract_observed_anchors(
+        "Nate plays Xenoblade Chronicles, and the image caption shows Nintendo game covers. "
+        "Nate owns a Nintendo Switch console."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+    organization_keys = {
+        anchor.normalized_key for anchor in anchors if anchor.kind.value == "organization"
+    }
+
+    assert "nate" in person_keys
+    assert "nintendo" in organization_keys
+    assert "nintendo" not in person_keys
+    assert "nintendo switch" not in person_keys
+    assert "xenoblade chronicles" not in person_keys
 
 
 def test_anchor_extraction_avoids_suffixed_organization_person_false_positives() -> None:
@@ -158,6 +307,110 @@ def test_anchor_extraction_avoids_suffixed_organization_person_false_positives()
     assert "acme research" not in person_keys
     assert "github actions" not in person_keys
     assert "reviewed openai memory notes" not in organization_keys
+
+
+def test_anchor_extraction_suppresses_creative_work_title_and_author_people() -> None:
+    anchors = extract_observed_anchors(
+        "Melanie recommended Becoming Nicole by Amy Ellis Nutt to Caroline."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "melanie" in person_keys
+    assert "caroline" in person_keys
+    assert "becoming nicole" not in person_keys
+    assert "amy ellis" not in person_keys
+    assert "nutt" not in person_keys
+
+
+def test_anchor_extraction_keeps_recommender_person_in_by_phrase() -> None:
+    anchors = extract_observed_anchors("The book was recommended by Alex to Caroline.")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "alex" in person_keys
+    assert "caroline" in person_keys
+
+
+def test_anchor_extraction_suppresses_song_title_and_composer_people() -> None:
+    anchors = extract_observed_anchors(
+        'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "melanie" in person_keys
+    assert "four" not in person_keys
+    assert "seasons" not in person_keys
+    assert "vivaldi" not in person_keys
+
+
+def test_anchor_extraction_suppresses_unquoted_classical_work_people() -> None:
+    anchors = extract_observed_anchors(
+        "Melanie likes The Four Seasons by Vivaldi and Bach concertos."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "melanie" in person_keys
+    assert "four" not in person_keys
+    assert "seasons" not in person_keys
+    assert "vivaldi" not in person_keys
+    assert "bach" not in person_keys
+
+
+def test_anchor_extraction_suppresses_articled_movie_title_people() -> None:
+    anchors = extract_observed_anchors("Caroline watched The Matrix with Alex.")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "caroline" in person_keys
+    assert "alex" in person_keys
+    assert "matrix" not in person_keys
+
+
+def test_anchor_extraction_suppresses_titled_book_author_people() -> None:
+    anchors = extract_observed_anchors(
+        "Would Caroline likely have Dr. Seuss books on her bookshelf?"
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "caroline" in person_keys
+    assert "seuss" not in person_keys
+
+
+def test_anchor_extraction_keeps_titled_real_person_without_book_context() -> None:
+    anchors = extract_observed_anchors("Dr. Alex met Caroline about Project Atlas.")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "alex" in person_keys
+    assert "caroline" in person_keys
+
+
+def test_anchor_extraction_suppresses_known_location_people() -> None:
+    anchors = extract_observed_anchors(
+        "Joanna took that pic on a hike last summer near Fort Wayne. "
+        "Alex visited New York with Maria."
+    )
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "joanna" in person_keys
+    assert "alex" in person_keys
+    assert "maria" in person_keys
+    assert "fort wayne" not in person_keys
+    assert "new york" not in person_keys
+
+
+def test_anchor_extraction_keeps_location_name_when_used_as_person() -> None:
+    anchors = extract_observed_anchors("Wayne called Alex yesterday.")
+
+    person_keys = {anchor.normalized_key for anchor in anchors if anchor.kind.value == "person"}
+
+    assert "wayne" in person_keys
+    assert "alex" in person_keys
 
 
 def test_anchor_extraction_keeps_numeric_temporal_event_labels() -> None:
@@ -300,17 +553,15 @@ def test_anchor_extraction_handles_said_and_told_event_phrasing() -> None:
 
     assert "said with alex about atlas yesterday" in events
     assert events["said with alex about atlas yesterday"]["event_type_canonical"] == "said"
-    assert events["said with alex about atlas yesterday"][
-        "event_participant_canonical_key"
-    ] == "aleks"
+    assert (
+        events["said with alex about atlas yesterday"]["event_participant_canonical_key"] == "aleks"
+    )
     assert events["said with alex about atlas yesterday"]["event_project_canonical_key"] == (
         "atlas"
     )
     assert "сказал с алекс про атлас вчера" in events
     assert events["сказал с алекс про атлас вчера"]["event_type_canonical"] == "skazal"
-    assert events["сказал с алекс про атлас вчера"]["event_participant_canonical_key"] == (
-        "aleks"
-    )
+    assert events["сказал с алекс про атлас вчера"]["event_participant_canonical_key"] == ("aleks")
 
 
 def test_anchor_extraction_handles_chat_handles_and_email_people() -> None:
@@ -452,6 +703,317 @@ def test_anchor_extraction_structures_event_identity_metadata() -> None:
     ]
 
 
+def test_anchor_extraction_structures_word_number_relative_week_events() -> None:
+    anchors = extract_observed_anchors(
+        "Alex call two weeks ago covered Project Atlas. "
+        "Созвон с Сергеем две недели назад по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    call = events["call with alex two weeks ago"]
+    assert call["event_temporal_phrase"] == "two weeks ago"
+    assert call["event_temporal_hint_code"] == "weeks_ago"
+    assert call["event_temporal_quantity"] == 2
+    assert call["event_temporal_unit"] == "week"
+    assert call["event_identity_terms"] == ["call", "aleks", "weeks_ago:2:week"]
+
+    call_ru = events["созвон с сергеем две недели назад"]
+    assert call_ru["event_temporal_phrase"] == "две недели назад"
+    assert call_ru["event_temporal_hint_code"] == "weeks_ago"
+    assert call_ru["event_temporal_quantity"] == 2
+    assert call_ru["event_temporal_unit"] == "week"
+    assert call_ru["event_identity_terms"] == [
+        "sozvon",
+        "sergei",
+        "weeks_ago:2:week",
+    ]
+
+
+def test_anchor_extraction_structures_weekend_relative_events() -> None:
+    anchors = extract_observed_anchors(
+        "Caroline joined a mentorship program last weekend. "
+        "Melanie went camping two weekends ago. "
+        "Alex call this weekend covered Project Atlas."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    joined = events["joined with caroline last weekend"]
+    assert joined["event_temporal_hint_code"] == "last_weekend"
+    assert joined["event_temporal_quantity"] == 1
+    assert joined["event_temporal_unit"] == "weekend"
+    assert joined["event_identity_terms"] == ["joined", "caroline", "last_weekend:1:weekend"]
+
+    camping = events["went with melanie two weekends ago"]
+    assert camping["event_temporal_hint_code"] == "weekends_ago"
+    assert camping["event_temporal_quantity"] == 2
+    assert camping["event_temporal_unit"] == "weekend"
+    assert camping["event_identity_terms"] == ["went", "melanie", "weekends_ago:2:weekend"]
+
+    call = events["call with alex this weekend"]
+    assert call["event_temporal_hint_code"] == "this_weekend"
+    assert call["event_temporal_quantity"] == 0
+    assert call["event_temporal_unit"] == "weekend"
+    assert call["event_identity_terms"] == ["call", "aleks", "this_weekend:0:weekend"]
+
+
+def test_anchor_extraction_structures_month_relative_events() -> None:
+    anchors = extract_observed_anchors(
+        "call with Alex two months ago covered Project Atlas. "
+        "Созвон с Сергеем два месяца назад по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    call = events["call with alex two months ago"]
+    assert call["event_temporal_phrase"] == "two months ago"
+    assert call["event_temporal_hint_code"] == "months_ago"
+    assert call["event_temporal_quantity"] == 2
+    assert call["event_temporal_unit"] == "month"
+    assert call["event_identity_terms"] == ["call", "aleks", "months_ago:2:month"]
+
+    call_ru = events["созвон с сергеем два месяца назад"]
+    assert call_ru["event_temporal_phrase"] == "два месяца назад"
+    assert call_ru["event_temporal_hint_code"] == "months_ago"
+    assert call_ru["event_temporal_quantity"] == 2
+    assert call_ru["event_temporal_unit"] == "month"
+    assert call_ru["event_identity_terms"] == [
+        "sozvon",
+        "sergei",
+        "months_ago:2:month",
+    ]
+
+
+def test_anchor_extraction_structures_year_relative_events() -> None:
+    anchors = extract_observed_anchors(
+        "call with Alex four years ago covered Project Atlas. "
+        "Созвон с Сергеем четыре года назад по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    call = events["call with alex four years ago"]
+    assert call["event_temporal_phrase"] == "four years ago"
+    assert call["event_temporal_hint_code"] == "years_ago"
+    assert call["event_temporal_quantity"] == 4
+    assert call["event_temporal_unit"] == "year"
+    assert call["event_identity_terms"] == ["call", "aleks", "years_ago:4:year"]
+
+    call_ru = events["созвон с сергеем четыре года назад"]
+    assert call_ru["event_temporal_phrase"] == "четыре года назад"
+    assert call_ru["event_temporal_hint_code"] == "years_ago"
+    assert call_ru["event_temporal_quantity"] == 4
+    assert call_ru["event_temporal_unit"] == "year"
+    assert call_ru["event_identity_terms"] == [
+        "sozvon",
+        "sergei",
+        "years_ago:4:year",
+    ]
+
+
+def test_anchor_extraction_structures_current_week_month_and_year_events() -> None:
+    anchors = extract_observed_anchors(
+        "call with Alex this week covered Project Atlas. "
+        "planning with Dana this month covered Project Atlas. "
+        "Созвон с Сергеем в этом году по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    call = events["call with alex this week"]
+    assert call["event_temporal_phrase"] == "this week"
+    assert call["event_temporal_hint_code"] == "this_week"
+    assert call["event_temporal_quantity"] == 0
+    assert call["event_temporal_unit"] == "week"
+    assert call["event_identity_terms"] == ["call", "aleks", "this_week:0:week"]
+
+    planning = events["planning with dana this month"]
+    assert planning["event_temporal_phrase"] == "this month"
+    assert planning["event_temporal_hint_code"] == "this_month"
+    assert planning["event_temporal_quantity"] == 0
+    assert planning["event_temporal_unit"] == "month"
+    assert planning["event_identity_terms"] == ["planning", "dana", "this_month:0:month"]
+
+    call_ru = events["созвон с сергеем в этом году"]
+    assert call_ru["event_temporal_phrase"] == "в этом году"
+    assert call_ru["event_temporal_hint_code"] == "this_year"
+    assert call_ru["event_temporal_quantity"] == 0
+    assert call_ru["event_temporal_unit"] == "year"
+    assert call_ru["event_identity_terms"] == [
+        "sozvon",
+        "sergei",
+        "this_year:0:year",
+    ]
+
+
+def test_anchor_extraction_structures_future_week_month_and_year_events() -> None:
+    anchors = extract_observed_anchors(
+        "call with Alex next week covered Project Atlas. "
+        "planning with Dana next month covered Project Atlas. "
+        "Созвон с Сергеем на следующий год по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    call = events["call with alex next week"]
+    assert call["event_temporal_phrase"] == "next week"
+    assert call["event_temporal_hint_code"] == "next_week"
+    assert call["event_temporal_quantity"] == 1
+    assert call["event_temporal_unit"] == "week"
+    assert call["event_identity_terms"] == ["call", "aleks", "next_week:1:week"]
+
+    planning = events["planning with dana next month"]
+    assert planning["event_temporal_phrase"] == "next month"
+    assert planning["event_temporal_hint_code"] == "next_month"
+    assert planning["event_temporal_quantity"] == 1
+    assert planning["event_temporal_unit"] == "month"
+
+    call_ru = events["созвон с сергеем на следующий год"]
+    assert call_ru["event_temporal_phrase"] == "на следующий год"
+    assert call_ru["event_temporal_hint_code"] == "next_year"
+    assert call_ru["event_temporal_quantity"] == 1
+    assert call_ru["event_temporal_unit"] == "year"
+
+
+def test_anchor_extraction_structures_future_workflow_deadline_events() -> None:
+    anchors = extract_observed_anchors(
+        "Project Atlas deadline tomorrow. Atlas is due next week. "
+        "Поручение по Project Orion на следующий год."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    deadline = events["deadline for atlas tomorrow"]
+    assert deadline["event_type"] == "deadline"
+    assert deadline["event_has_participant"] is False
+    assert deadline["event_project_canonical_key"] == "atlas"
+    assert deadline["event_temporal_hint_code"] == "tomorrow"
+    assert deadline["event_identity_terms"] == [
+        "deadline",
+        "atlas",
+        "tomorrow:1:day",
+    ]
+
+    due = events["deadline for atlas next week"]
+    assert due["event_type"] == "deadline"
+    assert due["event_project_canonical_key"] == "atlas"
+    assert due["event_temporal_hint_code"] == "next_week"
+
+    task = events["поручение по orion на следующий год"]
+    assert task["event_project_canonical_key"] == "orion"
+    assert task["event_temporal_hint_code"] == "next_year"
+
+
+def test_anchor_extraction_structures_absolute_date_workflow_events() -> None:
+    anchors = extract_observed_anchors(
+        "Project Atlas deadline 2026-08-15. Project Orion deadline 15.08.2026."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    atlas = events["deadline for atlas 2026-08-15"]
+    assert atlas["event_project_canonical_key"] == "atlas"
+    assert atlas["event_temporal_phrase"] == "2026-08-15"
+    assert atlas["event_temporal_hint_code"] == "date_2026_08_15"
+    assert atlas["event_date"] == "2026-08-15"
+    assert atlas["event_identity_terms"] == [
+        "deadline",
+        "atlas",
+        "date_2026_08_15",
+    ]
+
+    orion = events["deadline for orion 15.08.2026"]
+    assert orion["event_project_canonical_key"] == "orion"
+    assert orion["event_temporal_hint_code"] == "date_2026_08_15"
+    assert orion["event_date"] == "2026-08-15"
+
+
+def test_anchor_extraction_structures_quarter_events() -> None:
+    anchors = extract_observed_anchors(
+        "review with Maria this quarter covered Project Atlas. "
+        "planning with John last quarter covered Project Atlas."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    review = events["review with maria this quarter"]
+    assert review["event_temporal_phrase"] == "this quarter"
+    assert review["event_temporal_hint_code"] == "this_quarter"
+    assert review["event_temporal_quantity"] == 0
+    assert review["event_temporal_unit"] == "quarter"
+    assert review["event_identity_terms"] == ["review", "maria", "this_quarter:0:quarter"]
+
+    last_quarter = events["planning with john last quarter"]
+    assert last_quarter["event_temporal_phrase"] == "last quarter"
+    assert last_quarter["event_temporal_hint_code"] == "last_quarter"
+    assert last_quarter["event_temporal_quantity"] == 1
+    assert last_quarter["event_temporal_unit"] == "quarter"
+    assert last_quarter["event_identity_terms"] == ["planning", "john", "last_quarter:1:quarter"]
+
+
+def test_anchor_extraction_handles_conversational_event_synonyms() -> None:
+    anchors = extract_observed_anchors(
+        "alex spoke two weeks ago about Project Atlas. "
+        "Мария переписывалась с Сергеем две недели назад по Project Orion."
+    )
+
+    events = {
+        anchor.normalized_key: anchor.metadata for anchor in anchors if anchor.kind.value == "event"
+    }
+
+    assert "spoke with alex about atlas two weeks ago" in events
+    assert (
+        events["spoke with alex about atlas two weeks ago"]["event_participant_canonical_key"]
+        == "aleks"
+    )
+    assert events["spoke with alex about atlas two weeks ago"]["event_project_canonical_key"] == (
+        "atlas"
+    )
+    assert events["spoke with alex about atlas two weeks ago"]["event_identity_terms"] == [
+        "spoke",
+        "aleks",
+        "atlas",
+        "weeks_ago:2:week",
+    ]
+
+    assert "переписывалась с сергеем по orion две недели назад" in events
+    assert (
+        events["переписывалась с сергеем по orion две недели назад"][
+            "event_participant_canonical_key"
+        ]
+        == "sergei"
+    )
+    assert (
+        events["переписывалась с сергеем по orion две недели назад"]["event_project_canonical_key"]
+        == "orion"
+    )
+    assert events["переписывалась с сергеем по orion две недели назад"]["event_identity_terms"] == [
+        "perepisyvalas",
+        "sergei",
+        "orion",
+        "weeks_ago:2:week",
+    ]
+
+
 def test_anchor_extraction_structures_event_project_identity_metadata() -> None:
     anchors = extract_observed_anchors(
         "Call with Alex about Project Atlas 2 hours ago. Созвон с Марией вчера про backend."
@@ -554,8 +1116,7 @@ def test_anchor_extraction_handles_lowercase_actor_before_message_event() -> Non
 
 def test_anchor_extraction_structures_partial_day_event_temporal_hints() -> None:
     anchors = extract_observed_anchors(
-        "Alex wrote about Atlas earlier today. "
-        "Созвон с Марией по Project Atlas сегодня утром."
+        "Alex wrote about Atlas earlier today. Созвон с Марией по Project Atlas сегодня утром."
     )
 
     events = {

@@ -1,10 +1,26 @@
+import asyncio
 from datetime import UTC, datetime
 
 from infinity_context_core.application.context_collectors import (
+    _bounded_derived_retrieval_queries,
     _canonical_fact_candidate_limit,
+    _fused_ranked_keys,
+    _keyword_candidate_pool_limit,
+    _keyword_query_search_limit,
+    _keyword_search_chunks,
+    _protected_query_head_keys,
     _rank_facts_for_query,
 )
+from infinity_context_core.application.context_query_expansion import (
+    QueryExpansion,
+    QueryExpansionPlan,
+    build_query_expansion_plan,
+)
 from infinity_context_core.domain.entities import (
+    MemoryChunk,
+    MemoryChunkId,
+    MemoryChunkKind,
+    MemoryDocumentId,
     MemoryFact,
     MemoryFactId,
     MemoryKind,
@@ -37,6 +53,405 @@ def test_canonical_fact_candidate_limit_overfetches_before_relevance_ranking() -
     assert _canonical_fact_candidate_limit(0) == 0
     assert _canonical_fact_candidate_limit(1) == 9
     assert _canonical_fact_candidate_limit(30) == 100
+
+
+def test_keyword_candidate_pool_overfetches_across_bounded_query_families() -> None:
+    assert _keyword_candidate_pool_limit(0) == 0
+    assert _keyword_candidate_pool_limit(50) == 300
+    assert _keyword_candidate_pool_limit(500) == 360
+
+
+def test_keyword_query_search_limit_bounds_large_requests_per_variant() -> None:
+    assert _keyword_query_search_limit(total_limit=0, candidate_limit=0) == 0
+    assert _keyword_query_search_limit(total_limit=4, candidate_limit=24) == 20
+    assert _keyword_query_search_limit(total_limit=50, candidate_limit=300) == 150
+    assert _keyword_query_search_limit(total_limit=500, candidate_limit=360) == 180
+
+
+def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a", "generic_b"),
+        "1:decomposition_event_context": ("event_noise",),
+        "2:family_swimming_activity_bridge": ("d1_swimming", "generic_a"),
+        "3:family_hike_activity_bridge": ("d16_hike", "generic_b"),
+        "4:symbol_importance_bridge": ("d14_symbol", "generic_c"),
+        "5:meteor_shower_feeling_bridge": ("d10_feeling", "generic_d"),
+        "6:adoption_current_goal_bridge": ("d19_adoption", "generic_e"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "d1_swimming",
+        "d16_hike",
+        "d14_symbol",
+        "d10_feeling",
+        "d19_adoption",
+    )
+
+
+def test_bounded_retrieval_queries_prioritize_specific_bridges_over_decomposition() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+            QueryExpansion(query="support", reason="decomposition_inference_support"),
+            QueryExpansion(query="aggregate", reason="decomposition_attribute_aggregation"),
+        ),
+        expansions=(
+            QueryExpansion(query="traits", reason="personality_trait_bridge"),
+            QueryExpansion(query="thoughtful", reason="personality_thoughtfulness_bridge"),
+            QueryExpansion(query="authentic", reason="personality_authenticity_bridge"),
+            QueryExpansion(query="drive", reason="personality_drive_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "personality_trait_bridge",
+        "personality_thoughtfulness_bridge",
+        "personality_authenticity_bridge",
+        "personality_drive_bridge",
+        "decomposition_clause",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_high_signal_decomposition() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="relative", reason="decomposition_relative_time"),
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="bridge-one", reason="source_evidence_bridge"),
+            QueryExpansion(query="bridge-two", reason="visual_text_evidence_bridge"),
+            QueryExpansion(query="bridge-three", reason="audio_transcript_evidence_bridge"),
+            QueryExpansion(query="bridge-four", reason="video_transcript_evidence_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_relative_time",
+        "source_evidence_bridge",
+        "visual_text_evidence_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_activity_and_children_preference_bridges() -> None:
+    broad_family_activity = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What activities has Melanie done with her family?"),
+        fallback="fallback",
+    )
+    activity = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What activities does Melanie partake in?"),
+        fallback="fallback",
+        limit=6,
+    )
+    family_activity = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What activities has Melanie done with her family?"),
+        fallback="fallback",
+        limit=6,
+    )
+    family_hike = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What does Melanie do with her family on hikes?"),
+        fallback="fallback",
+        limit=4,
+    )
+    kids_like = _bounded_derived_retrieval_queries(
+        build_query_expansion_plan("What do Melanie's kids like?"),
+        fallback="fallback",
+        limit=3,
+    )
+
+    assert "decomposition_activity_participation" in {
+        query.reason for query in activity
+    }
+    assert "activity_aggregation_bridge" in {query.reason for query in activity}
+    assert "family_activity_bridge" in {query.reason for query in family_activity}
+    assert "family_painting_activity_bridge" in {
+        query.reason for query in family_activity
+    }
+    assert "activity_visual_selfcare_bridge" in {
+        query.reason for query in broad_family_activity
+    }
+    assert "family_hike_detail_bridge" in {query.reason for query in family_hike}
+    assert "children_preference_bridge" in {query.reason for query in kids_like}
+
+
+def test_bounded_retrieval_queries_prioritize_high_signal_evidence_bridges() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="relative", reason="decomposition_relative_time"),
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="personality", reason="personality_trait_bridge"),
+            QueryExpansion(
+                query="conversation",
+                reason="conversation_transcript_evidence_bridge",
+            ),
+            QueryExpansion(query="source", reason="source_evidence_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=5)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_relative_time",
+        "conversation_transcript_evidence_bridge",
+        "source_evidence_bridge",
+        "personality_trait_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_animal_career_bridge() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="after event", reason="decomposition_event_sequence"),
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="career", reason="career_intent_bridge"),
+            QueryExpansion(query="animal care", reason="animal_career_inference_bridge"),
+            QueryExpansion(
+                query="care instructions",
+                reason="animal_care_instruction_bridge",
+            ),
+            QueryExpansion(
+                query="diet vegetables insects",
+                reason="animal_diet_evidence_bridge",
+            ),
+            QueryExpansion(
+                query="new tank habitat",
+                reason="animal_habitat_setup_bridge",
+            ),
+            QueryExpansion(
+                query="pet store joy peace",
+                reason="animal_affinity_pet_store_bridge",
+            ),
+            QueryExpansion(query="after", reason="after_event_temporal_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_event_sequence",
+        "animal_care_instruction_bridge",
+        "animal_diet_evidence_bridge",
+        "animal_habitat_setup_bridge",
+        "animal_affinity_pet_store_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_camping_detail_bridge() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="when", reason="decomposition_temporal_answer"),
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="camping", reason="camping_detail_bridge"),
+            QueryExpansion(query="after", reason="after_event_temporal_bridge"),
+            QueryExpansion(query="source", reason="source_evidence_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=5)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "camping_detail_bridge",
+        "source_evidence_bridge",
+        "after_event_temporal_bridge",
+        "decomposition_temporal_answer",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_attribute_facets_before_generic_noise() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="aggregate", reason="decomposition_attribute_aggregation"),
+            QueryExpansion(query="clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="generic", reason="attribute_description_bridge"),
+            QueryExpansion(query="family", reason="attribute_family_support_bridge"),
+            QueryExpansion(query="calm", reason="attribute_calm_resourcefulness_bridge"),
+            QueryExpansion(query="service", reason="attribute_service_helpfulness_bridge"),
+            QueryExpansion(query="rescue", reason="attribute_rescue_purpose_bridge"),
+            QueryExpansion(query="noise", reason="personality_trait_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "attribute_family_support_bridge",
+        "attribute_calm_resourcefulness_bridge",
+        "attribute_service_helpfulness_bridge",
+        "attribute_rescue_purpose_bridge",
+        "attribute_description_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_specialized_event_bridges() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="event context", reason="decomposition_event_context"),
+            QueryExpansion(query="pride slot", reason="decomposition_lgbtq_pride_event"),
+            QueryExpansion(query="support slot", reason="decomposition_lgbtq_support_group_event"),
+            QueryExpansion(query="school slot", reason="decomposition_lgbtq_school_speech_event"),
+            QueryExpansion(query="aggregate", reason="decomposition_attribute_aggregation"),
+        ),
+        expansions=(
+            QueryExpansion(query="events", reason="event_participation_bridge"),
+            QueryExpansion(query="pride", reason="lgbtq_pride_event_bridge"),
+            QueryExpansion(query="support", reason="lgbtq_support_group_event_bridge"),
+            QueryExpansion(query="school", reason="lgbtq_school_event_bridge"),
+            QueryExpansion(query="conversation", reason="conversation_transcript_evidence_bridge"),
+            QueryExpansion(query="meeting", reason="meeting_evidence_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_event_context",
+        "decomposition_lgbtq_pride_event",
+        "decomposition_lgbtq_support_group_event",
+        "decomposition_lgbtq_school_speech_event",
+        "event_participation_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_lgbtq_event_slots_for_real_query_plan() -> None:
+    plan = build_query_expansion_plan("What LGBTQ+ events has Caroline participated in?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_event_context",
+        "decomposition_lgbtq_pride_event",
+        "decomposition_lgbtq_support_group_event",
+        "decomposition_lgbtq_school_speech_event",
+        "event_participation_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_transgender_event_bridges_for_real_query_plan() -> None:
+    plan = build_query_expansion_plan("What transgender-specific events has Caroline attended?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=6)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_event_context",
+        "event_participation_bridge",
+        "transgender_poetry_event_bridge",
+        "transgender_youth_center_event_bridge",
+        "conversation_transcript_evidence_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() -> None:
+    religious = build_query_expansion_plan("Would Caroline be considered religious?")
+    ally = build_query_expansion_plan(
+        "Would Melanie be considered an ally to the transgender community?"
+    )
+
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        religious,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "religious_inference_bridge",
+        "decomposition_inference_support",
+    ]
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        ally,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "ally_support_bridge",
+        "identity_bridge",
+        "decomposition_identity_attribute",
+    ]
+
+
+def test_fused_ranked_keys_weights_original_query_over_decomposition_noise() -> None:
+    ranked = _fused_ranked_keys(
+        {
+            "0:original_query": ("exact",),
+            "1:decomposition_clause": ("decoy",),
+            "2:decomposition_inference_support": ("decoy",),
+        },
+        limit=2,
+    )
+
+    assert ranked == ("exact", "decoy")
+
+
+def test_fused_ranked_keys_weights_high_signal_evidence_over_noisy_decomposition() -> None:
+    ranked = _fused_ranked_keys(
+        {
+            "0:decomposition_clause": ("broad_decoy",),
+            "1:conversation_transcript_evidence_bridge": ("transcript_hit",),
+        },
+        limit=2,
+    )
+
+    assert ranked == ("transcript_hit", "broad_decoy")
+
+
+def test_keyword_search_chunks_uses_weighted_rrf_across_query_variants() -> None:
+    exact = _chunk("chunk_exact", "Atlas exact original decision.")
+    decoy = _chunk("chunk_decoy", "Broad support text from weak decompositions.")
+    uow = _FakeKeywordSearchUow(
+        {
+            "original": [exact],
+            "broad one": [decoy],
+            "broad two": [decoy],
+        }
+    )
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="broad one", reason="decomposition_clause"),
+            QueryExpansion(query="broad two", reason="decomposition_inference_support"),
+        ),
+        expansions=(),
+    )
+
+    result = asyncio.run(
+        _keyword_search_chunks(
+            uow,
+            space_id="space_test",
+            memory_scope_ids=("scope_test",),
+            thread_id=None,
+            retrieval_queries=plan.retrieval_queries,
+            limit=2,
+        )
+    )
+
+    assert result == (exact, decoy)
+    assert uow.chunks.searched_queries == ["original", "broad one", "broad two"]
 
 
 def test_rank_facts_for_query_uses_normalized_lexical_variants() -> None:
@@ -109,6 +524,51 @@ def test_rank_facts_for_query_drops_long_query_with_single_weak_hit() -> None:
     )
 
     assert ranked == ()
+
+
+class _FakeKeywordSearchUow:
+    def __init__(self, results_by_query: dict[str, list[MemoryChunk]]) -> None:
+        self.chunks = _FakeKeywordChunks(results_by_query)
+
+
+class _FakeKeywordChunks:
+    def __init__(self, results_by_query: dict[str, list[MemoryChunk]]) -> None:
+        self._results_by_query = results_by_query
+        self.searched_queries: list[str] = []
+
+    async def keyword_search(
+        self,
+        *,
+        space_id: str,
+        memory_scope_ids: tuple[str, ...],
+        thread_id: str | None,
+        query: str,
+        limit: int,
+    ) -> list[MemoryChunk]:
+        del space_id, memory_scope_ids, thread_id
+        self.searched_queries.append(query)
+        return list(self._results_by_query.get(query, ()))[:limit]
+
+
+def _chunk(chunk_id: str, text: str) -> MemoryChunk:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    return MemoryChunk.create(
+        chunk_id=MemoryChunkId(chunk_id),
+        space_id=SpaceId("space_test"),
+        memory_scope_id=MemoryScopeId("scope_test"),
+        document_id=MemoryDocumentId(f"{chunk_id}_document"),
+        source_type="document",
+        source_external_id=f"{chunk_id}_source",
+        source_hash=f"{chunk_id}_hash",
+        kind=MemoryChunkKind.DOCUMENT_SECTION,
+        text=text,
+        normalized_text=text.casefold(),
+        sequence=1,
+        char_start=0,
+        char_end=len(text),
+        token_estimate=8,
+        now=now,
+    )
 
 
 def _fact(fact_id: str, text: str) -> MemoryFact:

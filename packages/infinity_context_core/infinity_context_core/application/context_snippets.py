@@ -18,12 +18,18 @@ _MAX_QUERY_TERMS = 12
 _MAX_SNIPPET_CHARS = 360
 _MAX_STRUCTURED_SNIPPET_CHARS = 640
 _MAX_STRUCTURED_SNIPPET_LINES = 4
+_MAX_STRUCTURED_PREVIOUS_LINES = 2
+_MAX_STRUCTURED_PREFIX_LINES = 7
 _MAX_BOUNDARY_SCAN_CHARS = 40
 _MAX_LINE_PREFIX_SCAN_CHARS = 1200
 _STRUCTURED_EVIDENCE_LINE_RE = re.compile(r"^\s*(?:D\d+:\d+|S\d+:\d+|T\d+:\d+)\b")
 _STRUCTURED_EVIDENCE_PREFIX_RE = re.compile(
     r"^\s*((?:(?:D|S|T)\d+:\d+\s+){0,7}(?:D|S|T)\d+:\d+)\b"
 )
+_INLINE_STRUCTURED_EVIDENCE_MARKER_RE = re.compile(r"\b(?:D|S|T)\d+:\d+\b")
+_MAX_INLINE_STRUCTURED_SNIPPET_CHARS = 640
+_MAX_INLINE_STRUCTURED_PREVIOUS_MARKERS = 2
+_MAX_INLINE_STRUCTURED_FOLLOWING_MARKERS = 6
 
 
 @dataclass(frozen=True)
@@ -60,10 +66,28 @@ def query_focused_snippet(
     word_start = _left_word_boundary(text, start)
     line_start = _left_line_boundary(text, word_start)
     structured_line = _is_structured_evidence_line(text, line_start)
+    if not structured_line:
+        inline_snippet = _inline_structured_evidence_snippet(
+            query_terms=terms,
+            text=text,
+        )
+        if inline_snippet is not None and _should_prefer_inline_structured_snippet(
+            inline_snippet=inline_snippet,
+            matched_terms=matched_terms,
+        ):
+            return inline_snippet
     max_chars = _MAX_STRUCTURED_SNIPPET_CHARS if structured_line else _MAX_SNIPPET_CHARS
     start = line_start if end - line_start <= max_chars else word_start
+    structured_context_start = structured_line and start == line_start
+    if structured_context_start:
+        start = _left_structured_context_boundary(
+            text=text,
+            line_start=line_start,
+            end=end,
+            max_chars=max_chars,
+        )
     end = _right_word_boundary(text, end)
-    if structured_line and start == line_start:
+    if structured_context_start:
         end = _right_structured_line_boundary(text=text, start=start, end=end)
     snippet = _render_snippet(text=text, start=start, end=end, max_chars=max_chars)
     if structured_line and start != line_start:
@@ -102,11 +126,11 @@ def source_refs_with_query_snippet(
     return tuple(
         replace(
             ref,
-            quote_preview=snippet.text,
-            char_start=snippet.char_start if include_char_range else ref.char_start,
-            char_end=snippet.char_end if include_char_range else ref.char_end,
+            quote_preview=snippet.text if index == 0 else ref.quote_preview,
+            char_start=snippet.char_start if include_char_range and index == 0 else ref.char_start,
+            char_end=snippet.char_end if include_char_range and index == 0 else ref.char_end,
         )
-        for ref in source_refs
+        for index, ref in enumerate(source_refs)
     )
 
 
@@ -130,6 +154,18 @@ def query_snippet_score_signals(snippet: QuerySnippet | None) -> dict[str, objec
         "query_snippet_char_end": snippet.char_end,
         "query_snippet_unique_term_hits": snippet.unique_term_hits,
     }
+
+
+def _should_prefer_inline_structured_snippet(
+    *,
+    inline_snippet: QuerySnippet,
+    matched_terms: tuple[str, ...],
+) -> bool:
+    if inline_snippet.unique_term_hits >= len(matched_terms):
+        return True
+    return inline_snippet.unique_term_hits >= 4 and inline_snippet.unique_term_hits >= (
+        len(matched_terms) - 1
+    )
 
 
 def _query_terms(query: str) -> tuple[LexicalQueryTerm, ...]:
@@ -285,7 +321,7 @@ def _adjacent_structured_evidence_prefixes(
         if previous_prefix:
             prefixes.append(previous_prefix)
     cursor = line_start
-    for _ in range(4):
+    for _ in range(_MAX_STRUCTURED_PREFIX_LINES):
         prefix = _structured_evidence_prefix(text=text, line_start=cursor)
         if prefix:
             prefixes.append(prefix)
@@ -311,6 +347,27 @@ def _previous_line_start(text: str, line_start: int) -> int | None:
     previous_end = line_start - 1
     previous_start = text.rfind("\n", 0, previous_end)
     return 0 if previous_start == -1 else previous_start + 1
+
+
+def _left_structured_context_boundary(
+    *,
+    text: str,
+    line_start: int,
+    end: int,
+    max_chars: int,
+) -> int:
+    cursor = line_start
+    for _ in range(_MAX_STRUCTURED_PREVIOUS_LINES):
+        previous = _previous_line_start(text, cursor)
+        if previous is None or not _structured_evidence_prefix(
+            text=text,
+            line_start=previous,
+        ):
+            break
+        if end - previous > max_chars:
+            break
+        cursor = previous
+    return cursor
 
 
 def _next_line_start(text: str, line_start: int) -> int | None:
@@ -345,6 +402,85 @@ def _right_structured_line_boundary(*, text: str, start: int, end: int) -> int:
             break
         scan_start = cursor + 1
     return min(len(text), max(end, cursor))
+
+
+def _inline_structured_evidence_snippet(
+    *,
+    query_terms: tuple[LexicalQueryTerm, ...],
+    text: str,
+) -> QuerySnippet | None:
+    markers = tuple(_INLINE_STRUCTURED_EVIDENCE_MARKER_RE.finditer(text))
+    if len(markers) < 2:
+        return None
+    best: tuple[tuple[int, int, int], int, int, tuple[str, ...]] | None = None
+    for marker_index, _ in enumerate(markers):
+        start_index = max(0, marker_index - _MAX_INLINE_STRUCTURED_PREVIOUS_MARKERS)
+        end_index = min(
+            len(markers) - 1,
+            marker_index + _MAX_INLINE_STRUCTURED_FOLLOWING_MARKERS,
+        )
+        start = markers[start_index].start()
+        end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
+        hits = _term_hits(text[start:end], query_terms)
+        if not hits:
+            continue
+        matched_terms = _window_terms(hits=hits, start=0, end=end - start)
+        hit_count = len(hits)
+        key = (len(matched_terms), hit_count, -start)
+        if best is None or key > best[0]:
+            best = (key, start, end, matched_terms)
+    if best is None:
+        return None
+    _, start, end, matched_terms = best
+    snippet = _render_snippet(
+        text=text,
+        start=start,
+        end=end,
+        max_chars=_MAX_INLINE_STRUCTURED_SNIPPET_CHARS,
+    )
+    snippet = _prepend_missing_inline_structured_prefixes(
+        markers=markers,
+        start=start,
+        end=end,
+        snippet=snippet,
+        max_chars=_MAX_INLINE_STRUCTURED_SNIPPET_CHARS,
+    )
+    if not snippet:
+        return None
+    return QuerySnippet(
+        text=snippet,
+        char_start=start,
+        char_end=end,
+        matched_terms=matched_terms,
+        unique_term_hits=len(matched_terms),
+    )
+
+
+def _prepend_missing_inline_structured_prefixes(
+    *,
+    markers: tuple[re.Match[str], ...],
+    start: int,
+    end: int,
+    snippet: str,
+    max_chars: int,
+) -> str:
+    if not snippet:
+        return ""
+    prefixes = tuple(
+        dict.fromkeys(
+            marker.group(0)
+            for marker in markers
+            if marker.start() >= start and marker.start() < end
+        )
+    )
+    missing = tuple(prefix for prefix in prefixes if prefix not in snippet)
+    if not missing:
+        return snippet
+    normalized_snippet = snippet.removeprefix("... ").strip()
+    return safe_metadata_text(
+        f"{' '.join(missing)} ... {normalized_snippet}",
+        limit=max_chars,
+    )
 
 
 def _right_line_boundary_at_or_after(text: str, end: int) -> int:

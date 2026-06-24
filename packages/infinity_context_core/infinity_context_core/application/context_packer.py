@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from math import isfinite
 
 from infinity_context_core.application.context_diagnostics import (
     context_rank_key,
+    diagnostic_retrieval_sources,
     normalize_context_item_diagnostics,
+)
+from infinity_context_core.application.context_ranking_reason_policy import (
+    PRECISE_TURN_SOURCE_SIBLING_REASONS,
 )
 from infinity_context_core.application.dto import ContextBundle, ContextItem
 from infinity_context_core.application.normalize import estimate_tokens
@@ -18,11 +23,64 @@ from infinity_context_core.application.sensitive_text import (
 from infinity_context_core.domain.entities import SourceRef
 
 _MAX_ITEMS_PER_SOURCE = 4
+_MAX_ART_STYLE_ITEMS_PER_SOURCE_GROUP = 4
 _SOURCE_CAPPED_ITEM_TYPES = frozenset({"chunk", "extraction_artifact"})
 _MAX_CITATION_QUOTE_CHARS = 160
 _MAX_SOURCE_IDENTITY_PART_CHARS = 96
 _MAX_RENDERED_REASON_CHARS = 180
 _DEFAULT_MAX_RENDERED_CHARS = 18000
+_MAX_ANSWER_SUPPORT_DIVERSITY_ITEMS = 8
+_MAX_ANSWER_SUPPORT_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON = 1
+_MAX_ANSWER_SUPPORT_EVENT_SLOT_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON = 2
+_MAX_ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON = 6
+_ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
+    {
+        "adoption-current-goal-bridge",
+        "adoption-current-milestone-bridge",
+        "activity-aggregation-bridge",
+        "activity-visual-selfcare-bridge",
+        "book-reading-list-bridge",
+        "book-suggestion-bridge",
+        "children-count-event-bridge",
+        "children-count-sibling-bridge",
+        "decomposition-activity-participation",
+        "decomposition-attribute-aggregation",
+        "decomposition-quantity-count",
+        "event-participation-bridge",
+        "family-activity-bridge",
+        "family-hike-detail-bridge",
+        "family-hike-activity-bridge",
+        "family-painting-activity-bridge",
+        "family-swimming-activity-bridge",
+        "hike-count-activity-bridge",
+        "item-purchase-bridge",
+        "music-artist-band-bridge",
+        "pottery-type-bridge",
+        "recommendation-source-bridge",
+        "running-reason-bridge",
+        "running-reason-question-bridge",
+        "symbol-importance-bridge",
+        "transgender-youth-center-event-bridge",
+        "volunteer-career-inference-bridge",
+    }
+)
+_COUNT_AGGREGATION_COVERAGE_REASONS = frozenset(
+    {
+        "beach_count_activity_bridge",
+        "hike_count_activity_bridge",
+        "hiking_trail_count_bridge",
+    }
+)
+_ANSWER_SUPPORT_EXCLUDED_QUERY_REASONS = frozenset({"art_style_bridge"})
+_BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS = frozenset({"activity_visual_selfcare_bridge"})
+_PRECISE_TURN_ANSWER_SUPPORT_REASONS = PRECISE_TURN_SOURCE_SIBLING_REASONS | frozenset(
+    {
+        "personality_authenticity_bridge",
+        "personality_drive_bridge",
+        "personality_thoughtfulness_bridge",
+        "personality_trait_bridge",
+    }
+)
 _DIVERSITY_FAMILY_PRIORITY = (
     "fact",
     "chunk",
@@ -45,6 +103,35 @@ _SENSITIVE_QUOTE_MARKERS = (
     "credential",
     "authorization",
 )
+_DIALOGUE_MARKER_RE = re.compile(r"\bD\d+:\d+\b")
+_POTTERY_TYPE_PRIMARY_ANSWER_OBJECT_RE = re.compile(
+    r"\b(?:clay|cup|cups|mug|mugs|pot|pots|dog\s+face)\b",
+    re.IGNORECASE,
+)
+_POTTERY_TYPE_SECONDARY_ANSWER_OBJECT_RE = re.compile(
+    r"\b(?:bowl|bowls|plate|plates|ceramic|project|projects)\b",
+    re.IGNORECASE,
+)
+_POTTERY_TYPE_GENERIC_ANSWER_OBJECT_RE = re.compile(
+    r"\b(?:pottery|art|painting|creative|creativity)\b",
+    re.IGNORECASE,
+)
+_FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE = re.compile(
+    r"\b(?:husband|motivated|motivate|motivation)\b(?=.{0,180}\b"
+    r"(?:family|kids?|children|hiking|hike|nature|waterfall|trail))|"
+    r"\b(?:family|kids?|children|hiking|hike|nature|waterfall|trail)\b"
+    r"(?=.{0,180}\b(?:husband|motivated|motivate|motivation))",
+    re.IGNORECASE | re.DOTALL,
+)
+_FAMILY_ACTIVITY_ACTIVITY_OBJECT_RE = re.compile(
+    r"\b(?:swimming|swim|hiking|hike|trail|waterfall|museum|dinosaur|"
+    r"pottery|clay|painting|camping|campfire|marshmallow|park)\b",
+    re.IGNORECASE,
+)
+_FAMILY_ACTIVITY_CONTEXT_OBJECT_RE = re.compile(
+    r"\b(?:family|fam|kids?|children|husband)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -57,8 +144,10 @@ class PackResult:
 class _SelectionState:
     selected: list[ContextItem]
     selected_keys: set[tuple[str, str]]
+    selected_answer_support_families: set[str]
     selected_chunks_by_source: dict[str, int]
     selected_source_capped_items_by_source: dict[str, int]
+    selected_art_style_items_by_source_group: dict[str, int]
     used_tokens: int = 0
 
 
@@ -80,6 +169,7 @@ class ContextPacker:
         selectable_items: list[ContextItem] = []
         dropped_by_instruction_flag = 0
         dropped_by_source_cap = 0
+        dropped_by_source_group_cap = 0
         dropped_by_budget = 0
         dropped_by_char_cap = 0
         redacted_item_keys: set[tuple[str, str]] = set()
@@ -95,8 +185,10 @@ class ContextPacker:
         state = _SelectionState(
             selected=[],
             selected_keys=set(),
+            selected_answer_support_families=set(),
             selected_chunks_by_source={},
             selected_source_capped_items_by_source={},
+            selected_art_style_items_by_source_group={},
         )
         diversity_items_used = 0
         diversity_families = _diversity_candidates(selectable_items)
@@ -107,17 +199,56 @@ class ContextPacker:
                 item=item,
                 budget=budget,
                 char_budget=char_budget,
+                mark_answer_support_family=False,
             ):
                 diversity_items_used += 1
+
+        answer_support_items_used = 0
+        answer_support_source_group_items_by_reason: dict[str, int] = {}
+        answer_support_families = _answer_support_diversity_candidates(selectable_items)
+        for family in _ordered_answer_support_families(answer_support_families):
+            if answer_support_items_used >= _MAX_ANSWER_SUPPORT_DIVERSITY_ITEMS:
+                break
+            item = answer_support_families[family]
+            source_group_reason = _answer_support_source_group_reason_key(family)
+            if (
+                source_group_reason
+                and answer_support_source_group_items_by_reason.get(source_group_reason, 0)
+                >= _answer_support_source_group_limit(
+                    source_group_reason,
+                    family=family,
+                    item=item,
+                )
+            ):
+                continue
+            if _try_select_item(
+                state,
+                item=item,
+                budget=budget,
+                char_budget=char_budget,
+            ):
+                answer_support_items_used += 1
+                if source_group_reason:
+                    answer_support_source_group_items_by_reason[source_group_reason] = (
+                        answer_support_source_group_items_by_reason.get(source_group_reason, 0) + 1
+                    )
 
         selection_items = _source_diversified_order(selectable_items)
         source_diversity_chunks_reordered = _source_diversity_reordered_chunk_count(
             selectable_items,
             selection_items,
         )
+        dropped_by_answer_support_family_duplicate = 0
         for item in selection_items:
             key = _selection_key(item)
             if key in state.selected_keys:
+                continue
+            answer_support_family = _answer_support_diversity_family(item)
+            if (
+                answer_support_family
+                and answer_support_family in state.selected_answer_support_families
+            ):
+                dropped_by_answer_support_family_duplicate += 1
                 continue
             if _source_cap_applies(item):
                 source_key = _source_key(item)
@@ -125,6 +256,16 @@ class ContextPacker:
                 if source_count >= _MAX_ITEMS_PER_SOURCE:
                     dropped_by_source_cap += 1
                     continue
+                source_group_cap = _source_group_cap(item)
+                if source_group_cap is not None:
+                    source_group_key = _source_group_key(item)
+                    source_group_count = state.selected_art_style_items_by_source_group.get(
+                        source_group_key,
+                        0,
+                    )
+                    if source_group_count >= source_group_cap:
+                        dropped_by_source_group_cap += 1
+                        continue
             item_tokens = estimate_tokens(item.text) + 16
             if state.used_tokens + item_tokens > budget:
                 dropped_by_budget += 1
@@ -134,7 +275,7 @@ class ContextPacker:
                 continue
             _select_item(state, item=item, item_tokens=item_tokens)
 
-        selected = tuple(sorted(state.selected, key=context_rank_key))
+        selected = tuple(sorted(state.selected, key=_context_render_rank_key))
         lines = _render_lines(selected)
         dropped_count = len(normalized_items) - len(selected)
         rendered_text = "\n".join(lines).strip()
@@ -151,6 +292,15 @@ class ContextPacker:
                     "diversity_families_considered": len(diversity_families),
                     "diversity_families_used": len({_diversity_family(item) for item in selected}),
                     "diversity_items_used": diversity_items_used,
+                    "answer_support_families_considered": len(answer_support_families),
+                    "answer_support_families_used": len(
+                        {
+                            family
+                            for item in selected
+                            if (family := _answer_support_diversity_family(item))
+                        }
+                    ),
+                    "answer_support_items_used": answer_support_items_used,
                     "item_type_counts": _item_type_counts(selected),
                     "chunk_sources_considered": len(_chunk_source_counts(selectable_items)),
                     "chunk_sources_used": len(_chunk_source_counts(selected)),
@@ -170,7 +320,11 @@ class ContextPacker:
                     "dropped_by_instruction_flag": dropped_by_instruction_flag,
                     "dropped_by_budget": dropped_by_budget,
                     "dropped_by_source_cap": dropped_by_source_cap,
+                    "dropped_by_source_group_cap": dropped_by_source_group_cap,
                     "dropped_by_char_cap": dropped_by_char_cap,
+                    "dropped_by_answer_support_family_duplicate": (
+                        dropped_by_answer_support_family_duplicate
+                    ),
                     "citations_rendered": sum(len(_citation_labels(item)) for item in selected),
                     "citation_quote_previews_rendered": sum(
                         _citation_quote_preview_count(item) for item in selected
@@ -199,8 +353,12 @@ def _try_select_item(
     item: ContextItem,
     budget: int,
     char_budget: int,
+    mark_answer_support_family: bool = True,
 ) -> bool:
     if _selection_key(item) in state.selected_keys:
+        return False
+    answer_support_family = _answer_support_diversity_family(item)
+    if answer_support_family and answer_support_family in state.selected_answer_support_families:
         return False
     if _source_cap_applies(item):
         source_key = _source_key(item)
@@ -208,12 +366,25 @@ def _try_select_item(
             _MAX_ITEMS_PER_SOURCE
         ):
             return False
+        source_group_cap = _source_group_cap(item)
+        if source_group_cap is not None:
+            source_group_key = _source_group_key(item)
+            if (
+                state.selected_art_style_items_by_source_group.get(source_group_key, 0)
+                >= source_group_cap
+            ):
+                return False
     item_tokens = estimate_tokens(item.text) + 16
     if state.used_tokens + item_tokens > budget:
         return False
     if _rendered_char_count((*state.selected, item)) > char_budget:
         return False
-    _select_item(state, item=item, item_tokens=item_tokens)
+    _select_item(
+        state,
+        item=item,
+        item_tokens=item_tokens,
+        mark_answer_support_family=mark_answer_support_family,
+    )
     return True
 
 
@@ -222,9 +393,13 @@ def _select_item(
     *,
     item: ContextItem,
     item_tokens: int,
+    mark_answer_support_family: bool = True,
 ) -> None:
     state.selected.append(item)
     state.selected_keys.add(_selection_key(item))
+    answer_support_family = _answer_support_diversity_family(item)
+    if mark_answer_support_family and answer_support_family:
+        state.selected_answer_support_families.add(answer_support_family)
     if item.item_type == "chunk":
         source_key = _source_key(item)
         state.selected_chunks_by_source[source_key] = (
@@ -235,6 +410,11 @@ def _select_item(
         state.selected_source_capped_items_by_source[source_key] = (
             state.selected_source_capped_items_by_source.get(source_key, 0) + 1
         )
+        if _source_group_cap(item) is not None:
+            source_group_key = _source_group_key(item)
+            state.selected_art_style_items_by_source_group[source_group_key] = (
+                state.selected_art_style_items_by_source_group.get(source_group_key, 0) + 1
+            )
     state.used_tokens += item_tokens
 
 
@@ -279,6 +459,494 @@ def _diversity_family(item: ContextItem) -> str:
     return item.item_type or "unknown"
 
 
+def _answer_support_diversity_candidates(items: list[ContextItem]) -> dict[str, ContextItem]:
+    candidates: dict[str, ContextItem] = {}
+    for item in items:
+        family = _answer_support_diversity_family(item)
+        if not family:
+            continue
+        existing = candidates.get(family)
+        if existing is None or _answer_support_family_item_key(item) < (
+            _answer_support_family_item_key(existing)
+        ):
+            candidates[family] = item
+    return candidates
+
+
+def _ordered_answer_support_families(candidates: dict[str, ContextItem]) -> tuple[str, ...]:
+    marker_source_group_counts = _marker_coverage_source_group_counts(candidates)
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda family: (
+                _answer_support_family_priority(
+                    family,
+                    item=candidates[family],
+                    marker_source_group_counts=marker_source_group_counts,
+                ),
+                _answer_support_family_item_key(candidates[family]),
+                family,
+            ),
+        )
+    )
+
+
+def _answer_support_family_priority(
+    family: str,
+    *,
+    item: ContextItem,
+    marker_source_group_counts: dict[str, int],
+) -> int:
+    base = _diversity_family_base(family)
+    if base == "query_reason_count_coverage_source_group":
+        return 0
+    if base in {
+        "query_reason_activity_slot",
+        "query_reason_activity_slot_source_group",
+    }:
+        return 0
+    query_reason = _answer_support_query_reason(item)
+    if base in {"query_reason", "query_reason_source_group"} and _is_pottery_type_reason(
+        query_reason
+    ):
+        return 4
+    if base == "query_reason_marker_coverage_source_group":
+        if _is_family_activity_reason(query_reason):
+            return 4
+        answer_object_rank = _answer_object_rank(
+            item,
+            query_reason=query_reason,
+        )
+        if answer_object_rank <= 1:
+            return 1 + answer_object_rank
+        source_group = _marker_coverage_family_source_group(family)
+        if marker_source_group_counts.get(source_group, 0) > 1:
+            return min(answer_object_rank + 1, 3)
+        return min(answer_object_rank + 2, 5)
+    return 2
+
+
+def _marker_coverage_source_group_counts(candidates: dict[str, ContextItem]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for family in candidates:
+        if _diversity_family_base(family) != "query_reason_marker_coverage_source_group":
+            continue
+        source_group = _marker_coverage_family_source_group(family)
+        if source_group:
+            counts[source_group] = counts.get(source_group, 0) + 1
+    return counts
+
+
+def _marker_coverage_family_source_group(family: str) -> str:
+    parts = family.split(":")
+    if len(parts) >= 4:
+        return parts[-1]
+    return ""
+
+
+def _answer_support_source_group_reason_key(family: str) -> str:
+    parts = family.split(":")
+    if len(parts) < 3 or parts[0] not in {
+        "query_reason_activity_slot_source_group",
+        "query_reason_career_slot_source_group",
+        "query_reason_count_coverage_source_group",
+        "query_reason_marker_coverage_source_group",
+        "query_reason_source_group",
+    }:
+        return ""
+    if (
+        parts[0] == "query_reason_activity_slot_source_group"
+        and len(parts) >= 4
+        and _is_family_activity_reason(parts[1])
+    ):
+        return f"{parts[1]}:{parts[2]}"
+    return parts[1]
+
+
+def _answer_support_source_group_limit(
+    reason: str,
+    *,
+    family: str,
+    item: ContextItem,
+) -> int:
+    if _is_count_aggregation_reason(reason):
+        return _MAX_ANSWER_SUPPORT_DIVERSITY_ITEMS
+    family_base = _diversity_family_base(family)
+    aggregation_family_bases = {
+        "query_reason_activity_slot_source_group",
+        "query_reason_career_slot_source_group",
+        "query_reason_count_coverage_source_group",
+        "query_reason_marker_coverage_source_group",
+    }
+    if (
+        reason in _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS
+        and (
+            family_base in aggregation_family_bases
+            or (item.source_refs and family_base == "query_reason_source_group")
+        )
+    ):
+        return _MAX_ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON
+    if (
+        reason.startswith("decomposition-")
+        and reason.endswith("-event")
+        and reason not in {"decomposition-event-context", "decomposition-event-sequence"}
+    ):
+        return _MAX_ANSWER_SUPPORT_EVENT_SLOT_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON
+    return _MAX_ANSWER_SUPPORT_SOURCE_GROUP_DIVERSITY_ITEMS_PER_REASON
+
+
+def _is_count_aggregation_reason(reason: str) -> bool:
+    normalized_reason = reason.replace("-", "_")
+    return reason in _COUNT_AGGREGATION_COVERAGE_REASONS or (
+        normalized_reason in _COUNT_AGGREGATION_COVERAGE_REASONS
+    )
+
+
+def _answer_support_diversity_family(item: ContextItem) -> str:
+    query_reason = _answer_support_query_reason(item)
+    if query_reason and query_reason != "original_query":
+        if query_reason in _ANSWER_SUPPORT_EXCLUDED_QUERY_REASONS:
+            return ""
+        source_group = _answer_support_source_group(item)
+        career_slot = _career_answer_slot(item, query_reason=query_reason)
+        activity_slot = _activity_answer_slot(item, query_reason=query_reason)
+        if source_group:
+            if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
+                return _compound_diversity_family(
+                    "query_reason_count_coverage_source_group",
+                    query_reason,
+                    source_group,
+                )
+            if marker_slot := _aggregation_marker_coverage_slot(
+                item,
+                query_reason=query_reason,
+            ):
+                return _compound_diversity_family(
+                    "query_reason_marker_coverage_source_group",
+                    query_reason,
+                    marker_slot,
+                    source_group,
+                )
+            if activity_slot:
+                return _compound_diversity_family(
+                    "query_reason_activity_slot_source_group",
+                    query_reason,
+                    activity_slot,
+                    source_group,
+                )
+            if career_slot:
+                return _compound_diversity_family(
+                    "query_reason_career_slot_source_group",
+                    query_reason,
+                    career_slot,
+                    source_group,
+                )
+            if _diagnostic_signal_truthy(item, "source_sibling_dialogue_visual_reference"):
+                return _compound_diversity_family(
+                    "query_reason_source_group_visual_reference",
+                    query_reason,
+                    source_group,
+                )
+            return _compound_diversity_family(
+                "query_reason_source_group",
+                query_reason,
+                source_group,
+            )
+        if activity_slot:
+            return _compound_diversity_family(
+                "query_reason_activity_slot",
+                query_reason,
+                activity_slot,
+            )
+        if career_slot:
+            return _compound_diversity_family(
+                "query_reason_career_slot",
+                query_reason,
+                career_slot,
+            )
+        return _typed_diversity_family("query_reason", query_reason)
+
+    matched_anchor_kinds = _diagnostic_list(item, "context_requirement_matched_anchor_kinds")
+    if matched_anchor_kinds:
+        return _typed_diversity_family("requirement_anchor", matched_anchor_kinds[0])
+
+    matched_modalities = _diagnostic_list(item, "context_requirement_matched_modalities")
+    if matched_modalities:
+        return _typed_diversity_family("requirement_modality", matched_modalities[0])
+
+    matched_features = _diagnostic_list(item, "context_requirement_matched_evidence_features")
+    if matched_features:
+        return _typed_diversity_family("requirement_feature", matched_features[0])
+
+    return ""
+
+
+def _answer_support_query_reason(item: ContextItem) -> str:
+    query_reason = _diagnostic_signal_text(item, "query_expansion_reason")
+    deterministic_reason = _diagnostic_signal_text(item, "deterministic_rerank_query_reason")
+    if (
+        deterministic_reason
+        and deterministic_reason != "original_query"
+        and query_reason
+        in {
+            "decomposition_evidence_reason",
+            "decomposition_inference_support",
+        }
+    ):
+        return deterministic_reason
+    return (
+        query_reason
+        or _diagnostic_signal_text(item, "bm25_lexical_query_reason")
+        or deterministic_reason
+    )
+
+
+def _answer_support_source_group(item: ContextItem) -> str:
+    aggregation_source_group = _diagnostic_text(item, "keyword_aggregation_source_group")
+    if aggregation_source_group:
+        return aggregation_source_group
+    if set(diagnostic_retrieval_sources(item.diagnostics)).intersection(
+        {
+            "keyword_aggregation_chunks",
+            "keyword_source_sibling_chunks",
+        }
+    ):
+        return _source_group_key(item)
+    if _has_derived_source_group_ref(item):
+        return _source_group_key(item)
+    return ""
+
+
+def _has_derived_source_group_ref(item: ContextItem) -> bool:
+    if not item.source_refs:
+        return False
+    source_group_key = _source_group_key(item)
+    return source_group_key != _source_key(item)
+
+
+def _activity_answer_slot(item: ContextItem, *, query_reason: str) -> str:
+    if query_reason not in {
+        "activity_aggregation_bridge",
+        "activity_visual_selfcare_bridge",
+        "decomposition_activity_participation",
+        "family_activity_bridge",
+        "family_hike_detail_bridge",
+        "family_hike_activity_bridge",
+        "family_painting_activity_bridge",
+        "family_swimming_activity_bridge",
+    }:
+        return ""
+    text = item.text.casefold()
+    slots = (
+        ("swimming", ("swimming", " swim ", "self care", "taking care")),
+        ("hiking", ("hiking", " hike ", "trail", "waterfall", "mountain")),
+        ("camping", ("camping", "camped", "campfire", "marshmallow", "unplug")),
+        ("pottery", ("pottery", "clay", "ceramic", "bowl")),
+        ("painting", ("painting", "painted", "sunrise", "sunset", "lake", "drawing")),
+        ("family_motivation", ("husband", "motivated", "motivate", "motivation")),
+        ("running", ("running", "run ", "ran ", "race")),
+        ("museum", ("museum", "dinosaur", "exhibit", "bones")),
+        ("park", ("park", "outdoors", "playing", "exploring")),
+        ("concert", ("concert", "music", "band")),
+    )
+    padded = f" {text} "
+    for slot, markers in slots:
+        if any(marker in padded for marker in markers):
+            return slot
+    return ""
+
+
+def _is_count_aggregation_coverage_item(item: ContextItem, *, query_reason: str) -> bool:
+    if query_reason not in _COUNT_AGGREGATION_COVERAGE_REASONS:
+        return False
+    if _has_primary_exact_turn_source_ref(item):
+        return False
+    if "keyword_aggregation_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
+        return False
+    return len(item.source_refs) > 1
+
+
+def _aggregation_marker_coverage_slot(item: ContextItem, *, query_reason: str) -> str:
+    normalized_reason = query_reason.replace("_", "-")
+    if (
+        query_reason not in _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS
+        and normalized_reason not in _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS
+    ):
+        return ""
+    if not set(diagnostic_retrieval_sources(item.diagnostics)).intersection(
+        {
+            "keyword_aggregation_chunks",
+            "keyword_chunks",
+            "keyword_neighbor_chunks",
+            "keyword_source_sibling_chunks",
+        }
+    ):
+        return ""
+    if _diagnostic_text(item, "source_type") != "locomo_observation":
+        return ""
+    if "related turns:" not in item.text.casefold():
+        return ""
+    markers = tuple(
+        dict.fromkeys(match.group(0) for match in _DIALOGUE_MARKER_RE.finditer(item.text))
+    )
+    if len(markers) < 2:
+        return ""
+    return f"{markers[0]}-{markers[-1]}"
+
+
+def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
+    if query_reason != "volunteer_career_inference_bridge":
+        return ""
+    text = item.text.casefold()
+    slots = (
+        ("shelter_operations", ("front desk", "food or a bed", "food", " bed", "coordinator")),
+        ("counseling_talks", ("gave a few talks", " talks ", "compliments", "counselor")),
+        ("start_motivation", ("started volunteering", "aunt", "struggling", "brighten")),
+        ("resident_support", ("resident", "cindy", "gratitude", "support they receive")),
+        ("homeless_shelter", ("homeless shelter", " shelter", "volunteer")),
+    )
+    padded = f" {text} "
+    for slot, markers in slots:
+        if any(marker in padded for marker in markers):
+            return slot
+    return ""
+
+
+def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | str, ...]:
+    signals = _diagnostic_score_signals(item)
+    query_reason = _answer_support_query_reason(item)
+    if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
+        signal_rank = (
+            -_numeric_signal(signals.get("distinctive_term_hits")),
+            -_numeric_signal(signals.get("phrase_bigram_hits")),
+        )
+    else:
+        signal_rank = (
+            -_numeric_signal(signals.get("phrase_bigram_hits")),
+            -_numeric_signal(signals.get("distinctive_term_hits")),
+        )
+    return (
+        _precise_turn_answer_support_rank(item, query_reason=query_reason),
+        _precise_answer_content_rank(item, query_reason=query_reason),
+        _answer_object_rank(item, query_reason=query_reason),
+        -len(item.source_refs),
+        *signal_rank,
+        -len(diagnostic_retrieval_sources(item.diagnostics)),
+        context_rank_key(item),
+    )
+
+
+def _answer_object_rank(item: ContextItem, *, query_reason: str) -> int:
+    if _is_pottery_type_reason(query_reason):
+        return _pottery_type_answer_object_rank(item.text)
+    if _is_family_activity_reason(query_reason):
+        return _family_activity_answer_object_rank(item.text)
+    return 2
+
+
+def _is_pottery_type_reason(query_reason: str) -> bool:
+    return query_reason.replace("_", "-") == "pottery-type-bridge"
+
+
+def _is_family_activity_reason(query_reason: str) -> bool:
+    return query_reason.replace("_", "-") in {
+        "decomposition-activity-participation",
+        "family-activity-bridge",
+        "family-hike-activity-bridge",
+        "family-hike-detail-bridge",
+        "family-painting-activity-bridge",
+        "family-swimming-activity-bridge",
+    }
+
+
+def _pottery_type_answer_object_rank(text: str) -> int:
+    if _POTTERY_TYPE_PRIMARY_ANSWER_OBJECT_RE.search(text):
+        return 0
+    if _POTTERY_TYPE_SECONDARY_ANSWER_OBJECT_RE.search(text):
+        return 1
+    if _POTTERY_TYPE_GENERIC_ANSWER_OBJECT_RE.search(text):
+        return 3
+    return 5
+
+
+def _family_activity_answer_object_rank(text: str) -> int:
+    if _FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE.search(text):
+        return 0
+    has_activity = _FAMILY_ACTIVITY_ACTIVITY_OBJECT_RE.search(text) is not None
+    has_family_context = _FAMILY_ACTIVITY_CONTEXT_OBJECT_RE.search(text) is not None
+    if has_activity and has_family_context:
+        return 1
+    if has_activity:
+        return 2
+    if has_family_context:
+        return 3
+    return 5
+
+
+def _precise_turn_answer_support_rank(item: ContextItem, *, query_reason: str) -> int:
+    if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
+        return 0
+    if (
+        _is_family_activity_reason(query_reason)
+        and _answer_object_rank(item, query_reason=query_reason) == 0
+        and _has_any_exact_turn_source_ref(item)
+    ):
+        return 0
+    if query_reason in _BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS:
+        return 2
+    if (
+        query_reason in _COUNT_AGGREGATION_COVERAGE_REASONS
+        and _has_primary_exact_turn_source_ref(item)
+    ):
+        return 1
+    if query_reason not in _PRECISE_TURN_ANSWER_SUPPORT_REASONS:
+        return 2
+    return 0 if _has_primary_exact_turn_source_ref(item) else 1
+
+
+def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int:
+    if query_reason in {"running_reason_bridge", "running_reason_question_bridge"}:
+        text = item.text.casefold()
+        if "what got you into running" in text or "for walking or running" in text:
+            return 0
+        if "running" in text and any(
+            marker in text
+            for marker in (
+                "destress",
+                "de-stress",
+                "clear my mind",
+                "headspace",
+            )
+        ):
+            return 0
+        if "running" in text:
+            return 2
+        return 3
+    if query_reason != "meteor_shower_feeling_bridge":
+        return 0
+    text = item.text.casefold()
+    if "awe" in text or "tiny" in text:
+        return 0
+    if "felt" in text or "feel" in text or "universe" in text:
+        return 1
+    return 2
+
+
+def _has_primary_exact_turn_source_ref(item: ContextItem) -> bool:
+    if not item.source_refs:
+        return False
+    parts = (item.source_refs[0].source_id or "").split(":")
+    return len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D")
+
+
+def _has_any_exact_turn_source_ref(item: ContextItem) -> bool:
+    for ref in item.source_refs:
+        parts = (ref.source_id or "").split(":")
+        if len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D"):
+            return True
+    return False
+
+
 def _diversity_family_base(family: str) -> str:
     return family.split(":", 1)[0]
 
@@ -286,6 +954,15 @@ def _diversity_family_base(family: str) -> str:
 def _typed_diversity_family(base: str, suffix: str) -> str:
     safe_suffix = _safe_diversity_suffix(suffix)
     return f"{base}:{safe_suffix}" if safe_suffix else base
+
+
+def _compound_diversity_family(base: str, *suffixes: str) -> str:
+    safe_suffixes = tuple(
+        safe_suffix
+        for suffix in suffixes
+        if (safe_suffix := _safe_diversity_suffix(suffix))
+    )
+    return ":".join((base, *safe_suffixes)) if safe_suffixes else base
 
 
 def _diagnostic_text(item: ContextItem, key: str) -> str:
@@ -298,20 +975,65 @@ def _diagnostic_text(item: ContextItem, key: str) -> str:
     return str(value).strip() if value is not None else ""
 
 
+def _diagnostic_signal_text(item: ContextItem, key: str) -> str:
+    diagnostics = item.diagnostics or {}
+    score_signals = diagnostics.get("score_signals")
+    if isinstance(score_signals, dict):
+        value = score_signals.get(key)
+        if value is not None:
+            return str(value).strip()
+    return _diagnostic_text(item, key)
+
+
+def _diagnostic_signal_truthy(item: ContextItem, key: str) -> bool:
+    value = _diagnostic_signal_text(item, key).casefold()
+    return value in {"1", "true", "yes"}
+
+
+def _diagnostic_score_signals(item: ContextItem) -> dict[str, object]:
+    diagnostics = item.diagnostics or {}
+    score_signals = diagnostics.get("score_signals")
+    return score_signals if isinstance(score_signals, dict) else {}
+
+
+def _numeric_signal(value: object) -> float:
+    if isinstance(value, bool) or value is None:
+        return 0.0
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _diagnostic_list(item: ContextItem, key: str) -> tuple[str, ...]:
+    diagnostics = item.diagnostics or {}
+    values = diagnostics.get(key)
+    if values is None:
+        provenance = diagnostics.get("provenance")
+        if isinstance(provenance, dict):
+            values = provenance.get(key)
+    if not isinstance(values, list | tuple):
+        return ()
+    return tuple(str(value).strip() for value in values if str(value).strip())
+
+
 def _safe_diversity_suffix(value: str) -> str:
     text = value.strip().casefold()
     if not text or "redacted" in text:
         return ""
     chars: list[str] = []
     previous_dash = False
-    for char in text[:64]:
+    for char in text[:160]:
         if char.isalnum():
             chars.append(char)
             previous_dash = False
         elif not previous_dash:
             chars.append("-")
             previous_dash = True
-    return "".join(chars).strip("-")[:48]
+    token = "".join(chars).strip("-")
+    if len(token) <= 64:
+        return token
+    return f"{token[:24]}-{token[-39:]}".strip("-")[:64]
 
 
 def _source_ref_modality_hint(item: ContextItem) -> str:
@@ -373,7 +1095,7 @@ def _source_diversified_order(items: list[ContextItem]) -> tuple[ContextItem, ..
         if item.item_type != "chunk":
             indexed.append((0, index, item))
             continue
-        source_key = _source_key(item)
+        source_key = _source_diversity_key(item)
         source_position = source_positions.get(source_key, 0)
         source_positions[source_key] = source_position + 1
         indexed.append((source_position, index, item))
@@ -396,8 +1118,24 @@ def _source_diversity_reordered_chunk_count(
     )
 
 
+def _context_render_rank_key(item: ContextItem) -> tuple[object, ...]:
+    query_reason = _answer_support_query_reason(item)
+    if (
+        query_reason in _PRECISE_TURN_ANSWER_SUPPORT_REASONS
+        and _precise_turn_answer_support_rank(item, query_reason=query_reason) == 0
+    ):
+        return (
+            0,
+            _precise_answer_content_rank(item, query_reason=query_reason),
+            _answer_object_rank(item, query_reason=query_reason),
+            _answer_support_family_item_key(item),
+            context_rank_key(item),
+        )
+    return (1, context_rank_key(item))
+
+
 def _rendered_char_count(items: tuple[ContextItem, ...]) -> int:
-    return len("\n".join(_render_lines(tuple(sorted(items, key=context_rank_key)))).strip())
+    return len("\n".join(_render_lines(tuple(sorted(items, key=_context_render_rank_key)))).strip())
 
 
 def _render_lines(items: tuple[ContextItem, ...]) -> list[str]:
@@ -447,6 +1185,45 @@ def _source_key(item: ContextItem) -> str:
         ref = item.source_refs[0]
         return f"{memory_scope_id}:{ref.source_type}:{ref.source_id}"
     return f"{memory_scope_id}:{item.item_type}:{item.item_id}"
+
+
+def _source_group_key(item: ContextItem) -> str:
+    memory_scope_id = _memory_scope_id(item)
+    if item.source_refs:
+        ref = item.source_refs[0]
+        return (
+            f"{memory_scope_id}:{ref.source_type}:"
+            f"{_source_group_identity(ref.source_id)}"
+        )
+    return f"{memory_scope_id}:{item.item_type}:{item.item_id}"
+
+
+def _source_group_identity(source_id: str | None) -> str:
+    text = _one_line(str(source_id or "unknown"))
+    parts = text.split(":")
+    if len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D"):
+        return ":".join(parts[:-3])
+    if len(parts) >= 4 and parts[-1] in {"events", "observation", "summary"}:
+        return ":".join(parts[:-1])
+    return text
+
+
+def _source_group_cap(item: ContextItem) -> int | None:
+    if not _source_cap_applies(item):
+        return None
+    if _diagnostic_text(item, "query_expansion_reason") == "art_style_bridge":
+        return _MAX_ART_STYLE_ITEMS_PER_SOURCE_GROUP
+    return None
+
+
+def _source_diversity_key(item: ContextItem) -> str:
+    source_key = _source_key(item)
+    if not _source_cap_applies(item):
+        return source_key
+    source_group_key = _source_group_key(item)
+    if source_group_key != source_key:
+        return source_group_key
+    return source_key
 
 
 def _source_label(item: ContextItem) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from math import isfinite
 
@@ -9,11 +10,16 @@ from infinity_context_core.application.safe_payload import safe_metadata_text
 from infinity_context_core.domain.entities import MAX_SOURCE_REFS_PER_ITEM, MemoryChunk, SourceRef
 from infinity_context_core.domain.errors import MemoryValidationError
 
+_DIALOGUE_MARKER_RE = re.compile(r"\bD(?P<dialogue>\d+):(?P<turn>\d+)\b")
+_SESSION_ID_RE = re.compile(r"(?:^|:)session_(?P<session>\d+)(?::|$)", re.IGNORECASE)
+_SOURCE_GROUP_SUFFIXES = frozenset({"events", "observation", "summary"})
+
 
 def chunk_source_refs(chunk: MemoryChunk, *, text_preview: str) -> tuple[SourceRef, ...]:
     metadata_refs = _source_refs_from_metadata(chunk.metadata)
     if not metadata_refs:
-        return (_fallback_chunk_source_ref(chunk, text_preview=text_preview),)
+        fallback = _fallback_chunk_source_ref(chunk, text_preview=text_preview)
+        return (fallback, *_dialogue_turn_source_refs(chunk, text_preview=text_preview))
     refs: list[SourceRef] = []
     for item in metadata_refs:
         ref = _source_ref_from_metadata_item(
@@ -85,6 +91,64 @@ def _fallback_chunk_source_ref(chunk: MemoryChunk, *, text_preview: str) -> Sour
         char_end=chunk.char_end,
         quote_preview=text_preview[:200],
     )
+
+
+def _dialogue_turn_source_refs(
+    chunk: MemoryChunk,
+    *,
+    text_preview: str,
+) -> tuple[SourceRef, ...]:
+    base_source_id = _dialogue_turn_base_source_id(chunk.source_external_id)
+    if not base_source_id:
+        return ()
+    session_number = _session_number(base_source_id)
+    refs: list[SourceRef] = []
+    seen: set[str] = {chunk.source_external_id}
+    matches = tuple(_DIALOGUE_MARKER_RE.finditer(text_preview))
+    for index, match in enumerate(matches):
+        if session_number and match.group("dialogue") != session_number:
+            continue
+        source_id = f"{base_source_id}:D{match.group('dialogue')}:{match.group('turn')}:turn"
+        if source_id in seen:
+            continue
+        segment_end = matches[index + 1].start() if index + 1 < len(matches) else len(text_preview)
+        quote_preview = safe_metadata_text(
+            text_preview[match.start() : segment_end].strip()[:240],
+            limit=240,
+        )
+        try:
+            refs.append(
+                SourceRef(
+                    source_type=chunk.source_type,
+                    source_id=source_id,
+                    chunk_id=str(chunk.id),
+                    quote_preview=quote_preview or text_preview[:200],
+                )
+            )
+        except MemoryValidationError:
+            continue
+        seen.add(source_id)
+        if len(refs) >= MAX_SOURCE_REFS_PER_ITEM - 1:
+            break
+    return tuple(refs)
+
+
+def _dialogue_turn_base_source_id(source_external_id: str) -> str:
+    source_id = " ".join(str(source_external_id).split())
+    if not source_id:
+        return ""
+    parts = source_id.split(":")
+    if len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D"):
+        return ":".join(parts[:-3])
+    if len(parts) >= 4 and parts[-1] in _SOURCE_GROUP_SUFFIXES:
+        base = ":".join(parts[:-1])
+        return base if _session_number(base) else ""
+    return source_id if _session_number(source_id) else ""
+
+
+def _session_number(source_id: str) -> str:
+    match = _SESSION_ID_RE.search(source_id)
+    return match.group("session") if match else ""
 
 
 def _quote_preview(item: Mapping[str, object], *, text_preview: str) -> str:

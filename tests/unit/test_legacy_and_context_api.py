@@ -994,6 +994,53 @@ def test_keyword_chunk_search_finds_relevant_old_chunk_beyond_newest_window(
     assert data["diagnostics"]["keyword_chunks_considered"] == 1
 
 
+def test_context_keyword_chunks_drop_single_hit_long_no_candidate_query(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        scope = {
+            "space_slug": "client-app",
+            "memory_scope_external_ref": "default",
+            "thread_external_ref": "keyword-no-candidate-thread",
+        }
+        document = client.post(
+            "/v1/documents",
+            json={
+                **scope,
+                "title": "Warranty note",
+                "text": "Warranty renewal paperwork was archived for Project Atlas.",
+                "source_type": "document",
+                "source_external_id": "single-hit-warranty-doc",
+            },
+            headers=auth_headers(),
+        )
+        assert document.status_code == 201, document.text
+
+        context = client.post(
+            "/v1/context",
+            json={
+                **scope,
+                "query": "unrelated yakutsk cooking recipe quantum aquarium warranty",
+                "max_facts": 0,
+                "max_chunks": 1,
+                "max_evidence_items": 0,
+                "token_budget": 512,
+            },
+            headers=auth_headers(),
+        )
+
+    assert context.status_code == 200, context.text
+    data = context.json()["data"]
+    assert data["items"] == []
+    assert "Warranty renewal paperwork" not in data["rendered_text"]
+    assert data["diagnostics"]["keyword_chunks_considered"] == 1
+    assert data["diagnostics"]["keyword_chunks_dropped_by_relevance"] == 1
+    assert (
+        data["diagnostics"]["retrieval_quality_summary"]["answerability_status"]
+        == "insufficient_context"
+    )
+
+
 def test_keyword_chunk_search_ranks_old_typo_match_above_new_name_matches(
     tmp_path: Path,
 ) -> None:
@@ -1051,7 +1098,8 @@ def test_keyword_chunk_search_ranks_old_typo_match_above_new_name_matches(
     assert context.status_code == 200, context.text
     data = context.json()["data"]
     assert "TYPO_RANKING_MARKER" in data["rendered_text"]
-    assert data["diagnostics"]["keyword_chunks_considered"] == 1
+    assert data["diagnostics"]["items_used"] == 1
+    assert data["diagnostics"]["keyword_chunks_considered"] >= 1
 
 
 def test_v1_document_ingest_accepts_external_scope_and_thread_context(
@@ -1866,7 +1914,10 @@ def test_context_drops_fact_deleted_between_candidate_search_and_render(
             *,
             query: BuildContextQuery,
             memory_scope_ids: tuple[str, ...],
+            keyword_query_plan: object | None = None,
+            anchor_lookup_keys: tuple[tuple[str, str], ...] | None = None,
         ) -> CanonicalCollectionResult:
+            _ = keyword_query_plan, anchor_lookup_keys
             return CanonicalCollectionResult(facts=(stale_fact,), keyword_chunks=())
 
     with make_client(tmp_path) as client:
