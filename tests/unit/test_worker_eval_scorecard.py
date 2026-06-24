@@ -761,12 +761,30 @@ def _public_benchmark_report() -> dict[str, Any]:
             {
                 "name": "locomo",
                 "ok": True,
-                "metrics": {"accuracy": 0.947, "case_count": 600},
+                "metrics": {
+                    "accuracy": 0.947,
+                    "case_count": 600,
+                    "expected_term_count": 1500,
+                    "covered_expected_term_count": 1490,
+                    "expected_term_coverage": 0.9933,
+                    "evidence_ref_count": 1500,
+                    "covered_evidence_ref_count": 1488,
+                    "evidence_ref_coverage": 0.992,
+                },
             },
             {
                 "name": "longmemeval",
                 "ok": True,
-                "metrics": {"accuracy": 0.902, "case_count": 500},
+                "metrics": {
+                    "accuracy": 0.902,
+                    "case_count": 500,
+                    "expected_term_count": 900,
+                    "covered_expected_term_count": 890,
+                    "expected_term_coverage": 0.9889,
+                    "evidence_ref_count": 900,
+                    "covered_evidence_ref_count": 884,
+                    "evidence_ref_coverage": 0.9822,
+                },
             },
         ],
         "dataset_hashes": {
@@ -1224,6 +1242,8 @@ def test_memory_quality_scorecard_merges_additional_suite_reports(
     assert public["ok"] is True
     assert public["benchmark_count"] == 2
     assert public["competitive_floor_ok"] is True
+    assert public["benchmarks"]["locomo"]["expected_term_coverage"] == 0.9933
+    assert public["benchmarks"]["locomo"]["evidence_ref_coverage"] == 0.992
 
 
 def test_memory_quality_scorecard_rejects_duplicate_additional_suite_report(

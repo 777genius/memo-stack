@@ -19,6 +19,7 @@ def run_metric_summary(run_results: Sequence[CaseRunResult]) -> dict[str, object
         "accuracy": accuracy(run_results),
         "latency_ms_p95": p95([item.latency_ms for item in run_results]),
         "capability_count": len({item.capability for item in run_results if item.capability}),
+        **coverage_summary(run_results),
         "capability_accuracy": flat_capability_accuracy(run_results),
         "capability_case_count": flat_capability_case_count(run_results),
         "capability_failure_count": flat_capability_failure_count(run_results),
@@ -56,6 +57,7 @@ def benchmark_summaries(
                         len(cases),
                     ),
                     "latency_ms_p95": p95([item.latency_ms for item in cases]),
+                    **coverage_summary(cases),
                 },
                 "capability_breakdown": capability_breakdown(cases),
             }
@@ -280,6 +282,7 @@ def benchmark_metric_map(
             "accuracy": accuracy(items),
             "latency_ms_p95": p95([item.latency_ms for item in items]),
             "capability_count": len({item.capability for item in items if item.capability}),
+            **coverage_summary(items),
             "capability_breakdown": capability_breakdown(items),
         }
         for benchmark, items in sorted(grouped.items())
@@ -305,8 +308,37 @@ def capability_breakdown(cases: Sequence[CaseRunResult]) -> dict[str, dict[str, 
                 sum(1 for item in items if not item.forbidden_ok),
                 len(items),
             ),
+            **coverage_summary(items),
         }
         for capability, items in sorted(grouped.items())
+    }
+
+
+def coverage_summary(run_results: Sequence[CaseRunResult]) -> dict[str, object]:
+    expected_term_count = sum(
+        len(item.covered_terms) + len(item.missing_terms) for item in run_results
+    )
+    covered_expected_term_count = sum(len(item.covered_terms) for item in run_results)
+    evidence_ref_count = sum(
+        len(item.covered_evidence_refs) + len(item.missing_evidence_refs)
+        for item in run_results
+    )
+    covered_evidence_ref_count = sum(
+        len(item.covered_evidence_refs) for item in run_results
+    )
+    return {
+        "expected_term_count": expected_term_count,
+        "covered_expected_term_count": covered_expected_term_count,
+        "expected_term_coverage": _ratio(
+            covered_expected_term_count,
+            expected_term_count,
+        ),
+        "evidence_ref_count": evidence_ref_count,
+        "covered_evidence_ref_count": covered_evidence_ref_count,
+        "evidence_ref_coverage": _ratio(
+            covered_evidence_ref_count,
+            evidence_ref_count,
+        ),
     }
 
 

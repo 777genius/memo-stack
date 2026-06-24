@@ -10,9 +10,12 @@ from infinity_context_server.public_benchmark_checkpoint import (
     load_checkpoint_resume_state_with_diagnostics,
 )
 from infinity_context_server.public_benchmark_metrics import (
+    benchmark_summaries,
     case_failures,
     case_payload,
+    coverage_summary,
     progress_timing_fields,
+    run_metric_summary,
 )
 
 
@@ -90,6 +93,39 @@ def test_public_benchmark_case_payload_includes_bounded_coverage() -> None:
     assert payload["covered_terms"] == ["D12:1", "single parent"]
     assert payload["covered_evidence_refs"] == ["D12:1"]
     assert payload["missing_evidence_refs"] == ["D3:11", "D7:4"]
+
+
+def test_public_benchmark_metric_summaries_include_coverage() -> None:
+    first = _case_result(
+        case_id="case-one",
+        covered_terms=("D1:1",),
+        missing_terms=("D1:2",),
+        covered_evidence_refs=("D1:1",),
+        missing_evidence_refs=("D1:2",),
+    )
+    second = _case_result(
+        case_id="case-two",
+        covered_terms=("D2:1", "D2:2"),
+        covered_evidence_refs=("D2:1", "D2:2"),
+    )
+
+    summary = coverage_summary((first, second))
+    metrics = run_metric_summary((first, second))
+    benchmark = benchmark_summaries((first, second), min_accuracy=1.0)[0]
+    capability = next(iter(benchmark["capability_breakdown"].values()))
+
+    assert summary == {
+        "expected_term_count": 4,
+        "covered_expected_term_count": 3,
+        "expected_term_coverage": 0.75,
+        "evidence_ref_count": 4,
+        "covered_evidence_ref_count": 3,
+        "evidence_ref_coverage": 0.75,
+    }
+    assert metrics["expected_term_coverage"] == 0.75
+    assert metrics["evidence_ref_coverage"] == 0.75
+    assert benchmark["metrics"]["expected_term_coverage"] == 0.75
+    assert capability["expected_term_coverage"] == 0.75
 
 
 def test_public_benchmark_progress_timing_includes_eta_diagnostics() -> None:
@@ -268,6 +304,7 @@ class _Case:
 
 def _case_result(
     *,
+    case_id: str = "case-one",
     ok: bool = True,
     missing_terms: tuple[str, ...] = (),
     question_preview: str = "",
@@ -280,7 +317,7 @@ def _case_result(
 ) -> CaseRunResult:
     return CaseRunResult(
         benchmark="locomo",
-        case_id="case-one",
+        case_id=case_id,
         capability="locomo:temporal_reasoning",
         ok=ok,
         expected_ok=not missing_terms,

@@ -1952,12 +1952,26 @@ def _scorecard_public_benchmark_item_summary(
     accuracy = metrics.get("accuracy", item.get("accuracy"))
     case_count = metrics.get("case_count", item.get("case_count"))
     item_ok = item.get("ok")
-    return {
+    summary: dict[str, object] = {
         "ok": item_ok is True if isinstance(item_ok, bool) else parent_ok,
         "accuracy": accuracy,
         "case_count": case_count,
         "report_suite": item.get("suite"),
     }
+    for key in (
+        "expected_term_count",
+        "covered_expected_term_count",
+        "evidence_ref_count",
+        "covered_evidence_ref_count",
+    ):
+        value = _scorecard_int(metrics.get(key))
+        if value is not None:
+            summary[key] = value
+    for key in ("expected_term_coverage", "evidence_ref_coverage"):
+        value = _scorecard_float(metrics.get(key))
+        if value is not None:
+            summary[key] = value
+    return summary
 
 
 def _scorecard_public_benchmark_competitive_floor(
