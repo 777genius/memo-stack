@@ -99,7 +99,8 @@ _TEXT_IDENTITY_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _RELATIONSHIP_DURATION_QUERY_RE = re.compile(
-    r"\b(?:married|marriage|husband|wife|spouse|wedding|anniversary)\b",
+    r"\b(?:married|marriage|husband|wife|spouse|wedding|anniversary|"
+    r"friend|friends|known|relationship|partner)\b",
     re.IGNORECASE,
 )
 _RELATIONSHIP_DURATION_QUERY_TIME_RE = re.compile(
@@ -107,7 +108,8 @@ _RELATIONSHIP_DURATION_QUERY_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 _RELATIONSHIP_DURATION_TEXT_RELATION_RE = re.compile(
-    r"\b(?:married|marriage|husband|wife|spouse|wedding|bride|dress|partner)\b",
+    r"\b(?:married|marriage|husband|wife|spouse|wedding|bride|dress|"
+    r"partner|friend|friends|known|relationship)\b",
     re.IGNORECASE,
 )
 _RELATIONSHIP_DURATION_TEXT_TIME_RE = re.compile(

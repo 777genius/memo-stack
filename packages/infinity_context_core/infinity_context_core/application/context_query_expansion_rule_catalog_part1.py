@@ -499,6 +499,15 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "relationship_duration_bridge",
         ),
     (
+            frozenset({"how", "long", "friends"}),
+            (
+                "known these friends known friends group of friends current friends "
+                "friendship relationship since for years months duration moved from "
+                "home country support love help"
+            ),
+            "relationship_duration_bridge",
+        ),
+    (
             frozenset({"как", "давно", "знает"}),
             (
                 "как давно знакомы знают друг друга отношения друзья дружба с каких пор "

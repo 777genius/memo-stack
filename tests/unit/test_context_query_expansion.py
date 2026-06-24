@@ -113,6 +113,13 @@ def test_query_expansion_covers_future_conference_and_duration_answers() -> None
         known_each_other,
         "relationship_duration_bridge",
     )
+    friend_group = build_query_expansion_plan(
+        "How long has Caroline had her current group of friends for?"
+    )
+    assert "known these friends known friends group of friends" in _expansion_query(
+        friend_group,
+        "relationship_duration_bridge",
+    )
     assert "relationship origin first met" in _expansion_query(
         where_met,
         "relationship_origin_bridge",
@@ -1738,6 +1745,24 @@ def test_best_query_relevance_uses_family_origin_bridge() -> None:
     assert query.startswith("Caroline ")
     assert reason == "family_origin_bridge"
     assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_friend_group_duration_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "How long has Caroline had her current group of friends for?"
+    )
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D3:13 Caroline: I've known these friends for 4 years, since I "
+            "moved from my home country."
+        ),
+    )
+
+    assert query.startswith("Caroline ")
+    assert reason == "relationship_duration_bridge"
+    assert relevance.distinctive_term_hits >= 6
 
 
 def test_best_query_relevance_uses_source_evidence_bridge() -> None:

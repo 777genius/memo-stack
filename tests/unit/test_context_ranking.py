@@ -4935,6 +4935,51 @@ def test_deterministic_rerank_prefers_relationship_duration_over_generic_relatio
     )
 
 
+def test_deterministic_rerank_prefers_friend_group_duration_evidence() -> None:
+    query = "How long has Caroline had her current group of friends for?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    generic = _item(
+        "caroline_friends_support",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Caroline said her friends are supportive and help her through hard times.",
+    )
+    duration = _item(
+        "caroline_known_friends_for_years",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D3:13 Caroline: I've known these friends for 4 years, since I "
+            "moved from my home country."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, duration),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_known_friends_for_years"].score > by_id[
+        "caroline_friends_support"
+    ].score
+    assert (
+        "relationship_duration_exact_evidence"
+        in by_id["caroline_known_friends_for_years"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "relationship_duration_weak_evidence"
+        in by_id["caroline_friends_support"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_relationship_origin_over_generic_relation() -> None:
     query = "Where did Alex meet Maria?"
     plan = build_query_expansion_plan(query)
