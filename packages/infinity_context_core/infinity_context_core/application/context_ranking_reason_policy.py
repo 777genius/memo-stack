@@ -97,6 +97,7 @@ KEYWORD_EXPANSION_SCORE_CAPS = {
     "event_participation_bridge": 0.96,
     "family_origin_bridge": 0.96,
     "food_preference_bridge": 0.96,
+    "food_recipe_recommendation_bridge": 0.96,
     "followup_task_bridge": 0.96,
     "friend_place_inventory_bridge": 0.98,
     "friend_place_shelter_inventory_bridge": 0.98,
@@ -185,6 +186,7 @@ KEYWORD_EXPANSION_SCORE_CAPS = {
     "video_transcript_evidence_bridge": 0.96,
     "visual_text_evidence_bridge": 0.96,
     "volunteer_career_inference_bridge": 0.96,
+    "wellness_activity_effect_bridge": 0.96,
     "yoga_delay_gaming_bridge": 0.96,
 }
 
@@ -309,6 +311,7 @@ KEYWORD_EXPANSION_REASON_BOOSTS = {
     "family_swimming_activity_bridge": 0.02,
     "event_participation_help_bridge": 0.02,
     "food_preference_bridge": 0.026,
+    "food_recipe_recommendation_bridge": 0.044,
     "friends_team_inference_bridge": 0.018,
     "generic_behavior_inference_bridge": 0.024,
     "gaming_medium_bridge": 0.026,
@@ -387,6 +390,7 @@ KEYWORD_EXPANSION_REASON_BOOSTS = {
     "video_transcript_evidence_bridge": 0.032,
     "visual_text_evidence_bridge": 0.034,
     "volunteer_career_inference_bridge": 0.052,
+    "wellness_activity_effect_bridge": 0.052,
     "yoga_delay_gaming_bridge": 0.032,
 }
 
@@ -477,6 +481,7 @@ QUERY_REASON_PRIORITY = {
     "state_transition_bridge": 4,
     "family_origin_bridge": 4,
     "food_preference_bridge": 4,
+    "food_recipe_recommendation_bridge": 5,
     "generic_behavior_inference_bridge": 3,
     "gaming_medium_bridge": 4,
     "hobby_interest_bridge": 4,
@@ -524,6 +529,7 @@ QUERY_REASON_PRIORITY = {
     "video_transcript_evidence_bridge": 6,
     "visual_text_evidence_bridge": 6,
     "volunteer_career_inference_bridge": 4,
+    "wellness_activity_effect_bridge": 5,
     "decomposition_absence_contrast": 3,
     "decomposition_activity_participation": 4,
     "decomposition_ally_support_evidence": 4,
@@ -651,6 +657,7 @@ QUERY_REASON_PRIORITY_MIN_DISTINCTIVE_HITS = {
     "state_transition_bridge": 3,
     "family_origin_bridge": 4,
     "food_preference_bridge": 4,
+    "food_recipe_recommendation_bridge": 2,
     "generic_behavior_inference_bridge": 3,
     "gaming_medium_bridge": 4,
     "hobby_interest_bridge": 4,
@@ -699,6 +706,7 @@ QUERY_REASON_PRIORITY_MIN_DISTINCTIVE_HITS = {
     "video_transcript_evidence_bridge": 3,
     "visual_text_evidence_bridge": 3,
     "volunteer_career_inference_bridge": 3,
+    "wellness_activity_effect_bridge": 2,
     "yoga_delay_gaming_bridge": 4,
 }
 
@@ -717,6 +725,7 @@ CONTEXT_ITEM_REASON_PRIORITY = {
     "speaker_turn_bridge": 4,
     "video_transcript_evidence_bridge": 4,
     "visual_text_evidence_bridge": 4,
+    "wellness_activity_effect_bridge": 4,
 }
 
 ACTIVITY_OBSERVATION_SOURCE_REASONS = frozenset(
@@ -727,6 +736,7 @@ ACTIVITY_OBSERVATION_SOURCE_REASONS = frozenset(
         "family_activity_bridge",
         "family_hike_detail_bridge",
         "family_hike_activity_bridge",
+        "food_recipe_recommendation_bridge",
         "family_museum_activity_bridge",
         "family_painting_activity_bridge",
         "family_swimming_activity_bridge",
@@ -757,6 +767,7 @@ DERIVED_SUMMARY_SOURCE_REASONS = frozenset(
         "artifact_inventory_bridge",
         "birdwatching_city_schedule_bridge",
         "book_reading_list_bridge",
+        "food_recipe_recommendation_bridge",
         "business_commonality_bridge",
         "business_networking_event_bridge",
         "business_opening_timeline_bridge",
@@ -839,6 +850,7 @@ DERIVED_SUMMARY_SOURCE_REASONS = frozenset(
         "video_transcript_evidence_bridge",
         "visual_text_evidence_bridge",
         "volunteer_career_inference_bridge",
+        "wellness_activity_effect_bridge",
         "yoga_delay_gaming_bridge",
     }
 )

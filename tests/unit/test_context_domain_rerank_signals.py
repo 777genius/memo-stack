@@ -12,6 +12,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     family_hike_detail_rerank_signal,
     inventory_list_rerank_signal,
     item_purchase_rerank_signal,
+    lifestyle_recommendation_rerank_signal,
     positive_preference_rerank_signal,
     post_event_emotion_rerank_signal,
     recommendation_followup_rerank_signal,
@@ -227,6 +228,74 @@ def test_recommendation_followup_signal_boosts_reading_recommendation_evidence()
     assert followup_signal.reason == "recommendation_followup_evidence"
     assert topical_signal.boost == 0.0
     assert topical_signal.reason == ""
+
+
+def test_lifestyle_recommendation_signal_boosts_food_recipe_evidence() -> None:
+    recipe = _item(
+        "roasted_veg",
+        text=(
+            "D7:8 Sam: I have a tasty and easy roasted veg recipe that "
+            "I can share with you."
+        ),
+        query_expansion_reason="food_recipe_recommendation_bridge",
+    )
+    visual_food = _item(
+        "local_dishes",
+        text=(
+            "D23:26 Sam: Skiing, trying local dishes, and enjoying the "
+            "views. image caption: a container of french fries covered in sauce."
+        ),
+        query_expansion_reason="food_recipe_recommendation_bridge",
+    )
+
+    recipe_signal = lifestyle_recommendation_rerank_signal(
+        query_reason="food_recipe_recommendation_bridge",
+        item=recipe,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+    visual_signal = lifestyle_recommendation_rerank_signal(
+        query_reason="food_recipe_recommendation_bridge",
+        item=visual_food,
+        relevance=_relevance(distinctive_term_hits=4, unique_term_hits=4),
+    )
+
+    assert recipe_signal.boost > 0
+    assert recipe_signal.reason == "food_recipe_recommendation_evidence"
+    assert recipe_signal.rank_signal_key == "food_recipe_recommendation_evidence"
+    assert visual_signal.boost > 0
+    assert visual_signal.reason == "food_recipe_recommendation_evidence"
+
+
+def test_lifestyle_recommendation_signal_boosts_wellness_activity_effect() -> None:
+    exact = _item(
+        "yoga_effect",
+        text=(
+            "D24:19 Sam: Yoga's definitely a great start. It's helped me "
+            "with stress and staying flexible, which is perfect alongside the diet."
+        ),
+        query_expansion_reason="wellness_activity_effect_bridge",
+    )
+    weak = _item(
+        "movie_topic",
+        text="D24:21 Sam: The Godfather is a legendary movie to watch again.",
+        query_expansion_reason="wellness_activity_effect_bridge",
+    )
+
+    exact_signal = lifestyle_recommendation_rerank_signal(
+        query_reason="wellness_activity_effect_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+    weak_signal = lifestyle_recommendation_rerank_signal(
+        query_reason="wellness_activity_effect_bridge",
+        item=weak,
+        relevance=_relevance(distinctive_term_hits=1, unique_term_hits=1),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "wellness_activity_effect_evidence"
+    assert exact_signal.rank_signal_key == "wellness_activity_effect_evidence"
+    assert weak_signal.boost == 0
 
 
 def test_symbol_importance_signal_ranks_visual_symbol_over_necklace_meaning() -> None:

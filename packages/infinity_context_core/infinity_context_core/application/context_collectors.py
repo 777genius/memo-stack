@@ -139,6 +139,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "event_participation_help_bridge",
         "exercise_activity_inventory_bridge",
         "family_activity_bridge",
+        "food_recipe_recommendation_bridge",
         "family_hike_detail_bridge",
         "family_hike_activity_bridge",
         "family_museum_activity_bridge",
@@ -223,6 +224,8 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "post_athletic_career_bridge",
         "store_promotion_inventory_bridge",
         "symbol_importance_bridge",
+        "food_recipe_recommendation_bridge",
+        "wellness_activity_effect_bridge",
     }
 )
 _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
@@ -1165,6 +1168,8 @@ def _protected_query_head_keys(rankings: dict[str, tuple[str, ...]]) -> tuple[st
 
 
 def _protected_query_head_limit_for_reason(reason: str) -> int:
+    if reason == "food_recipe_recommendation_bridge":
+        return 3
     if reason == "store_promotion_inventory_bridge":
         return 4
     if reason == "business_networking_event_bridge":

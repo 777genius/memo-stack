@@ -113,6 +113,84 @@ def test_apply_domain_rerank_signals_includes_causal_reason_evidence() -> None:
     assert "causal_reason_exact_evidence" in adjustment.reasons
 
 
+def test_apply_domain_rerank_signals_includes_lifestyle_food_evidence() -> None:
+    item = ContextItem(
+        item_id="sam_roasted_veg_recipe",
+        item_type="chunk",
+        text=(
+            "D7:8 Sam: I have a tasty and easy roasted veg recipe that "
+            "I can share with you."
+        ),
+        score=0.7,
+        source_refs=(SourceRef(source_type="document", source_id="doc"),),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "food_recipe_recommendation_bridge"
+            },
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="What kind of foods or recipes has Sam recommended to Evan?",
+        query_reason="food_recipe_recommendation_bridge",
+        item=item,
+        relevance=QueryRelevance(
+            score_boost=0.0,
+            query_term_count=6,
+            unique_term_hits=5,
+            capped_frequency_hits=5,
+            hit_ratio=0.8,
+            distinctive_term_count=6,
+            distinctive_term_hits=5,
+        ),
+    )
+
+    assert adjustment.boost > 0
+    assert "food_recipe_recommendation_evidence" in adjustment.reasons
+    assert ("food_recipe_recommendation_evidence", 3.0) in adjustment.rank_signals
+
+
+def test_apply_domain_rerank_signals_includes_wellness_activity_effect() -> None:
+    item = ContextItem(
+        item_id="sam_yoga_effect",
+        item_type="chunk",
+        text=(
+            "D24:19 Sam: Yoga's definitely a great start. It's helped me "
+            "with stress and staying flexible, which is perfect alongside the diet."
+        ),
+        score=0.7,
+        source_refs=(SourceRef(source_type="document", source_id="doc"),),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "wellness_activity_effect_bridge"
+            },
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="What activity hindered Evan's stress and flexibility?",
+        query_reason="wellness_activity_effect_bridge",
+        item=item,
+        relevance=QueryRelevance(
+            score_boost=0.0,
+            query_term_count=5,
+            unique_term_hits=5,
+            capped_frequency_hits=5,
+            hit_ratio=1.0,
+            distinctive_term_count=5,
+            distinctive_term_hits=5,
+        ),
+    )
+
+    assert adjustment.boost > 0
+    assert "wellness_activity_effect_evidence" in adjustment.reasons
+    assert ("wellness_activity_effect_evidence", 3.0) in adjustment.rank_signals
+
+
 def test_apply_domain_rerank_signals_boosts_birdwatching_schedule_exact_evidence() -> None:
     item = ContextItem(
         item_id="andrew_birdwatching_binos",

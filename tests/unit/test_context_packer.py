@@ -1701,6 +1701,67 @@ def test_context_packer_diversity_item_does_not_block_precise_answer_support_tur
     assert "D14:15" in result.bundle.rendered_text
 
 
+def test_context_packer_prefers_precise_lifestyle_turn_over_session_summary() -> None:
+    summary = ContextItem(
+        item_id="session_24_summary",
+        item_type="chunk",
+        text=(
+            "session_24 summary. Evan and Sam talk about staying healthy, "
+            "diet, exercise, low-impact activities, yoga, walking, and stress."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="locomo:conv-49:session_24:summary",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "score_signals": {
+                "query_expansion_reason": "wellness_activity_effect_bridge",
+                "phrase_bigram_hits": 0,
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+    exact = ContextItem(
+        item_id="d24_19_turn",
+        item_type="chunk",
+        text=(
+            "D24:19 Evan: Yoga's definitely a great start, Sam. It's helped "
+            "me with stress and staying flexible, which is perfect alongside "
+            "the diet."
+        ),
+        score=0.94,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="locomo:conv-49:session_24:D24:19:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "score_signals": {
+                "query_expansion_reason": "wellness_activity_effect_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 9,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_precise_lifestyle_turn",
+        items=(summary, exact),
+        token_budget=600,
+        max_rendered_chars=700,
+    )
+
+    item_ids = [item.item_id for item in result.bundle.items]
+    assert "d24_19_turn" in item_ids
+    assert "D24:19" in result.bundle.rendered_text
+
+
 def test_answer_support_family_prefers_visual_symbol_turn_over_necklace_meaning() -> None:
     meaning = ContextItem(
         item_id="d4_3_necklace_meaning",

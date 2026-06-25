@@ -124,7 +124,9 @@ _RECOMMENDATION_FOLLOWUP_RERANK_REASONS = frozenset(
     (
         "book_suggestion_bridge",
         "decomposition_recommendation_source",
+        "food_recipe_recommendation_bridge",
         "recommendation_source_bridge",
+        "wellness_activity_effect_bridge",
     )
 )
 _STATE_TRANSITION_RERANK_REASONS = frozenset(
@@ -249,6 +251,37 @@ _RECOMMENDATION_FOLLOWUP_BOOK_RE = re.compile(
 _RECOMMENDATION_FOLLOWUP_SIGNAL_RE = re.compile(
     r"\b(?:recommend(?:ed|ation)?|suggest(?:ed|ion)?|told\s+me\s+about|"
     r"посоветовал\w*|порекомендовал\w*)\b",
+    re.IGNORECASE,
+)
+_FOOD_RECIPE_RECOMMENDATION_EVIDENCE_RE = re.compile(
+    r"\b(?:recipes?|meals?|foods?|dishes?|roasted\s+veg(?:etables?)?|"
+    r"grilled\s+chicken|veggie\s+stir-fry|vegetable\s+stir-fry|"
+    r"local\s+dishes|poutine|french\s+fries|chopsticks|sauce|"
+    r"healthy\s+grilled|tasty\s+and\s+easy)\b",
+    re.IGNORECASE,
+)
+_FOOD_RECIPE_RECOMMENDATION_SIGNAL_RE = re.compile(
+    r"\b(?:recommend(?:ed|s|ation)?|suggest(?:ed|s|ion)?|share|shared|"
+    r"try|trying|give\s+it\s+a\s+go|wanna\s+give|image\s+caption|"
+    r"visual\s+query)\b",
+    re.IGNORECASE,
+)
+_FOOD_RECIPE_RECOMMENDATION_WEAK_RE = re.compile(
+    r"\b(?:diet|healthy|honeymoon|skiing|food|meal|recipe|restaurant|"
+    r"container|photo|image)\b",
+    re.IGNORECASE,
+)
+_WELLNESS_ACTIVITY_EFFECT_EVIDENCE_RE = re.compile(
+    r"\b(?:yoga|stretch(?:ing)?|pilates|exercise|activity)\b"
+    r"(?=.{0,140}\b(?:stress|staying\s+flexible|flexibility|flexible|diet|"
+    r"help(?:ed|s|ing)?|alongside)\b)|"
+    r"\b(?:stress|staying\s+flexible|flexibility|flexible|diet)\b"
+    r"(?=.{0,140}\b(?:yoga|stretch(?:ing)?|pilates|exercise|activity)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_WELLNESS_ACTIVITY_EFFECT_WEAK_RE = re.compile(
+    r"\b(?:stress|flexibility|flexible|diet|healthy|activity|exercise|"
+    r"workout|movie|watch)\b",
     re.IGNORECASE,
 )
 _EVENT_SEQUENCE_NAMED_ANCHOR_RE = re.compile(
@@ -1318,6 +1351,60 @@ def recommendation_followup_rerank_signal(
     )
 
 
+def lifestyle_recommendation_rerank_signal(
+    *,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_lifestyle_recommendation_candidate(
+        query_reason=query_reason,
+        item=item,
+    ):
+        return DomainRerankSignal()
+    if (
+        query_reason == "food_recipe_recommendation_bridge"
+        or _score_signal_reason(item) == "food_recipe_recommendation_bridge"
+    ):
+        if _FOOD_RECIPE_RECOMMENDATION_EVIDENCE_RE.search(item.text) is None:
+            if (
+                relevance.distinctive_term_hits < 3
+                and _FOOD_RECIPE_RECOMMENDATION_WEAK_RE.search(item.text) is not None
+            ):
+                return DomainRerankSignal(
+                    penalty=0.036,
+                    reason="food_recipe_recommendation_weak_evidence",
+                )
+            return DomainRerankSignal()
+        rank_signal = (
+            3.0
+            if _FOOD_RECIPE_RECOMMENDATION_SIGNAL_RE.search(item.text) is not None
+            else 2.0
+        )
+        return DomainRerankSignal(
+            boost=0.046,
+            reason="food_recipe_recommendation_evidence",
+            rank_signal_key="food_recipe_recommendation_evidence",
+            rank_signal=rank_signal,
+        )
+    if _WELLNESS_ACTIVITY_EFFECT_EVIDENCE_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            boost=0.052,
+            reason="wellness_activity_effect_evidence",
+            rank_signal_key="wellness_activity_effect_evidence",
+            rank_signal=3.0,
+        )
+    if (
+        relevance.distinctive_term_hits < 3
+        and _WELLNESS_ACTIVITY_EFFECT_WEAK_RE.search(item.text) is not None
+    ):
+        return DomainRerankSignal(
+            penalty=0.034,
+            reason="wellness_activity_effect_weak_evidence",
+        )
+    return DomainRerankSignal()
+
+
 def state_transition_rerank_signal(
     *,
     query_reason: str,
@@ -1671,6 +1758,20 @@ def _is_recommendation_followup_candidate(*, query_reason: str, item: ContextIte
     if query_reason in _RECOMMENDATION_FOLLOWUP_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _RECOMMENDATION_FOLLOWUP_RERANK_REASONS
+
+
+def _is_lifestyle_recommendation_candidate(
+    *,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    return query_reason in {
+        "food_recipe_recommendation_bridge",
+        "wellness_activity_effect_bridge",
+    } or _score_signal_reason(item) in {
+        "food_recipe_recommendation_bridge",
+        "wellness_activity_effect_bridge",
+    }
 
 
 def _is_event_sequence_candidate(

@@ -106,10 +106,19 @@ _BROAD_EVIDENCE_TURN_SLOT_REASONS = frozenset(
 )
 _PRECISE_TURN_ANSWER_SUPPORT_REASONS = PRECISE_TURN_SOURCE_SIBLING_REASONS | frozenset(
     {
+        "food_recipe_recommendation_bridge",
         "personality_authenticity_bridge",
         "personality_drive_bridge",
         "personality_thoughtfulness_bridge",
         "personality_trait_bridge",
+        "wellness_activity_effect_bridge",
+    }
+)
+_DIVERSITY_PRECISE_TURN_REASONS = frozenset(
+    {
+        "birdwatching_city_schedule_bridge",
+        "food_recipe_recommendation_bridge",
+        "wellness_activity_effect_bridge",
     }
 )
 _BIRDWATCHING_CITY_SCHEDULE_CONTENT_RE = re.compile(
@@ -630,7 +639,7 @@ def _diversity_candidate_item_key(item: ContextItem) -> tuple[object, ...]:
     query_reason = _answer_support_query_reason(item)
     broad_window_rank = 1
     if (
-        query_reason in _BROAD_EVIDENCE_TURN_SLOT_REASONS
+        query_reason in _DIVERSITY_PRECISE_TURN_REASONS
         and _has_primary_exact_turn_source_ref(item)
     ) or (
         query_reason in _BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS

@@ -269,6 +269,49 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "recommendation_source_bridge",
         ),
     (
+            frozenset({"recommend", "foods"}),
+            (
+                "recommended foods recipes meals dishes tasty healthy roasted veg "
+                "vegetables grilled chicken veggie stir-fry local dishes poutine "
+                "french fries sauce chopsticks recipe share try"
+            ),
+            "food_recipe_recommendation_bridge",
+        ),
+    (
+            frozenset({"recommend", "recipes"}),
+            (
+                "recommended foods recipes meals dishes tasty healthy roasted veg "
+                "vegetables grilled chicken veggie stir-fry local dishes poutine "
+                "french fries sauce chopsticks recipe share try"
+            ),
+            "food_recipe_recommendation_bridge",
+        ),
+    (
+            frozenset({"recipes", "foods"}),
+            (
+                "recommended foods recipes meals dishes tasty healthy roasted veg "
+                "vegetables grilled chicken veggie stir-fry local dishes poutine "
+                "french fries sauce chopsticks recipe share try"
+            ),
+            "food_recipe_recommendation_bridge",
+        ),
+    (
+            frozenset({"stress", "flexibility"}),
+            (
+                "stress flexibility yoga activity helped staying flexible diet "
+                "healthy activity exercise wellness start hindered helped alongside"
+            ),
+            "wellness_activity_effect_bridge",
+        ),
+    (
+            frozenset({"activity", "flexibility"}),
+            (
+                "stress flexibility yoga activity helped staying flexible diet "
+                "healthy activity exercise wellness start hindered helped alongside"
+            ),
+            "wellness_activity_effect_bridge",
+        ),
+    (
             frozenset({"what", "suggest"}),
             _terms._RECOMMENDATION_SOURCE_EXPANSION,
             "recommendation_source_bridge",
