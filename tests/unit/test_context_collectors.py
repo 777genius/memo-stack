@@ -135,6 +135,18 @@ def test_protected_query_head_keys_keep_inventory_and_friend_place_heads() -> No
     )
 
 
+def test_protected_query_head_keys_keep_multiple_item_purchase_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:item_purchase_bridge": ("figurines_purchase", "shoes_purchase", "generic_b"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "figurines_purchase",
+        "shoes_purchase",
+    )
+
+
 def test_protected_query_head_keys_keep_multiple_animal_evidence_facets() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
