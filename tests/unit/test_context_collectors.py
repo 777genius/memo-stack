@@ -149,6 +149,21 @@ def test_protected_query_head_keys_keep_commonality_heads() -> None:
     )
 
 
+def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:friends_team_inference_bridge": ("team_friend_match", "generic_b"),
+        "2:degree_policy_inference_bridge": ("degree_policy_match", "generic_c"),
+        "3:counseling_workshop_bridge": ("workshop_match", "generic_d"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "team_friend_match",
+        "degree_policy_match",
+        "workshop_match",
+    )
+
+
 def test_protected_query_head_keys_keep_duration_and_frequency_heads() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -596,6 +611,49 @@ def test_bounded_retrieval_queries_prioritize_commonality_bridges() -> None:
         "decomposition_commonality",
         "commonality_interest_bridge",
         "business_commonality_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_friend_team_inference_bridge() -> None:
+    plan = build_query_expansion_plan("Does Nate have friends besides Joanna?")
+    degree = build_query_expansion_plan("What might John's degree be in?")
+    workshop = build_query_expansion_plan(
+        "What kind of counseling workshop did Melanie attend recently?"
+    )
+
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            plan,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "friends_team_inference_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            degree,
+            fallback="fallback",
+            limit=2,
+        )
+    ] == [
+        "original_query",
+        "degree_policy_inference_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            workshop,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "decomposition_event_context",
+        "counseling_workshop_bridge",
     ]
 
 
