@@ -150,6 +150,23 @@ _POTTERY_TYPE_PROJECT_SLOT_RE = re.compile(
     r"\b(?:clay|ceramic|project|projects|piece|pieces|finished)\b",
     re.IGNORECASE,
 )
+_POTTERY_TYPE_DIRECT_MADE_OBJECT_RE = re.compile(
+    r"\b(?:dog\s+face|black\s+and\s+white\s+flower|photo\s+of\s+a\s+(?:bowl|cup)|"
+    r"kids?.{0,120}(?:clay|cup|pots?|pottery\s+workshop)|"
+    r"(?:clay|cup|pots?|pottery\s+workshop).{0,120}kids?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_POTTERY_TYPE_FRIENDSHIP_COMPANION_RE = re.compile(
+    r"\b(?:pottery\s+project|finished\s+another\s+pottery|source\s+of\s+happiness)"
+    r".{0,260}\b(?:values?\s+friendship|appreciat(?:es|ion).{0,60}friendship|"
+    r"family\s+outing|planning\s+something\s+special)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_POTTERY_TYPE_PROJECT_COMPANION_RE = re.compile(
+    r"\b(?:pottery\s+project|finished\s+another\s+pottery|source\s+of\s+happiness|"
+    r"fulfillment|sanctuary|comfort)\b",
+    re.IGNORECASE,
+)
 _FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE = re.compile(
     r"\b(?:husband|motivated|motivate|motivation)\b(?=.{0,180}\b"
     r"(?:family|kids?|children|hiking|hike|nature|waterfall|trail))|"
@@ -755,13 +772,6 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                     query_reason,
                     source_group,
                 )
-            if inventory_slot:
-                return _compound_diversity_family(
-                    "query_reason_inventory_slot_source_group",
-                    query_reason,
-                    inventory_slot,
-                    source_group,
-                )
             if marker_slot := _aggregation_marker_coverage_slot(
                 item,
                 query_reason=query_reason,
@@ -770,6 +780,13 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                     "query_reason_marker_coverage_source_group",
                     query_reason,
                     marker_slot,
+                    source_group,
+                )
+            if inventory_slot:
+                return _compound_diversity_family(
+                    "query_reason_inventory_slot_source_group",
+                    query_reason,
+                    inventory_slot,
                     source_group,
                 )
             if activity_slot:
@@ -975,7 +992,9 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
 
 
 def _inventory_answer_slot(item: ContextItem, *, query_reason: str) -> str:
-    if not _is_inventory_list_reason(query_reason) and not _is_pottery_type_reason(query_reason):
+    if _is_pottery_type_reason(query_reason):
+        return _pottery_type_inventory_slot_for_text(item.text)
+    if not _is_inventory_list_reason(query_reason):
         return ""
     return _inventory_answer_slot_for_text(item.text)
 
@@ -1213,6 +1232,8 @@ def _precise_turn_answer_support_rank(item: ContextItem, *, query_reason: str) -
 
 
 def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int:
+    if _is_pottery_type_reason(query_reason):
+        return _pottery_type_answer_content_rank(item.text)
     if query_reason in {"running_reason_bridge", "running_reason_question_bridge"}:
         text = item.text.casefold()
         if "what got you into running" in text or "for walking or running" in text:
@@ -1250,6 +1271,18 @@ def _animal_care_instruction_content_rank(text: str) -> int:
     if re.search(r"\b(?:care|clean|feed|light|habitat|routine)\b", text, re.IGNORECASE):
         return 1
     return 2
+
+
+def _pottery_type_answer_content_rank(text: str) -> int:
+    if _POTTERY_TYPE_DIRECT_MADE_OBJECT_RE.search(text):
+        return 0
+    if _POTTERY_TYPE_FRIENDSHIP_COMPANION_RE.search(text):
+        return 1
+    if _POTTERY_TYPE_PROJECT_COMPANION_RE.search(text):
+        return 2
+    if _POTTERY_TYPE_GENERIC_ANSWER_OBJECT_RE.search(text):
+        return 3
+    return 4
 
 
 def _has_primary_exact_turn_source_ref(item: ContextItem) -> bool:

@@ -11,6 +11,7 @@ from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.application.use_cases.build_context import (
     _aggregation_evidence_text,
     _aggregation_source_kind_rank,
+    _chunk_context_item,
     _dedupe_chunks_by_id,
     _is_dialogue_visual_reference_source_sibling,
     _is_pottery_type_observation_companion,
@@ -1209,6 +1210,38 @@ def test_source_sibling_companion_extra_slot_distinguishes_observation_windows()
         chunk=chunk,
         text=chunk.text,
     ) == "locomo:conv-26:session_12:observation:D12:8:D12:16"
+
+
+def test_source_sibling_companion_item_can_preserve_full_marker_window() -> None:
+    text = (
+        "D12:8 Melanie: Melanie's pottery project was a source of happiness. "
+        "Related turns: D12:2 D12:4 D12:10. "
+        "D12:14 Melanie: Melanie values friendship with Caroline. "
+        "Related turns: D12:6 D12:16."
+    )
+    chunk = _chunk(
+        "pottery_observation_full_marker_window",
+        text,
+        source_external_id="locomo:conv-26:session_12:observation",
+    )
+
+    item = _chunk_context_item(
+        chunk=chunk,
+        text=text,
+        retrieval_source="keyword_source_sibling_chunks",
+        base_score=0.74,
+        score=0.989,
+        relevance=score_query_relevance(
+            query="Melanie pottery types pieces made clay finished ceramic bowl bowls cup",
+            text=text,
+        ),
+        query_text="Melanie pottery types pieces made clay finished ceramic bowl bowls cup",
+        query_expansion_reason="pottery_type_bridge",
+        use_query_snippet=False,
+    )
+
+    assert "D12:8" in item.text
+    assert "D12:14" in item.text
 
 
 def test_source_sibling_caps_generic_volunteer_career_noise() -> None:

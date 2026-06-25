@@ -2554,6 +2554,114 @@ def test_answer_support_family_splits_pottery_inventory_slots() -> None:
     assert "D8:4" in rendered
 
 
+def test_answer_support_family_keeps_pottery_slots_query_scoped() -> None:
+    support_group_noise = ContextItem(
+        item_id="support_group_noise",
+        item_type="chunk",
+        text=(
+            "D1:3 Caroline went to an LGBTQ support group. "
+            "D1:9 Caroline is planning to continue education."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-26:session_1:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+    pottery_project = ContextItem(
+        item_id="pottery_project",
+        item_type="chunk",
+        text=(
+            "D12:8 Melanie's pottery project was a source of happiness. "
+            "Related turns: D12:2 D12:4 D12:10. "
+            "D12:14 Melanie values friendship with Caroline. "
+            "Related turns: D12:6 D12:16."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-26:session_12:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+
+    noise_family = _answer_support_diversity_family(support_group_noise)
+    project_family = _answer_support_diversity_family(pottery_project)
+
+    assert "support-group" not in noise_family
+    assert "education-infrastructure" not in noise_family
+    assert project_family.startswith(
+        "query_reason_marker_coverage_source_group:pottery-type-bridge:"
+    )
+
+
+def test_answer_support_rank_prefers_pottery_friendship_companion_over_art_show_noise() -> None:
+    friendship_companion = ContextItem(
+        item_id="d12_friendship_companion",
+        item_type="chunk",
+        text=(
+            "D12:8 Melanie's pottery project was a source of happiness. "
+            "Related turns: D12:2 D12:4 D12:10. "
+            "D12:14 Melanie values friendship with Caroline and expresses appreciation for it. "
+            "Related turns: D12:6 D12:16."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-26:session_12:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+    art_show_noise = ContextItem(
+        item_id="d14_art_show_noise",
+        item_type="chunk",
+        text=(
+            "D14:33 Caroline is organizing an LGBTQ art show next month. "
+            "Related turns: D14:13 D14:21 D14:35. "
+            "D14:4 Melanie made it in pottery class yesterday."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-26:session_14:observation",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+
+    assert _answer_support_family_item_key(friendship_companion) < (
+        _answer_support_family_item_key(art_show_noise)
+    )
+
+
 def test_answer_support_family_splits_travel_country_inventory_slot() -> None:
     england = ContextItem(
         item_id="d8_england",

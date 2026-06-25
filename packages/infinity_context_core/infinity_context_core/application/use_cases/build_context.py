@@ -1207,6 +1207,7 @@ class BuildContextUseCase:
                 relevance=relevance,
                 query_text=expansion_query,
                 query_expansion_reason=expansion_reason,
+                use_query_snippet=not observation_companion,
             )
             items.append(
                 _with_source_sibling_score_signals(
