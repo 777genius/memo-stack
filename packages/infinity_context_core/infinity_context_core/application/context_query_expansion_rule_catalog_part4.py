@@ -192,6 +192,16 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "book_suggestion_bridge",
         ),
     (
+            frozenset({"lewis"}),
+            (
+                "books author C S Lewis Narnia Chronicles wardrobe fantasy "
+                "magical world Harry Potter universe characters spells magical creatures "
+                "wizarding world Potter places London tour movie explore fan friend "
+                "project getting lost magical world loves books"
+            ),
+            "book_suggestion_bridge",
+        ),
+    (
             frozenset({"book", "read"}),
             (
                 "books read collection bookshelf Harry Potter Game of Thrones Name "

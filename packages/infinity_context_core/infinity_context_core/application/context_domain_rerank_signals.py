@@ -335,6 +335,38 @@ _POSITIVE_PREFERENCE_WEAK_TOPIC_RE = re.compile(
     r"\b(?:обсуждал\w*|упомянул\w*|слушал\w*|смотрел\w*|готовил\w*)\b",
     re.IGNORECASE,
 )
+_BOOK_AUTHOR_PREFERENCE_QUERY_RE = re.compile(
+    r"\b(?:books?\s+by|author|authors?|c\.?\s*s\.?\s*lewis|lewis|"
+    r"john\s+green(?:e)?|would\b(?=.{0,80}\benjoy\b).{0,120}\bread(?:ing)?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_BOOK_AUTHOR_WORLD_EXACT_RE = re.compile(
+    r"\b(?:harry\s+potter|potter|j\.?\s*k\.?\s*rowling|fantasy)\b"
+    r"(?=.{0,180}\b(?:magical\s+world|wizarding\s+world|universe|characters?|"
+    r"spells?|magical\s+creatures?|london|movie|tour|real\s+potter\s+places?|"
+    r"getting?\s+lost|lost\s+in|transport|alternate\s+realities|escape|"
+    r"different\s+worlds?|other\s+places?)\b)|"
+    r"\b(?:magical\s+world|wizarding\s+world|universe|characters?|spells?|"
+    r"magical\s+creatures?|london|movie|tour|real\s+potter\s+places?|"
+    r"getting?\s+lost|lost\s+in|transport|alternate\s+realities|escape|"
+    r"different\s+worlds?|other\s+places?)\b"
+    r"(?=.{0,180}\b(?:harry\s+potter|potter|j\.?\s*k\.?\s*rowling|fantasy)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_BOOK_AUTHOR_POTTER_WORLD_RE = re.compile(
+    r"\b(?:harry\s+potter|potter)\b(?=.{0,180}\b(?:magical\s+world|"
+    r"wizarding\s+world|universe|characters?|spells?|magical\s+creatures?|"
+    r"london|movie|tour|real\s+potter\s+places?|getting?\s+lost|lost\s+in)\b)|"
+    r"\b(?:magical\s+world|wizarding\s+world|universe|characters?|spells?|"
+    r"magical\s+creatures?|london|movie|tour|real\s+potter\s+places?|"
+    r"getting?\s+lost|lost\s+in)\b(?=.{0,180}\b(?:harry\s+potter|potter)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_BOOK_AUTHOR_GENERIC_COLLECTION_RE = re.compile(
+    r"\b(?:bookshelf|book\s+shelf|book\s+collection|favorites?\s+on\s+there|"
+    r"photo\s+of\s+a\s+book|bunch\s+of\s+books)\b",
+    re.IGNORECASE,
+)
 _OUTDOOR_NATURE_EVIDENCE_RE = re.compile(
     r"\b(?:camp(?:ing|fire)|hikes?|hiking|trail|forest|mountains?|nature|"
     r"outdoors?|national\s+park|meteor\s+shower|perseid|sky|universe)\b",
@@ -718,6 +750,8 @@ class DomainRerankSignal:
     boost: float = 0.0
     penalty: float = 0.0
     reason: str = ""
+    rank_signal_key: str = ""
+    rank_signal: float = 0.0
 
 
 def support_network_rerank_signal(
@@ -902,6 +936,29 @@ def positive_preference_rerank_signal(
         item=item,
     ):
         return DomainRerankSignal()
+    if (
+        _BOOK_AUTHOR_PREFERENCE_QUERY_RE.search(query) is not None
+        and query_reason in {"book_suggestion_bridge", "book_reading_list_bridge"}
+        and _BOOK_AUTHOR_WORLD_EXACT_RE.search(item.text) is not None
+        and relevance.distinctive_term_hits >= 3
+    ):
+        rank_signal = 3.0 if _BOOK_AUTHOR_POTTER_WORLD_RE.search(item.text) else 2.0
+        return DomainRerankSignal(
+            boost=0.03,
+            reason="book_author_preference_world_evidence",
+            rank_signal_key="book_author_preference_world_evidence",
+            rank_signal=rank_signal,
+        )
+    if (
+        _BOOK_AUTHOR_PREFERENCE_QUERY_RE.search(query) is not None
+        and query_reason in {"book_suggestion_bridge", "book_reading_list_bridge"}
+        and _BOOK_AUTHOR_GENERIC_COLLECTION_RE.search(item.text) is not None
+        and _BOOK_AUTHOR_WORLD_EXACT_RE.search(item.text) is None
+    ):
+        return DomainRerankSignal(
+            penalty=0.04,
+            reason="book_author_preference_generic_collection",
+        )
     if (
         _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
         and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None

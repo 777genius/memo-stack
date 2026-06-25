@@ -85,6 +85,7 @@ _CONTEXT_REQUIREMENT_SCORE_SIGNAL_KEYS = (
     "context_requirement_matched_feature_count",
 )
 _DETERMINISTIC_RERANK_SCORE_SIGNAL_KEYS = (
+    "book_author_preference_world_evidence",
     "deterministic_rerank_boost",
     "deterministic_rerank_penalty",
     "deterministic_rerank_net_adjustment",
@@ -514,6 +515,7 @@ def context_rank_key(
         -_score_signal_float(item, "source_sibling_group_level_seed"),
         -_score_signal_float(item, "source_sibling_dialogue_visual_reference"),
         -_score_signal_float(item, "source_sibling_visual_continuation"),
+        -_score_signal_float(item, "book_author_preference_world_evidence"),
         -_score_signal_float(item, "phrase_bigram_hits"),
         -_score_signal_float(item, "phrase_boost"),
         -_score_signal_float(item, "distinctive_term_hits"),

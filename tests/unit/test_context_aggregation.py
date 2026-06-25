@@ -818,6 +818,44 @@ def test_source_sibling_score_allows_recommendation_source_turn() -> None:
     )
 
 
+def test_source_sibling_score_allows_fantasy_book_preference_evidence_turns() -> None:
+    expansion_query = (
+        "books author C S Lewis Narnia Chronicles wardrobe fantasy magical world "
+        "Harry Potter universe characters spells magical creatures wizarding world "
+        "Potter places London tour movie explore fan friend project"
+    )
+    rank = _SourceSiblingRank(score=0.948, group_priority=1, turn_distance=2, turn_delta=-2)
+    fan_project_text = (
+        "D1:14 Tim talked to a friend who is a fan of Harry Potter and "
+        "got lost in that magical world."
+    )
+    places_text = (
+        "D1:18 Tim went to London places that felt like walking into a "
+        "Harry Potter movie and wants to explore real Potter places."
+    )
+
+    for text in (fan_project_text, places_text):
+        relevance = score_query_relevance(query=expansion_query, text=text)
+
+        assert _source_sibling_relevance_allowed(
+            rank=rank,
+            relevance=relevance,
+            expansion_query=expansion_query,
+            expansion_reason="book_suggestion_bridge",
+            text=text,
+        )
+        assert (
+            _source_sibling_score(
+                rank=rank,
+                relevance=relevance,
+                expansion_query=expansion_query,
+                expansion_reason="book_suggestion_bridge",
+                text=text,
+            )
+            > 0.965
+        )
+
+
 def test_source_sibling_score_allows_inventory_list_turn() -> None:
     text = (
         "D13:24 Maria visited Spain during a school trip. "

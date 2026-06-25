@@ -3551,6 +3551,148 @@ def test_context_packer_allows_multiple_book_suggestion_answer_support_source_gr
     assert "D17:10" in result.bundle.rendered_text
 
 
+def test_context_packer_prefers_broad_book_suggestion_evidence_window() -> None:
+    broad = ContextItem(
+        item_id="book_broad_window",
+        item_type="chunk",
+        text=(
+            "D1:14 Tim is a fan of Harry Potter and gets lost in that magical world. "
+            "D1:16 Tim discusses Harry Potter characters, spells, and magical creatures. "
+            "D1:18 Tim visited London places like walking into a Harry Potter movie."
+        ),
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_session",
+                source_id="locomo:conv-43:session_1",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-43:session_1:D1:14:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-43:session_1:D1:18:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "book_suggestion_bridge",
+                "distinctive_term_hits": 12,
+            },
+        },
+    )
+    exact = ContextItem(
+        item_id="book_exact_turn",
+        item_type="chunk",
+        text="D1:16 Tim discusses Harry Potter characters, spells, and magical creatures.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-43:session_1:D1:16:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "book_suggestion_bridge",
+                "distinctive_term_hits": 10,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_book_suggestion_broad_window",
+        items=(exact, broad),
+        token_budget=90,
+    )
+
+    assert "D1:14" in result.bundle.rendered_text
+    assert "D1:18" in result.bundle.rendered_text
+
+
+def test_context_packer_allows_broad_book_suggestion_turns_from_same_source_group() -> None:
+    items = (
+        ContextItem(
+            item_id="book_potter_fan_project",
+            item_type="chunk",
+            text=(
+                "D1:14 Tim talked to a friend who is a fan of Harry Potter "
+                "and got lost in that magical world."
+            ),
+            score=0.97,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:14:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "distinctive_term_hits": 9,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="book_potter_world",
+            item_type="chunk",
+            text=(
+                "D1:16 Tim discussed the Harry Potter universe, characters, "
+                "spells, and magical creatures."
+            ),
+            score=0.99,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:16:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_sources": ["keyword_chunks", "keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "distinctive_term_hits": 12,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="book_potter_places",
+            item_type="chunk",
+            text=(
+                "D1:18 Tim visited London places that felt like walking into "
+                "a Harry Potter movie."
+            ),
+            score=0.965,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:18:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        ),
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_book_suggestion_same_source_group_turns",
+        items=items,
+        token_budget=260,
+    )
+
+    assert "D1:14" in result.bundle.rendered_text
+    assert "D1:16" in result.bundle.rendered_text
+    assert "D1:18" in result.bundle.rendered_text
+    assert result.bundle.diagnostics["answer_support_families_used"] >= 3
+
+
 def test_context_packer_allows_multiple_adoption_goal_items_from_same_source_group() -> None:
     interview = ContextItem(
         item_id="adoption_interview",

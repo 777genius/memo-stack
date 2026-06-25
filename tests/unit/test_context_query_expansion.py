@@ -2571,6 +2571,46 @@ def test_best_query_relevance_bridges_charity_brand_sponsorship_evidence() -> No
         assert relevance.distinctive_term_hits >= min_hits
 
 
+def test_query_expansion_covers_fantasy_author_preference_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "Would Tim enjoy reading books by C. S. Lewis or John Greene?"
+    )
+
+    expansion = _expansion_query(plan, "book_suggestion_bridge")
+    assert expansion.startswith("Tim Lewis John ")
+    assert "C S Lewis Narnia" in expansion
+    assert "Harry Potter universe" in expansion
+
+
+def test_best_query_relevance_bridges_fantasy_author_preference_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Would Tim enjoy reading books by C. S. Lewis or John Greene?"
+    )
+
+    cases = (
+        (
+            "D1:14 Tim talked to a friend who is a Harry Potter fan and "
+            "loves getting lost in that magical world.",
+            7,
+        ),
+        (
+            "D1:16 Tim discusses the Harry Potter universe, including "
+            "characters, spells, and magical creatures.",
+            8,
+        ),
+        (
+            "D1:18 Tim visited London places that felt like walking into "
+            "a Harry Potter movie and wants to explore more Potter places.",
+            7,
+        ),
+    )
+    for text, min_hits in cases:
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "book_suggestion_bridge"
+        assert relevance.distinctive_term_hits >= min_hits
+
+
 def test_best_query_relevance_bridges_yoga_delay_gaming_evidence() -> None:
     plan = build_query_expansion_plan("Why does Jolene sometimes put off doing yoga?")
 

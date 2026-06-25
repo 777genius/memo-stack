@@ -902,6 +902,7 @@ class _DeterministicRerankSignals:
     boost: float
     penalty: float
     reasons: tuple[str, ...]
+    rank_signals: tuple[tuple[str, float], ...]
     source_count: int
     strong_source_count: int
     coverage_ratio: float
@@ -1331,7 +1332,7 @@ def _with_deterministic_rerank_adjustment(
         max_boost=max_boost,
         max_penalty=max_penalty,
     )
-    if signals.net_adjustment == 0:
+    if signals.net_adjustment == 0 and not signals.rank_signals:
         return item
     diagnostics = normalize_context_diagnostics(normalized_item.diagnostics)
     diagnostics["deterministic_rerank_reason"] = (
@@ -1346,6 +1347,7 @@ def _with_deterministic_rerank_adjustment(
         "deterministic_rerank_strong_source_count": signals.strong_source_count,
         "deterministic_rerank_requirement_coverage": signals.coverage_ratio,
         "deterministic_rerank_query_reason": signals.query_reason,
+        **{key: value for key, value in signals.rank_signals},
     }
     diagnostics["provenance"] = {
         **safe_diagnostic_mapping(diagnostics.get("provenance")),
@@ -1699,6 +1701,7 @@ def _deterministic_rerank_signals(
     boost += domain_adjustment.boost
     penalty += domain_adjustment.penalty
     reasons.extend(domain_adjustment.reasons)
+    rank_signals = dict(domain_adjustment.rank_signals)
     slot_diverse_aggregation = aggregation_answer_slot_count(query=query, text=item.text) >= 2
     event_detail_requirement_support = "temporal_camping_detail_evidence" in reasons
     if requested_total > 0:
@@ -1751,6 +1754,7 @@ def _deterministic_rerank_signals(
         boost=round(min(max_boost, boost), 4),
         penalty=round(min(max_penalty, penalty), 4),
         reasons=tuple(dict.fromkeys(reasons)),
+        rank_signals=tuple(sorted(rank_signals.items())),
         source_count=len(sources),
         strong_source_count=strong_source_count,
         coverage_ratio=round(coverage_ratio, 4),

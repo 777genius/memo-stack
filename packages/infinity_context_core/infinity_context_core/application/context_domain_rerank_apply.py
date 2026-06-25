@@ -45,6 +45,7 @@ class DomainRerankAdjustment:
     boost: float = 0.0
     penalty: float = 0.0
     reasons: tuple[str, ...] = ()
+    rank_signals: tuple[tuple[str, float], ...] = ()
 
 
 def apply_domain_rerank_signals(
@@ -58,6 +59,7 @@ def apply_domain_rerank_signals(
     boost = 0.0
     penalty = 0.0
     reasons: list[str] = []
+    rank_signals: dict[str, float] = {}
     for signal in _domain_rerank_signals(
         query=query,
         query_reason=query_reason,
@@ -71,7 +73,17 @@ def apply_domain_rerank_signals(
         if signal.penalty > 0:
             penalty += signal.penalty
             reasons.append(signal.reason)
-    return DomainRerankAdjustment(boost=boost, penalty=penalty, reasons=tuple(reasons))
+        if signal.rank_signal_key and signal.rank_signal > 0:
+            rank_signals[signal.rank_signal_key] = max(
+                signal.rank_signal,
+                rank_signals.get(signal.rank_signal_key, 0.0),
+            )
+    return DomainRerankAdjustment(
+        boost=boost,
+        penalty=penalty,
+        reasons=tuple(reasons),
+        rank_signals=tuple(sorted(rank_signals.items())),
+    )
 
 
 def _domain_rerank_signals(

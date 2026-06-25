@@ -1,3 +1,4 @@
+from infinity_context_core.application.context_diagnostics import context_rank_key
 from infinity_context_core.application.context_query_expansion import (
     build_query_expansion_plan,
 )
@@ -6157,6 +6158,52 @@ def test_deterministic_rerank_prefers_explicit_preference_over_topical_match() -
         in by_id["audrey_chicken_recipe"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]
+    )
+
+
+def test_deterministic_rerank_prefers_book_author_world_evidence_over_bookshelf() -> None:
+    query = "Would Tim enjoy reading books by C. S. Lewis or John Greene?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    bookshelf = _item(
+        "tim_bookshelf",
+        score=0.99,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D20:19 Tim: Here's my bookshelf with some favorites. "
+            "visual query: bookshelf Harry Potter Game of Thrones."
+        ),
+        score_signals={"query_expansion_reason": "book_reading_list_bridge"},
+    )
+    world_evidence = _item(
+        "tim_potter_world",
+        score=0.99,
+        retrieval_source="keyword_source_sibling_chunks",
+        text=(
+            "D1:16 Tim: We'll be discussing the Harry Potter universe, "
+            "characters, spells, and magical creatures."
+        ),
+        score_signals={"query_expansion_reason": "book_suggestion_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (bookshelf, world_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert (
+        by_id["tim_potter_world"].diagnostics["score_signals"][
+            "book_author_preference_world_evidence"
+        ]
+        == 3.0
+    )
+    assert context_rank_key(by_id["tim_potter_world"]) < context_rank_key(by_id["tim_bookshelf"])
+    assert (
+        "book_author_preference_generic_collection"
+        in by_id["tim_bookshelf"].diagnostics["provenance"]["deterministic_rerank_reasons"]
     )
 
 

@@ -87,7 +87,13 @@ _COUNT_AGGREGATION_COVERAGE_REASONS = frozenset(
     }
 )
 _ANSWER_SUPPORT_EXCLUDED_QUERY_REASONS = frozenset({"art_style_bridge"})
-_BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS = frozenset({"activity_visual_selfcare_bridge"})
+_BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS = frozenset(
+    {
+        "activity_visual_selfcare_bridge",
+        "book_suggestion_bridge",
+    }
+)
+_BROAD_EVIDENCE_TURN_SLOT_REASONS = frozenset({"book_suggestion_bridge"})
 _PRECISE_TURN_ANSWER_SUPPORT_REASONS = PRECISE_TURN_SOURCE_SIBLING_REASONS | frozenset(
     {
         "personality_authenticity_bridge",
@@ -533,7 +539,12 @@ def _selection_key(item: ContextItem) -> tuple[str, str]:
 def _diversity_candidates(items: list[ContextItem]) -> dict[str, ContextItem]:
     candidates: dict[str, ContextItem] = {}
     for item in items:
-        candidates.setdefault(_diversity_family(item), item)
+        family = _diversity_family(item)
+        existing = candidates.get(family)
+        if existing is None or _diversity_candidate_item_key(item) < (
+            _diversity_candidate_item_key(existing)
+        ):
+            candidates[family] = item
     return candidates
 
 
@@ -567,6 +578,17 @@ def _diversity_family(item: ContextItem) -> str:
     return item.item_type or "unknown"
 
 
+def _diversity_candidate_item_key(item: ContextItem) -> tuple[object, ...]:
+    query_reason = _answer_support_query_reason(item)
+    broad_window_rank = 1
+    if query_reason in _BROAD_EVIDENCE_ANSWER_SUPPORT_REASONS and len(item.source_refs) > 1:
+        broad_window_rank = 0
+    return (
+        broad_window_rank,
+        context_rank_key(item),
+    )
+
+
 def _answer_support_diversity_candidates(items: list[ContextItem]) -> dict[str, ContextItem]:
     candidates: dict[str, ContextItem] = {}
     for item in items:
@@ -583,6 +605,7 @@ def _answer_support_diversity_candidates(items: list[ContextItem]) -> dict[str, 
 
 def _ordered_answer_support_families(candidates: dict[str, ContextItem]) -> tuple[str, ...]:
     marker_source_group_counts = _marker_coverage_source_group_counts(candidates)
+    broad_turn_source_group_counts = _broad_turn_source_group_counts(candidates)
     ordered = tuple(
         sorted(
             candidates,
@@ -591,6 +614,7 @@ def _ordered_answer_support_families(candidates: dict[str, ContextItem]) -> tupl
                     family,
                     item=candidates[family],
                     marker_source_group_counts=marker_source_group_counts,
+                    broad_turn_source_group_counts=broad_turn_source_group_counts,
                 ),
                 _answer_support_family_item_key(candidates[family]),
                 family,
@@ -641,9 +665,19 @@ def _answer_support_family_priority(
     *,
     item: ContextItem,
     marker_source_group_counts: dict[str, int],
+    broad_turn_source_group_counts: dict[str, int],
 ) -> int:
     base = _diversity_family_base(family)
     if base == "query_reason_count_coverage_source_group":
+        return 0
+    if (
+        base == "query_reason_broad_turn_source_group"
+        and _numeric_signal(
+            _diagnostic_score_signals(item).get("book_author_preference_world_evidence")
+        )
+        >= 3
+        and broad_turn_source_group_counts.get(_broad_turn_family_source_group(family), 0) > 1
+    ):
         return 0
     if base in {
         "query_reason_activity_slot",
@@ -694,6 +728,24 @@ def _marker_coverage_source_group_counts(candidates: dict[str, ContextItem]) -> 
     return counts
 
 
+def _broad_turn_source_group_counts(candidates: dict[str, ContextItem]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for family in candidates:
+        if _diversity_family_base(family) != "query_reason_broad_turn_source_group":
+            continue
+        source_group = _broad_turn_family_source_group(family)
+        if source_group:
+            counts[source_group] = counts.get(source_group, 0) + 1
+    return counts
+
+
+def _broad_turn_family_source_group(family: str) -> str:
+    parts = family.split(":")
+    if len(parts) >= 4:
+        return parts[-1]
+    return ""
+
+
 def _marker_coverage_family_source_group(family: str) -> str:
     parts = family.split(":")
     if len(parts) >= 4:
@@ -705,6 +757,7 @@ def _answer_support_source_group_reason_key(family: str) -> str:
     parts = family.split(":")
     if len(parts) < 3 or parts[0] not in {
         "query_reason_activity_slot_source_group",
+        "query_reason_broad_turn_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
         "query_reason_inventory_slot_source_group",
@@ -732,6 +785,7 @@ def _answer_support_source_group_limit(
     family_base = _diversity_family_base(family)
     aggregation_family_bases = {
         "query_reason_activity_slot_source_group",
+        "query_reason_broad_turn_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
         "query_reason_inventory_slot_source_group",
@@ -771,6 +825,13 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
         activity_slot = _activity_answer_slot(item, query_reason=query_reason)
         inventory_slot = _inventory_answer_slot(item, query_reason=query_reason)
         if source_group:
+            if broad_turn_slot := _broad_evidence_turn_slot(item, query_reason=query_reason):
+                return _compound_diversity_family(
+                    "query_reason_broad_turn_source_group",
+                    query_reason,
+                    broad_turn_slot,
+                    source_group,
+                )
             if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
                 return _compound_diversity_family(
                     "query_reason_count_coverage_source_group",
@@ -950,6 +1011,14 @@ def _is_count_aggregation_coverage_item(item: ContextItem, *, query_reason: str)
     if "keyword_aggregation_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
         return False
     return len(item.source_refs) > 1
+
+
+def _broad_evidence_turn_slot(item: ContextItem, *, query_reason: str) -> str:
+    if query_reason not in _BROAD_EVIDENCE_TURN_SLOT_REASONS:
+        return ""
+    if len(item.source_refs) != 1:
+        return ""
+    return _primary_exact_turn_source_id(item)
 
 
 def _aggregation_marker_coverage_slot(item: ContextItem, *, query_reason: str) -> str:
@@ -1487,16 +1556,24 @@ def _painting_inventory_answer_content_rank(text: str) -> int:
 def _has_primary_exact_turn_source_ref(item: ContextItem) -> bool:
     if not item.source_refs:
         return False
-    parts = (item.source_refs[0].source_id or "").split(":")
-    return len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D")
+    return _is_exact_turn_source_id(item.source_refs[0].source_id)
 
 
 def _has_any_exact_turn_source_ref(item: ContextItem) -> bool:
+    return bool(_primary_exact_turn_source_id(item))
+
+
+def _primary_exact_turn_source_id(item: ContextItem) -> str:
     for ref in item.source_refs:
-        parts = (ref.source_id or "").split(":")
-        if len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D"):
-            return True
-    return False
+        source_id = ref.source_id or ""
+        if _is_exact_turn_source_id(source_id):
+            return source_id
+    return ""
+
+
+def _is_exact_turn_source_id(source_id: str | None) -> bool:
+    parts = (source_id or "").split(":")
+    return len(parts) >= 6 and parts[-1] == "turn" and parts[-3].startswith("D")
 
 
 def _diversity_family_base(family: str) -> str:
