@@ -395,6 +395,7 @@ def test_context_requirement_coverage_tracks_inference_answer_shape() -> None:
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
     assert coverage["status"] == "satisfied"
 
 
@@ -477,6 +478,7 @@ def test_context_requirement_coverage_tracks_generic_behavior_inference_evidence
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
 
 
 def test_context_requirement_coverage_tracks_direct_trait_inference_evidence() -> None:
@@ -502,6 +504,7 @@ def test_context_requirement_coverage_tracks_direct_trait_inference_evidence() -
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
 
 
 def test_context_requirement_coverage_tracks_preference_inference_evidence() -> None:
@@ -525,6 +528,7 @@ def test_context_requirement_coverage_tracks_preference_inference_evidence() -> 
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
 
 
 def test_context_requirement_coverage_tracks_state_residence_inference_evidence() -> None:
@@ -551,6 +555,7 @@ def test_context_requirement_coverage_tracks_state_residence_inference_evidence(
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
 
 
 def test_context_requirement_coverage_tracks_political_inference_evidence() -> None:
@@ -603,6 +608,35 @@ def test_context_requirement_coverage_tracks_community_membership_inference() ->
     assert coverage["requested_answer_shapes"] == ["inference"]
     assert "inference" in coverage["covered_answer_shapes"]
     assert coverage["missing_answer_shapes"] == []
+
+
+def test_context_requirement_coverage_tracks_support_only_community_membership_inference() -> None:
+    query = "Would Melanie be considered a member of the LGBTQ community?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="melanie_lgbtq_support_only",
+        item_type="chunk",
+        text=(
+            "Melanie is supportive of Caroline's transgender journey and "
+            "encourages LGBTQ community acceptance as an ally."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D3:5"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == [
+        "community_membership_support_only_without_self_identification"
+    ]
 
 
 def test_context_requirement_coverage_tracks_allergy_condition_inference() -> None:
@@ -2653,6 +2687,10 @@ def test_sanitize_context_requirement_coverage_bounds_and_redacts_payload() -> N
             "requested_modalities": ["image", secret, *[f"extra_{index}" for index in range(20)]],
             "covered_modalities": ["image"],
             "missing_modalities": [secret],
+            "answer_shape_warnings": [
+                "community_membership_support_only_without_self_identification",
+                secret,
+            ],
             "item_count": 2,
         }
     )
@@ -2665,3 +2703,6 @@ def test_sanitize_context_requirement_coverage_bounds_and_redacts_payload() -> N
     assert secret not in str(sanitized)
     assert "[redacted]" not in str(sanitized)
     assert len(sanitized["requested_modalities"]) <= 12
+    assert sanitized["answer_shape_warnings"] == [
+        "community_membership_support_only_without_self_identification"
+    ]

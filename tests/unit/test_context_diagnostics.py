@@ -138,6 +138,7 @@ def test_context_bundle_diagnostics_preserve_requirement_coverage() -> None:
         "requested_answer_shapes": [],
         "covered_answer_shapes": [],
         "missing_answer_shapes": [],
+        "answer_shape_warnings": [],
         "item_count": 0,
     }
     assert secret not in str(diagnostics)

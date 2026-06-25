@@ -622,6 +622,15 @@ _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"came\s+out|joined)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_COMMUNITY_MEMBERSHIP_SUPPORT_ONLY_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:ally|allies|supportive|supported|support|encourag(?:e|ed|es|ing)|"
+    r"advocat(?:e|ed|es|ing)|accept(?:ed|ance|ing)?)\b"
+    r"(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|queer|pride|community|rights)\b)|"
+    r"\b(?:lgbtq?|trans(?:gender)?|queer|pride|community|rights)\b"
+    r"(?=.{0,120}\b(?:ally|allies|supportive|supported|support|"
+    r"encourag(?:e|ed|es|ing)|advocat(?:e|ed|es|ing)|accept(?:ed|ance|ing)?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _ALLERGY_CONDITION_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"\b(?:allerg(?:y|ies|ic)|allergic\s+to)\b"
     r"(?=.{0,120}\b(?:animals?|pets?|reptiles?|cockroaches?|fur|puffy|itchy|"
@@ -870,6 +879,7 @@ def context_requirement_coverage(
     covered_evidence_features = _covered_evidence_features(items)
     requested_answer_shapes = _requested_answer_shapes(query)
     covered_answer_shapes = _covered_answer_shapes(items, query=query)
+    answer_shape_warnings = _answer_shape_warnings(query=query, items=items)
 
     missing_anchor_kinds = tuple(
         kind for kind in requested_anchor_kinds if kind not in covered_anchor_kinds
@@ -917,6 +927,7 @@ def context_requirement_coverage(
         "requested_answer_shapes": list(requested_answer_shapes),
         "covered_answer_shapes": list(covered_answer_shapes),
         "missing_answer_shapes": list(missing_answer_shapes),
+        "answer_shape_warnings": list(answer_shape_warnings),
         "item_count": len(items),
     }
 
@@ -944,6 +955,7 @@ def sanitize_context_requirement_coverage(value: object) -> dict[str, object]:
             "requested_answer_shapes": [],
             "covered_answer_shapes": [],
             "missing_answer_shapes": [],
+            "answer_shape_warnings": [],
             "item_count": 0,
         }
     requested_total = _safe_int(value.get("requested_total"))
@@ -973,6 +985,7 @@ def sanitize_context_requirement_coverage(value: object) -> dict[str, object]:
         "requested_answer_shapes": _safe_list(value.get("requested_answer_shapes")),
         "covered_answer_shapes": _safe_list(value.get("covered_answer_shapes")),
         "missing_answer_shapes": _safe_list(value.get("missing_answer_shapes")),
+        "answer_shape_warnings": _safe_list(value.get("answer_shape_warnings")),
         "item_count": _safe_int(value.get("item_count")),
     }
 
@@ -1278,7 +1291,10 @@ def _covered_answer_shapes(
             and _POLITICAL_INFERENCE_ANSWER_TEXT_RE.search(text)
         ) or (
             _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query)
-            and _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(text)
+            and (
+                _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(text)
+                or _COMMUNITY_MEMBERSHIP_SUPPORT_ONLY_ANSWER_TEXT_RE.search(text)
+            )
         ) or (
             _ALLERGY_CONDITION_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _ALLERGY_CONDITION_INFERENCE_ANSWER_TEXT_RE.search(text)
@@ -1317,6 +1333,28 @@ def _covered_answer_shapes(
         if _SUMMARY_ANSWER_TEXT_RE.search(text):
             shapes.append("summary")
     return _bounded_unique(shapes)
+
+
+def _answer_shape_warnings(
+    *,
+    query: str,
+    items: tuple[ContextItem, ...],
+) -> tuple[str, ...]:
+    if not _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query):
+        return ()
+    has_direct_membership = any(
+        _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(item.text)
+        for item in items
+    )
+    if has_direct_membership:
+        return ()
+    has_support_only_evidence = any(
+        _COMMUNITY_MEMBERSHIP_SUPPORT_ONLY_ANSWER_TEXT_RE.search(item.text)
+        for item in items
+    )
+    if not has_support_only_evidence:
+        return ()
+    return ("community_membership_support_only_without_self_identification",)
 
 
 def _is_social_old_query(query: str) -> bool:
