@@ -3,6 +3,8 @@ from dataclasses import replace
 import infinity_context_core.application.context_ranking as context_ranking_module
 from infinity_context_core.application.context_diagnostics import context_rank_key
 from infinity_context_core.application.context_query_expansion import (
+    QueryExpansion,
+    QueryExpansionPlan,
     build_query_expansion_plan,
 )
 from infinity_context_core.application.context_query_intent import build_query_anchor_intent
@@ -244,6 +246,55 @@ def test_query_plan_bm25_lexical_boost_uses_best_decomposed_query() -> None:
     assert boosted[0].diagnostics["provenance"]["bm25_lexical_query_reason"] == (
         "decomposition_artifact_evidence"
     )
+
+
+def test_query_plan_bm25_lexical_boost_reuses_shared_term_frequencies(
+    monkeypatch,
+) -> None:
+    items = (
+        _item(
+            "first",
+            score=0.7,
+            retrieval_source="keyword_chunks",
+            text="Alex moved the Atlas launch deadline after the call.",
+        ),
+        _item(
+            "second",
+            score=0.7,
+            retrieval_source="keyword_chunks",
+            text="Alex wrote a broad planning note about Atlas.",
+        ),
+    )
+    plan = QueryExpansionPlan(
+        original_query="Alex Atlas",
+        decompositions=(
+            QueryExpansion(query="Alex launch deadline", reason="decomposition_temporal_answer"),
+        ),
+        expansions=(
+            QueryExpansion(query="Alex call notes", reason="meeting_evidence_bridge"),
+            QueryExpansion(query="Alex Atlas project", reason="project_summary_bridge"),
+        ),
+    )
+    real_query_term_frequency = context_ranking_module.query_term_frequency
+    calls: list[str] = []
+
+    def counting_query_term_frequency(term, text_counts):
+        calls.append(term.raw)
+        return real_query_term_frequency(term, text_counts)
+
+    monkeypatch.setattr(
+        context_ranking_module,
+        "query_term_frequency",
+        counting_query_term_frequency,
+    )
+
+    apply_query_plan_bm25_lexical_boosts(
+        items,
+        plan=plan,
+        bm25_text_stats_cache={},
+    )
+
+    assert calls.count("alex") == len(items)
 
 
 def test_keyword_chunk_score_boosts_item_purchase_reason() -> None:

@@ -934,6 +934,9 @@ class _Bm25QueryMatch:
     query_coverage: float = 0.0
 
 
+_Bm25TermFrequencyCache = dict[tuple[int, LexicalQueryTerm], int]
+
+
 @dataclass(frozen=True)
 class _DeterministicRerankSignals:
     boost: float
@@ -984,6 +987,7 @@ def _best_bm25_query_matches(
         _bm25_prepared_item(item, text_stats_cache=bm25_text_stats_cache)
         for item in items
     )
+    term_frequency_cache: _Bm25TermFrequencyCache = {}
     best_matches = tuple(
         _Bm25QueryMatch(
             normalized_score=0.0,
@@ -1003,6 +1007,7 @@ def _best_bm25_query_matches(
             terms=terms,
             k1=k1,
             b=b,
+            term_frequency_cache=term_frequency_cache,
         )
         max_raw_score = max(raw_scores, default=0.0)
         if max_raw_score <= 0:
@@ -1080,8 +1085,17 @@ def _bm25_raw_scores_for_prepared(
     terms: tuple[LexicalQueryTerm, ...],
     k1: float,
     b: float,
+    term_frequency_cache: _Bm25TermFrequencyCache | None = None,
 ) -> tuple[tuple[_Bm25Document, ...], tuple[float, ...]]:
-    documents = tuple(_bm25_document(prepared=item, terms=terms) for item in prepared_items)
+    documents = tuple(
+        _bm25_document(
+            prepared=item,
+            prepared_index=index,
+            terms=terms,
+            term_frequency_cache=term_frequency_cache,
+        )
+        for index, item in enumerate(prepared_items)
+    )
     average_length = sum(document.length for document in documents) / len(documents)
     document_frequencies = tuple(
         sum(1 for document in documents if document.term_frequencies[index] > 0)
@@ -1112,15 +1126,41 @@ def _bm25_query_coverage(*, matched_term_count: int, query_term_count: int) -> f
 def _bm25_document(
     *,
     prepared: _Bm25PreparedItem,
+    prepared_index: int,
     terms: tuple[LexicalQueryTerm, ...],
+    term_frequency_cache: _Bm25TermFrequencyCache | None = None,
 ) -> _Bm25Document:
     return _Bm25Document(
         item=prepared.item,
         term_frequencies=tuple(
-            query_term_frequency(term, prepared.text_counts) for term in terms
+            _bm25_term_frequency(
+                prepared=prepared,
+                prepared_index=prepared_index,
+                term=term,
+                term_frequency_cache=term_frequency_cache,
+            )
+            for term in terms
         ),
         length=prepared.length,
     )
+
+
+def _bm25_term_frequency(
+    *,
+    prepared: _Bm25PreparedItem,
+    prepared_index: int,
+    term: LexicalQueryTerm,
+    term_frequency_cache: _Bm25TermFrequencyCache | None,
+) -> int:
+    if term_frequency_cache is None:
+        return query_term_frequency(term, prepared.text_counts)
+    cache_key = (prepared_index, term)
+    cached = term_frequency_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    frequency = query_term_frequency(term, prepared.text_counts)
+    term_frequency_cache[cache_key] = frequency
+    return frequency
 
 
 def _bm25_prepared_item(
