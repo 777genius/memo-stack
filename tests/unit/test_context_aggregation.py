@@ -1325,6 +1325,68 @@ def test_source_sibling_caps_generic_volunteer_career_noise() -> None:
     assert strong_score > weak_score
 
 
+def test_source_sibling_allows_degree_policy_inference_turn() -> None:
+    weak_text = "D9:2 John shared a diploma image after finishing his university degree."
+    strong_text = (
+        "D9:6 John: I'm considering going into policymaking because of my "
+        "degree and my passion for making a positive impact."
+    )
+    query = (
+        "John degree policymaking policy political science public administration "
+        "public affairs positive impact opportunities improvements"
+    )
+    rank = _SourceSiblingRank(
+        score=0.968,
+        group_priority=1,
+        turn_distance=0,
+        turn_delta=0,
+        group_level_seed=True,
+    )
+    weak_relevance = score_query_relevance(query=query, text=weak_text)
+    strong_relevance = score_query_relevance(query=query, text=strong_text)
+
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="degree_policy_inference_bridge",
+        text=weak_text,
+    )
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="degree_policy_inference_bridge",
+        text=strong_text,
+    )
+    assert _source_sibling_score_cap(
+        expansion_reason="degree_policy_inference_bridge",
+        relevance=weak_relevance,
+        text=weak_text,
+    ) == 0.976
+    assert (
+        _source_sibling_score_cap(
+            expansion_reason="degree_policy_inference_bridge",
+            relevance=strong_relevance,
+            text=strong_text,
+        )
+        is None
+    )
+    assert _source_sibling_score(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="degree_policy_inference_bridge",
+        text=strong_text,
+    ) > _source_sibling_score(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="degree_policy_inference_bridge",
+        text=weak_text,
+    )
+
+
 def test_source_sibling_filters_visual_noise_for_pottery_inventory_query() -> None:
     query = (
         "melanie types pottery kids made type kind finished created project "

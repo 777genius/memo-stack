@@ -108,6 +108,16 @@ _VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_DEGREE_POLICY_SOURCE_SIBLING_RE = re.compile(
+    r"\b("
+    r"policymaking\b(?=.{0,120}\bdegree\b)|"
+    r"degree\b(?=.{0,120}\bpolicymaking\b)|"
+    r"degree\s+related\s+to\s+policymaking|"
+    r"public\s+(?:policy|administration|affairs)|"
+    r"political\s+science"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
 _POST_EVENT_ACTIVITY_SOURCE_SIBLING_RE = re.compile(
     r"\b(?:road\s*trip|roadtrip)\b(?=.{0,180}\b(?:yesterday|recent|"
     r"just\s+did|after\s+the\s+(?:road\s*trip|drive)|relax))|"
@@ -236,6 +246,10 @@ def source_sibling_score(
         expansion_reason=expansion_reason,
         text=text,
     )
+    degree_policy_companion = _is_degree_policy_source_sibling_strong(
+        expansion_reason=expansion_reason,
+        text=text,
+    )
     generic_behavior_companion = _is_generic_behavior_source_sibling_strong(
         expansion_query=expansion_query,
         expansion_reason=expansion_reason,
@@ -251,6 +265,7 @@ def source_sibling_score(
         not relevance_specific
         and not visual_referent
         and not temporal_state_companion
+        and not degree_policy_companion
         and not generic_behavior_companion
         and not count_activity_followup
     ):
@@ -328,6 +343,11 @@ def source_sibling_score_cap(
     relevance: QueryRelevance,
     text: str,
 ) -> float | None:
+    if _is_degree_policy_source_sibling_strong(
+        expansion_reason=expansion_reason,
+        text=text,
+    ):
+        return None
     if (
         expansion_reason in PRECISE_TURN_SOURCE_SIBLING_REASONS
         and relevance.distinctive_term_hits < _PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS
@@ -351,6 +371,14 @@ def source_sibling_score_cap(
     if (
         expansion_reason == "volunteer_career_inference_bridge"
         and not _is_volunteer_career_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason == "degree_policy_inference_bridge"
+        and not _is_degree_policy_source_sibling_strong(
+            expansion_reason=expansion_reason,
+            text=text,
+        )
     ):
         return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
     if (
@@ -464,6 +492,11 @@ def source_sibling_relevance_allowed(
     if expansion_reason == _GENERIC_BEHAVIOR_SOURCE_SIBLING_REASON:
         return _is_generic_behavior_source_sibling_strong(
             expansion_query=expansion_query,
+            expansion_reason=expansion_reason,
+            text=text,
+        )
+    if expansion_reason == "degree_policy_inference_bridge":
+        return _is_degree_policy_source_sibling_strong(
             expansion_reason=expansion_reason,
             text=text,
         )
@@ -755,6 +788,16 @@ def _is_volunteer_career_source_sibling_strong(text: str) -> bool:
         _VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE.search(text) is not None
         and _VOLUNTEER_CAREER_SOURCE_SIBLING_SIGNAL_RE.search(text) is not None
     )
+
+
+def _is_degree_policy_source_sibling_strong(
+    *,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if expansion_reason != "degree_policy_inference_bridge":
+        return False
+    return _DEGREE_POLICY_SOURCE_SIBLING_RE.search(text) is not None
 
 
 def _is_post_event_activity_source_sibling_strong(text: str) -> bool:
