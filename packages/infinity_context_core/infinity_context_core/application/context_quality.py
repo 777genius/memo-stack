@@ -103,6 +103,7 @@ def retrieval_quality_summary(
         stale_items=stale_items,
         missing_requirement_count=_missing_requirement_count(diagnostics),
         critical_missing_requirement_count=_critical_missing_requirement_count(diagnostics),
+        answer_shape_warning_count=_answer_shape_warning_count(diagnostics),
     )
     return {
         "schema_version": "retrieval-quality-v1",
@@ -222,6 +223,7 @@ def _answerability_status(
     stale_items: int,
     missing_requirement_count: int,
     critical_missing_requirement_count: int,
+    answer_shape_warning_count: int,
 ) -> str:
     if item_count <= 0:
         return "insufficient_context"
@@ -229,12 +231,14 @@ def _answerability_status(
         return "needs_review"
     if critical_missing_requirement_count > 0:
         return "insufficient_evidence"
+    if evidence_strength == "weak":
+        return "insufficient_evidence"
     if missing_requirement_count > 0 and evidence_strength == "strong":
+        return "usable_with_caveats"
+    if answer_shape_warning_count > 0:
         return "usable_with_caveats"
     if evidence_strength == "strong":
         return "grounded"
-    if evidence_strength == "weak":
-        return "insufficient_evidence"
     return "usable_with_caveats"
 
 
@@ -344,10 +348,11 @@ def _retrieval_quality_gaps(
 
 def _requirement_coverage_gaps(diagnostics: dict[str, object]) -> list[str]:
     coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
+    warning_gaps = _safe_string_list(coverage.get("answer_shape_warnings"))
     if _non_negative_int(coverage.get("missing_total"), default=0) <= 0:
-        return []
+        return warning_gaps[:_MAX_ACTIONABLE_GAPS]
 
-    gaps = ["explicit_requirements_missing"]
+    gaps = [*warning_gaps, "explicit_requirements_missing"]
     for feature in _safe_string_list(coverage.get("missing_evidence_features")):
         gaps.append(f"missing_{feature}_requirement")
     for modality in _safe_string_list(coverage.get("missing_modalities")):
@@ -362,6 +367,11 @@ def _requirement_coverage_gaps(diagnostics: dict[str, object]) -> list[str]:
 def _missing_requirement_count(diagnostics: dict[str, object]) -> int:
     coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
     return _non_negative_int(coverage.get("missing_total"), default=0)
+
+
+def _answer_shape_warning_count(diagnostics: dict[str, object]) -> int:
+    coverage = _as_dict(diagnostics.get("context_requirement_coverage"))
+    return len(_safe_string_list(coverage.get("answer_shape_warnings")))
 
 
 def _critical_missing_requirement_count(diagnostics: dict[str, object]) -> int:

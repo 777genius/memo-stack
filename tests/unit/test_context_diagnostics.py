@@ -827,6 +827,55 @@ def test_context_bundle_diagnostics_report_strong_retrieval_quality_summary() ->
     }
 
 
+def test_context_quality_uses_answer_shape_warnings_as_caveats() -> None:
+    item = ContextItem(
+        item_id="melanie_support_only",
+        item_type="chunk",
+        text=(
+            "Melanie supports Caroline's transgender journey and encourages "
+            "LGBTQ community acceptance as an ally."
+        ),
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="D3:5",
+                quote_preview="Melanie supports Caroline as an ally.",
+            ),
+        ),
+        diagnostics={"retrieval_sources": ["keyword_chunks"]},
+    )
+
+    diagnostics = normalize_context_bundle_diagnostics(
+        {
+            "context_requirement_coverage": {
+                "requested_total": 1,
+                "covered_total": 1,
+                "missing_total": 0,
+                "requested_answer_shapes": ["inference"],
+                "covered_answer_shapes": ["inference"],
+                "missing_answer_shapes": [],
+                "answer_shape_warnings": [
+                    "community_membership_support_only_without_self_identification"
+                ],
+                "item_count": 1,
+            }
+        },
+        items=(item,),
+    )
+
+    summary = diagnostics["retrieval_quality_summary"]
+    assert summary["evidence_strength"] == "strong"
+    assert summary["answerability_status"] == "usable_with_caveats"
+    assert summary["recommended_response_policy"] == "answer_with_caveat_and_citations"
+    assert summary["actionable_gaps"] == [
+        "community_membership_support_only_without_self_identification"
+    ]
+    assert summary["answerability_reasons"] == [
+        "community_membership_support_only_without_self_identification"
+    ]
+
+
 def test_context_quality_downgrades_when_explicit_visual_region_requirement_missing() -> None:
     item = ContextItem(
         item_id="chunk_atlas",
