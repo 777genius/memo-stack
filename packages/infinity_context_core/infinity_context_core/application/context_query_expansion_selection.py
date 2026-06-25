@@ -192,6 +192,10 @@ def should_skip_expansion_rule(
         return True
     if reason == "career_intent_bridge" and {"future", "job"}.issubset(raw_tokens):
         return True
+    if reason == "career_intent_bridge" and raw_tokens.intersection(
+        {"because", "reason", "why"}
+    ):
+        return True
     if reason == "business_commonality_bridge":
         return not _BROAD_COMMONALITY_QUERY_RE.search(query)
     if reason == "children_count_sibling_bridge" and not raw_tokens.intersection(

@@ -153,18 +153,17 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"kind", "art"}),
-            (
-                "art painting artwork art show preview abstract style kind type "
-                "inclusivity diversity representation identity self acceptance"
-            ),
+            _terms._ART_STYLE_EXPANSION,
             "art_style_bridge",
         ),
     (
             frozenset({"type", "art"}),
-            (
-                "art painting artwork art show preview abstract style kind type "
-                "inclusivity diversity representation identity self acceptance"
-            ),
+            _terms._ART_STYLE_EXPANSION,
+            "art_style_bridge",
+        ),
+    (
+            frozenset({"style", "art"}),
+            _terms._ART_STYLE_EXPANSION,
             "art_style_bridge",
         ),
     (
@@ -364,6 +363,11 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"alternative", "career"}),
+            _terms._ANIMAL_CAREER_INFERENCE_EXPANSION,
+            "animal_career_inference_bridge",
+        ),
+    (
+            frozenset({"animal", "career"}),
             _terms._ANIMAL_CAREER_INFERENCE_EXPANSION,
             "animal_career_inference_bridge",
         ),

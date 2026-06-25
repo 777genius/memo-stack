@@ -227,18 +227,22 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"pursue", "career"}),
-            (
-                "current career option pursue looking into counseling counselor mental "
-                "health jobs education options next steps figure out work goal decided"
-            ),
+            _terms._CAREER_INTENT_EXPANSION,
             "career_intent_bridge",
         ),
     (
             frozenset({"career", "option"}),
-            (
-                "current career option pursue looking into counseling counselor mental "
-                "health jobs education options next steps figure out work goal decided"
-            ),
+            _terms._CAREER_INTENT_EXPANSION,
+            "career_intent_bridge",
+        ),
+    (
+            frozenset({"career", "want"}),
+            _terms._CAREER_INTENT_EXPANSION,
+            "career_intent_bridge",
+        ),
+    (
+            frozenset({"career", "wants"}),
+            _terms._CAREER_INTENT_EXPANSION,
             "career_intent_bridge",
         ),
     (

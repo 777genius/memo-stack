@@ -567,6 +567,7 @@ def test_query_expansion_covers_current_occupation_without_future_job_noise() ->
     occupation = build_query_expansion_plan("What does Alex do for work?")
     russian_occupation = build_query_expansion_plan("Кем работает Алекс?")
     future_job = build_query_expansion_plan("What job might Maria pursue in the future?")
+    career_want = build_query_expansion_plan("What career does Alex want?")
 
     assert _expansion_query(occupation, "current_occupation_bridge").startswith("Alex ")
     assert "current job work occupation profession" in _expansion_query(
@@ -582,6 +583,10 @@ def test_query_expansion_covers_current_occupation_without_future_job_noise() ->
         expansion.reason for expansion in future_job.expansions
     }
     assert "career_intent_bridge" not in {expansion.reason for expansion in future_job.expansions}
+    assert "current career option pursue" in _expansion_query(
+        career_want,
+        "career_intent_bridge",
+    )
     volunteer_career = _expansion_query(
         future_job,
         "volunteer_career_inference_bridge",
@@ -616,6 +621,7 @@ def test_query_expansion_covers_activity_location_and_destress_bridges() -> None
     russian_relax = build_query_expansion_plan("Как Мелани расслабляется после работы?")
     russian_stress = build_query_expansion_plan("Что Мелани делает чтобы снять стресс?")
     art_style = build_query_expansion_plan("What kind of art does Caroline make?")
+    direct_art_style = build_query_expansion_plan("What art style does Caroline like?")
 
     assert "mountains beach forest" in _expansion_query(
         camped,
@@ -709,6 +715,10 @@ def test_query_expansion_covers_activity_location_and_destress_bridges() -> None
     )
     assert "art show preview abstract style" in _expansion_query(
         art_style,
+        "art_style_bridge",
+    )
+    assert "art show preview abstract style" in _expansion_query(
+        direct_art_style,
         "art_style_bridge",
     )
 
@@ -1154,8 +1164,13 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
 
 def test_query_expansion_skips_current_career_intent_for_alternative_career() -> None:
     plan = build_query_expansion_plan("What alternative career might Nate consider after gaming?")
+    animal_career = build_query_expansion_plan("What animal career would Nate like?")
 
     assert "career_intent_bridge" not in {item.reason for item in plan.expansions}
+    assert "alternative career animal keeper" in _expansion_query(
+        animal_career,
+        "animal_career_inference_bridge",
+    )
 
 
 def test_query_expansion_skips_camping_detail_for_broad_activity_query() -> None:

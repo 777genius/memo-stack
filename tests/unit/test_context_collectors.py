@@ -267,6 +267,31 @@ def test_protected_query_head_keys_keep_classical_music_head() -> None:
     assert _protected_query_head_keys(rankings) == ("classical_music_match",)
 
 
+def test_protected_query_head_keys_keep_task_failure_and_inference_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:adoption_current_milestone_bridge": ("adoption_match", "generic_b"),
+        "2:animal_career_inference_bridge": ("animal_career_match", "generic_c"),
+        "3:art_style_bridge": ("art_style_match", "generic_d"),
+        "4:career_intent_bridge": ("career_intent_match", "generic_e"),
+        "5:deadline_commitment_bridge": ("deadline_match", "generic_f"),
+        "6:followup_task_bridge": ("followup_match", "generic_g"),
+        "7:gotcha_failure_bridge": ("failure_match", "generic_h"),
+        "8:post_event_activity_timing_bridge": ("post_event_match", "generic_i"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "adoption_match",
+        "animal_career_match",
+        "art_style_match",
+        "career_intent_match",
+        "deadline_match",
+        "followup_match",
+        "failure_match",
+        "post_event_match",
+    )
+
+
 def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -415,6 +440,39 @@ def test_bounded_retrieval_queries_select_vivaldi_preference_bridge() -> None:
         "original_query",
         "classical_music_preference_bridge",
         "decomposition_inference_support",
+    ]
+
+
+def test_bounded_retrieval_queries_select_direct_career_and_art_bridges() -> None:
+    career = build_query_expansion_plan("What career does Alex want?")
+    art = build_query_expansion_plan("What art style does Alex like?")
+    animal = build_query_expansion_plan("What animal career would Alex like?")
+
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        career,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "career_intent_bridge",
+    ]
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        art,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "art_style_bridge",
+    ]
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        animal,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "animal_career_inference_bridge",
+        "decomposition_inference_support",
+        "decomposition_current_preference_or_goal",
     ]
 
 

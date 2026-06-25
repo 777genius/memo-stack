@@ -129,6 +129,14 @@ _CLASSICAL_MUSIC_PREFERENCE_EXPANSION = (
     "music classical fan composer bach mozart vivaldi orchestra symphony "
     "artist song enjoy four seasons"
 )
+_CAREER_INTENT_EXPANSION = (
+    "current career option pursue looking into counseling counselor mental "
+    "health jobs education options next steps figure out work goal decided"
+)
+_ART_STYLE_EXPANSION = (
+    "art painting artwork art show preview abstract style kind type "
+    "inclusivity diversity representation identity self acceptance"
+)
 _ANIMAL_CAREER_INFERENCE_EXPANSION = (
     "alternative career animal keeper zookeeper zoo pets reptiles turtles care "
     "habitat responsible responsibility animal lover"
