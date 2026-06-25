@@ -193,6 +193,21 @@ _INVENTORY_FRIEND_PLACE_EVIDENCE_RE = re.compile(
     r"(?:gym|church).{0,100}\b(?:supportive|welcoming|community|people))\b",
     re.IGNORECASE | re.DOTALL,
 )
+_INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE = re.compile(
+    r"\b(?:homeless\s+shelter|shelter)\b(?=.{0,80}\b"
+    r"(?:i\s+volunteer\s+at|where\s+(?:she\s+)?volunteers?|"
+    r"donated\s+(?:my\s+|her\s+)?old\s+car))|"
+    r"\b(?:i\s+volunteer\s+at|where\s+(?:she\s+)?volunteers?|"
+    r"donated\s+(?:my\s+|her\s+)?old\s+car)\b(?=.{0,80}\b"
+    r"(?:homeless\s+shelter|shelter))",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE = re.compile(
+    r"\b(?:gave\s+a\s+few\s+talks|received\s+lots\s+of\s+compliments|"
+    r"fundraiser|ring-toss|baked\s+goods?|dropped\s+off|"
+    r"received\s+a\s+medal|front\s+desk|kids?\s+event)\b",
+    re.IGNORECASE,
+)
 _INVENTORY_SHELTER_QUERY_RE = re.compile(
     r"\bshelters?\b",
     re.IGNORECASE,
@@ -800,6 +815,17 @@ def inventory_list_rerank_signal(
     item: ContextItem,
     relevance: QueryRelevance,
 ) -> DomainRerankSignal:
+    if _inventory_friend_place_shelter_anchor_evidence(
+        query=query,
+        query_reason=query_reason,
+        item=item,
+    ):
+        return DomainRerankSignal(
+            boost=0.09,
+            reason="friend_place_shelter_anchor_evidence",
+            rank_signal_key="friend_place_shelter_anchor_evidence",
+            rank_signal=3.0,
+        )
     if _inventory_list_exact_evidence(query=query, query_reason=query_reason, item=item):
         return DomainRerankSignal(boost=0.058, reason="inventory_list_exact_evidence")
     if _inventory_list_wrong_owner_evidence(query=query, query_reason=query_reason, item=item):
@@ -1562,6 +1588,22 @@ def _inventory_list_exact_evidence(
     if _INVENTORY_SHELTER_QUERY_RE.search(query):
         return _INVENTORY_SHELTER_EVIDENCE_RE.search(text) is not None
     return False
+
+
+def _inventory_friend_place_shelter_anchor_evidence(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    if not _is_inventory_list_candidate(query_reason=query_reason, item=item):
+        return False
+    if not _INVENTORY_FRIEND_PLACE_QUERY_RE.search(query):
+        return False
+    text = item.text
+    if _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE.search(text):
+        return False
+    return _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE.search(text) is not None
 
 
 def _inventory_list_weak_evidence(

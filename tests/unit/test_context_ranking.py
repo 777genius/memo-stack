@@ -8325,6 +8325,58 @@ def test_deterministic_rerank_prefers_inventory_exact_place_over_generic_noise()
     )
 
 
+def test_deterministic_rerank_prefers_friend_place_shelter_anchor() -> None:
+    query = "Where has Maria made friends?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    shelter_anchor = _item(
+        "d2_shelter_anchor",
+        score=0.94,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D2:1 Maria donated her old car to a homeless shelter where she volunteers."
+        ),
+        score_signals={"query_expansion_reason": "friend_place_shelter_inventory_bridge"},
+    )
+    later_activity = _item(
+        "d11_shelter_talks",
+        score=0.945,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D11:10 Maria recently gave a few talks at the homeless shelter "
+            "she volunteers at."
+        ),
+        score_signals={"query_expansion_reason": "friend_place_shelter_inventory_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (later_activity, shelter_anchor),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert context_rank_key(by_id["d2_shelter_anchor"]) < context_rank_key(
+        by_id["d11_shelter_talks"]
+    )
+    assert (
+        "friend_place_shelter_anchor_evidence"
+        in by_id["d2_shelter_anchor"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        by_id["d2_shelter_anchor"].diagnostics["score_signals"][
+            "friend_place_shelter_anchor_evidence"
+        ]
+        == 3.0
+    )
+    assert (
+        "friend_place_shelter_anchor_evidence"
+        not in by_id["d11_shelter_talks"].diagnostics["score_signals"]
+    )
+
+
 def test_deterministic_rerank_keeps_inventory_slots_query_specific() -> None:
     query = "What types of pottery have Melanie and her kids made?"
     plan = build_query_expansion_plan(query)

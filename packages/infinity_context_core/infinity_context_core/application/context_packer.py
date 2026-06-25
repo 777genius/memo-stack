@@ -212,6 +212,21 @@ _INVENTORY_SHELTER_SLOT_RE = re.compile(
     r"\b(?:homeless\s+shelter|dog\s+shelter|animal\s+shelter|shelter)\b",
     re.IGNORECASE,
 )
+_INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE = re.compile(
+    r"\b(?:homeless\s+shelter|shelter)\b(?=.{0,80}\b"
+    r"(?:i\s+volunteer\s+at|where\s+(?:she\s+)?volunteers?|"
+    r"donated\s+(?:my\s+|her\s+)?old\s+car))|"
+    r"\b(?:i\s+volunteer\s+at|where\s+(?:she\s+)?volunteers?|"
+    r"donated\s+(?:my\s+|her\s+)?old\s+car)\b(?=.{0,80}\b"
+    r"(?:homeless\s+shelter|shelter))",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE = re.compile(
+    r"\b(?:gave\s+a\s+few\s+talks|received\s+lots\s+of\s+compliments|"
+    r"fundraiser|ring-toss|baked\s+goods?|dropped\s+off|"
+    r"received\s+a\s+medal|front\s+desk|kids?\s+event)\b",
+    re.IGNORECASE,
+)
 _INVENTORY_GYM_SLOT_RE = re.compile(
     r"\b(?:joined\s+(?:a\s+|the\s+|nearby\s+|local\s+)?gym|gym)\b",
     re.IGNORECASE,
@@ -1253,6 +1268,7 @@ def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | st
         signal_rank = (
             -_numeric_signal(signals.get("item_purchase_object_evidence")),
             -_numeric_signal(signals.get("symbol_importance_visual_evidence")),
+            -_numeric_signal(signals.get("friend_place_shelter_anchor_evidence")),
             -_numeric_signal(signals.get("distinctive_term_hits")),
             -_numeric_signal(signals.get("phrase_bigram_hits")),
         )
@@ -1260,6 +1276,7 @@ def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | st
         signal_rank = (
             -_numeric_signal(signals.get("item_purchase_object_evidence")),
             -_numeric_signal(signals.get("symbol_importance_visual_evidence")),
+            -_numeric_signal(signals.get("friend_place_shelter_anchor_evidence")),
             -_numeric_signal(signals.get("phrase_bigram_hits")),
             -_numeric_signal(signals.get("distinctive_term_hits")),
         )
@@ -1459,6 +1476,8 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
         return _charity_brand_sponsorship_answer_content_rank(item.text)
     if query_reason == "exercise_activity_inventory_bridge":
         return _exercise_activity_answer_content_rank(item.text)
+    if query_reason == "friend_place_shelter_inventory_bridge":
+        return _friend_place_shelter_answer_content_rank(item.text)
     if query_reason == "animal_care_instruction_bridge":
         return _animal_care_instruction_content_rank(item.text)
     if query_reason != "meteor_shower_feeling_bridge":
@@ -1530,6 +1549,18 @@ def _exercise_activity_answer_content_rank(text: str) -> int:
         return 1
     if slot == "generic_exercise":
         return 2
+    return 3
+
+
+def _friend_place_shelter_answer_content_rank(text: str) -> int:
+    if _INVENTORY_FRIEND_PLACE_DIRECT_RE.search(text):
+        return 0
+    if _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE.search(text):
+        return 2
+    if _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE.search(text):
+        return 0
+    if _INVENTORY_SHELTER_SLOT_RE.search(text):
+        return 1
     return 3
 
 

@@ -2677,6 +2677,62 @@ def test_answer_support_order_prioritizes_inventory_friend_places() -> None:
     assert candidates[ordered[-1]].item_id == "d27_generic"
 
 
+def test_answer_support_prefers_friend_place_shelter_anchor_over_later_activity_repeat() -> None:
+    anchor = ContextItem(
+        item_id="d2_shelter_anchor",
+        item_type="chunk",
+        text=(
+            "D2:1 Maria donated her old car to a homeless shelter where she volunteers."
+        ),
+        score=0.9546,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_2:D2:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "friend_place_shelter_inventory_bridge",
+                "distinctive_term_hits": 9,
+                "phrase_bigram_hits": 2,
+            },
+        },
+    )
+    later_activity = ContextItem(
+        item_id="d11_shelter_talks",
+        item_type="chunk",
+        text=(
+            "D11:10 Maria recently gave a few talks at the homeless shelter "
+            "she volunteers at and received lots of compliments."
+        ),
+        score=0.9621,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_11:D11:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "friend_place_shelter_inventory_bridge",
+                "distinctive_term_hits": 9,
+                "phrase_bigram_hits": 2,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([later_activity, anchor])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert _answer_support_family_item_key(anchor) < _answer_support_family_item_key(
+        later_activity
+    )
+    assert candidates[ordered[0]].item_id == "d2_shelter_anchor"
+
+
 def test_answer_support_family_splits_inventory_place_slots() -> None:
     items = (
         ContextItem(
