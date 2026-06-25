@@ -136,6 +136,17 @@ def test_inference_evidence_signal_boosts_direct_trait_evidence() -> None:
     assert signal.reason == "inference_behavior_evidence"
 
 
+def test_inference_evidence_signal_boosts_direct_reliability_trait_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered reliable?",
+        text="Alex is reliable.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_behavior_evidence"
+
+
 def test_inference_evidence_signal_rejects_direct_trait_identity_mismatch() -> None:
     signal = inference_evidence_rerank_signal(
         query="Would Alex be considered helpful?",
@@ -154,8 +165,8 @@ def test_inference_evidence_signal_does_not_boost_behaviorless_topic_overlap() -
     )
 
     assert signal.boost == 0
-    assert signal.penalty == 0
-    assert signal.reason == ""
+    assert signal.penalty > 0
+    assert signal.reason == "inference_behavior_topic_only_noise"
 
 
 def test_inference_evidence_signal_does_not_boost_identity_only_behavior_overlap() -> None:

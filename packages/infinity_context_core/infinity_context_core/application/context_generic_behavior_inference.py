@@ -138,6 +138,16 @@ _RELIABILITY_TRAIT_TEXT_TERMS = frozenset(
         "trustworthy",
     }
 )
+_RELIABILITY_DIRECT_TRAIT_TEXT_TERMS = frozenset(
+    {
+        "dependable",
+        "reliability",
+        "reliable",
+        "responsibility",
+        "responsible",
+        "trustworthy",
+    }
+)
 _ORGANIZED_TRAIT_QUERY_TERMS = frozenset({"organized", "organised", "planner"})
 _ORGANIZED_TRAIT_TEXT_TERMS = frozenset(
     {"coordinated", "managed", "organized", "organised", "planned", "prepared", "scheduled"}
@@ -221,7 +231,10 @@ def generic_behavior_inference_signal(*, query: str, text: str) -> AnswerEvidenc
                 boost=0.04,
                 reason="inference_behavior_evidence",
             )
-        if _trait_evidence_matches(query_tokens=query_tokens, text_tokens=text_tokens):
+        if _trait_direct_or_topic_matches(
+            query_tokens=query_tokens,
+            text_tokens=text_tokens,
+        ):
             return AnswerEvidenceSignal(
                 penalty=0.03,
                 reason="inference_behavior_topic_only_noise",
@@ -268,12 +281,35 @@ def _direct_trait_evidence_matches(
     text: str,
     text_tokens: frozenset[str],
 ) -> bool:
-    if not _trait_evidence_matches(query_tokens=query_tokens, text_tokens=text_tokens):
+    if not _trait_direct_or_topic_matches(
+        query_tokens=query_tokens,
+        text_tokens=text_tokens,
+    ):
         return False
     identity_tokens = _capitalized_identity_terms(query)
     if identity_tokens and not identity_tokens & text_tokens:
         return False
     return _DIRECT_TRAIT_ASSERTION_RE.search(text) is not None
+
+
+def _trait_direct_or_topic_matches(
+    *,
+    query_tokens: frozenset[str],
+    text_tokens: frozenset[str],
+) -> bool:
+    if query_tokens & _RELIABILITY_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _RELIABILITY_DIRECT_TRAIT_TEXT_TERMS)
+    if query_tokens & _ORGANIZED_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _ORGANIZED_TRAIT_TEXT_TERMS)
+    if query_tokens & _CREATIVE_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _CREATIVE_TRAIT_TEXT_TERMS)
+    if query_tokens & _HELPFUL_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _HELPFUL_TRAIT_TEXT_TERMS)
+    if query_tokens & _DISCIPLINED_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _DISCIPLINED_TRAIT_TEXT_TERMS)
+    if query_tokens & _CAREFUL_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _CAREFUL_TRAIT_TEXT_TERMS)
+    return False
 
 
 def _salient_query_terms(
