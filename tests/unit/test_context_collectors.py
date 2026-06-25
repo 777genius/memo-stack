@@ -245,6 +245,28 @@ def test_protected_query_head_keys_keep_inventory_object_heads() -> None:
     )
 
 
+def test_protected_query_head_keys_keep_running_reason_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:running_reason_bridge": ("running_reason_match", "generic_b"),
+        "2:running_reason_question_bridge": ("running_question_match", "generic_c"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "running_reason_match",
+        "running_question_match",
+    )
+
+
+def test_protected_query_head_keys_keep_classical_music_head() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:classical_music_preference_bridge": ("classical_music_match", "generic_b"),
+    }
+
+    assert _protected_query_head_keys(rankings) == ("classical_music_match",)
+
+
 def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -369,6 +391,30 @@ def test_bounded_retrieval_queries_keep_exercise_inventory_for_activity_query() 
         "activity_visual_selfcare_bridge",
         "exercise_activity_inventory_bridge",
         "hobby_interest_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_select_running_reason_question_bridge() -> None:
+    plan = build_query_expansion_plan("What was Alex running for?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "running_reason_question_bridge",
+        "running_reason_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_select_vivaldi_preference_bridge() -> None:
+    plan = build_query_expansion_plan("Would Melanie likely enjoy Vivaldi?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "classical_music_preference_bridge",
+        "decomposition_inference_support",
     ]
 
 

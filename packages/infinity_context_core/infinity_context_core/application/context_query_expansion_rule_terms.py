@@ -117,6 +117,18 @@ _DESTRESS_ACTIVITY_EXPANSION = (
     "расслабиться расслабляется расслаблялась отдохнуть отдыхает снять стресс "
     "успокоиться спокойствие терапевтичный прояснить голову"
 )
+_RUNNING_REASON_EXPANSION = (
+    "running run farther longer de-stress destress clear mind headspace "
+    "mood boost shoes purple walking or running what got into running"
+)
+_RUNNING_REASON_QUESTION_EXPANSION = (
+    "what got you into running got into running why started running "
+    "reason asked question walking or running"
+)
+_CLASSICAL_MUSIC_PREFERENCE_EXPANSION = (
+    "music classical fan composer bach mozart vivaldi orchestra symphony "
+    "artist song enjoy four seasons"
+)
 _ANIMAL_CAREER_INFERENCE_EXPANSION = (
     "alternative career animal keeper zookeeper zoo pets reptiles turtles care "
     "habitat responsible responsibility animal lover"

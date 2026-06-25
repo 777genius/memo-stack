@@ -158,6 +158,8 @@ def test_query_expansion_covers_temporal_figurine_purchase_questions() -> None:
 
 def test_query_expansion_covers_running_reason_questions() -> None:
     plan = build_query_expansion_plan("What is Melanie's reason for getting into running?")
+    started = build_query_expansion_plan("Why did Melanie start running?")
+    running_for = build_query_expansion_plan("What was Melanie running for?")
 
     bridge = _expansion_query(plan, "running_reason_bridge")
 
@@ -167,6 +169,14 @@ def test_query_expansion_covers_running_reason_questions() -> None:
     assert "what got you into running" in _expansion_query(
         plan,
         "running_reason_question_bridge",
+    )
+    assert "why started running" in _expansion_query(
+        started,
+        "running_reason_question_bridge",
+    )
+    assert "walking or running" in _expansion_query(
+        running_for,
+        "running_reason_bridge",
     )
 
 
@@ -1226,6 +1236,8 @@ def test_query_expansion_covers_books_painted_subject_and_music_bridges() -> Non
     music = build_query_expansion_plan(
         "Would Melanie likely enjoy the song The Four Seasons by Vivaldi?"
     )
+    vivaldi = build_query_expansion_plan("Would Melanie likely enjoy Vivaldi?")
+    four_seasons = build_query_expansion_plan("Would Melanie likely enjoy The Four Seasons?")
 
     assert "classic childrens classics" in _expansion_query(
         books,
@@ -1241,6 +1253,14 @@ def test_query_expansion_covers_books_painted_subject_and_music_bridges() -> Non
     )
     assert "music classical fan composer" in _expansion_query(
         music,
+        "classical_music_preference_bridge",
+    )
+    assert "vivaldi orchestra symphony" in _expansion_query(
+        vivaldi,
+        "classical_music_preference_bridge",
+    )
+    assert "four seasons" in _expansion_query(
+        four_seasons,
         "classical_music_preference_bridge",
     )
 

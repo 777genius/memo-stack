@@ -102,34 +102,42 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"reason", "running"}),
-            (
-                "running run farther longer de-stress destress clear mind headspace "
-                "mood boost shoes purple walking or running what got into running"
-            ),
+            _terms._RUNNING_REASON_EXPANSION,
             "running_reason_bridge",
         ),
     (
             frozenset({"reason", "running"}),
-            (
-                "what got you into running got into running why started running "
-                "reason asked question walking or running"
-            ),
+            _terms._RUNNING_REASON_QUESTION_EXPANSION,
             "running_reason_question_bridge",
         ),
     (
             frozenset({"getting", "running"}),
-            (
-                "running run farther longer de-stress destress clear mind headspace "
-                "mood boost shoes purple walking or running what got into running"
-            ),
+            _terms._RUNNING_REASON_EXPANSION,
             "running_reason_bridge",
         ),
     (
             frozenset({"getting", "running"}),
-            (
-                "what got you into running got into running why started running "
-                "reason asked question walking or running"
-            ),
+            _terms._RUNNING_REASON_QUESTION_EXPANSION,
+            "running_reason_question_bridge",
+        ),
+    (
+            frozenset({"start", "running"}),
+            _terms._RUNNING_REASON_EXPANSION,
+            "running_reason_bridge",
+        ),
+    (
+            frozenset({"start", "running"}),
+            _terms._RUNNING_REASON_QUESTION_EXPANSION,
+            "running_reason_question_bridge",
+        ),
+    (
+            frozenset({"running", "for"}),
+            _terms._RUNNING_REASON_EXPANSION,
+            "running_reason_bridge",
+        ),
+    (
+            frozenset({"running", "for"}),
+            _terms._RUNNING_REASON_QUESTION_EXPANSION,
             "running_reason_question_bridge",
         ),
     (
@@ -533,18 +541,22 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"song"}),
-            (
-                "music classical fan composer bach mozart vivaldi orchestra symphony "
-                "artist song enjoy four seasons"
-            ),
+            _terms._CLASSICAL_MUSIC_PREFERENCE_EXPANSION,
             "classical_music_preference_bridge",
         ),
     (
             frozenset({"music"}),
-            (
-                "music classical fan composer bach mozart vivaldi orchestra symphony "
-                "artist song enjoy four seasons"
-            ),
+            _terms._CLASSICAL_MUSIC_PREFERENCE_EXPANSION,
+            "classical_music_preference_bridge",
+        ),
+    (
+            frozenset({"vivaldi"}),
+            _terms._CLASSICAL_MUSIC_PREFERENCE_EXPANSION,
+            "classical_music_preference_bridge",
+        ),
+    (
+            frozenset({"four", "seasons"}),
+            _terms._CLASSICAL_MUSIC_PREFERENCE_EXPANSION,
             "classical_music_preference_bridge",
         ),
     (
