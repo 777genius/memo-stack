@@ -114,6 +114,14 @@ _BEHAVIOR_EVIDENCE_TERMS = frozenset(
         "worked",
     }
 )
+_DIRECT_TRAIT_ASSERTION_RE = re.compile(
+    r"\b("
+    r"is|was|seems?|seemed|looks?|looked|sounds?|sounded|"
+    r"became|becomes|known\s+as|considered|called|described\s+as|"
+    r"very|really|quite|so"
+    r")\b",
+    re.IGNORECASE,
+)
 _RELIABILITY_TRAIT_QUERY_TERMS = frozenset(
     {"dependable", "reliable", "reliability", "responsible", "trustworthy"}
 )
@@ -149,6 +157,7 @@ _HELPFUL_TRAIT_TEXT_TERMS = frozenset(
         "considerate",
         "encouraged",
         "helped",
+        "helpful",
         "listened",
         "offered",
         "patient",
@@ -166,8 +175,11 @@ _DISCIPLINED_TRAIT_TEXT_TERMS = frozenset(
         "completed",
         "consistently",
         "dedicated",
+        "disciplined",
         "finished",
         "focused",
+        "hardworking",
+        "persistent",
         "practiced",
         "prepared",
         "regularly",
@@ -199,6 +211,21 @@ def generic_behavior_inference_signal(*, query: str, text: str) -> AnswerEvidenc
     text_tokens = _term_set(text)
     behavior_hits = text_tokens & _BEHAVIOR_EVIDENCE_TERMS
     if not behavior_hits:
+        if _direct_trait_evidence_matches(
+            query=query,
+            query_tokens=query_tokens,
+            text=text,
+            text_tokens=text_tokens,
+        ):
+            return AnswerEvidenceSignal(
+                boost=0.04,
+                reason="inference_behavior_evidence",
+            )
+        if _trait_evidence_matches(query_tokens=query_tokens, text_tokens=text_tokens):
+            return AnswerEvidenceSignal(
+                penalty=0.03,
+                reason="inference_behavior_topic_only_noise",
+            )
         return AnswerEvidenceSignal()
     if _trait_evidence_matches(query_tokens=query_tokens, text_tokens=text_tokens):
         return AnswerEvidenceSignal(
@@ -232,6 +259,21 @@ def _trait_evidence_matches(
     if query_tokens & _CAREFUL_TRAIT_QUERY_TERMS:
         return bool(text_tokens & _CAREFUL_TRAIT_TEXT_TERMS)
     return False
+
+
+def _direct_trait_evidence_matches(
+    *,
+    query: str,
+    query_tokens: frozenset[str],
+    text: str,
+    text_tokens: frozenset[str],
+) -> bool:
+    if not _trait_evidence_matches(query_tokens=query_tokens, text_tokens=text_tokens):
+        return False
+    identity_tokens = _capitalized_identity_terms(query)
+    if identity_tokens and not identity_tokens & text_tokens:
+        return False
+    return _DIRECT_TRAIT_ASSERTION_RE.search(text) is not None
 
 
 def _salient_query_terms(

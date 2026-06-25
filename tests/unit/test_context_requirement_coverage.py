@@ -479,6 +479,31 @@ def test_context_requirement_coverage_tracks_generic_behavior_inference_evidence
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_direct_trait_inference_evidence() -> None:
+    query = "Would Caroline be considered patient?"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="caroline_patient_trait",
+            item_type="chunk",
+            text="Caroline is thoughtful and patient with new volunteers.",
+            score=0.9,
+            source_refs=(SourceRef(source_type="locomo_turn", source_id="D16:18"),),
+            diagnostics={"memory_scope_id": "scope"},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
 def test_context_requirement_coverage_tracks_preference_inference_evidence() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     intent = build_query_anchor_intent(query)

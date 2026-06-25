@@ -6151,6 +6151,40 @@ def test_deterministic_rerank_prefers_helpful_behavior_inference_evidence() -> N
     )
 
 
+def test_deterministic_rerank_prefers_direct_trait_inference_evidence() -> None:
+    query = "Would Caroline be considered patient?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_only = _item(
+        "patient_topic",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Caroline read an article about patient intake forms.",
+    )
+    direct_trait = _item(
+        "caroline_patient_trait",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Caroline is thoughtful and patient with new volunteers.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_only, direct_trait),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["caroline_patient_trait"].score > by_id["patient_topic"].score
+    assert (
+        "inference_behavior_evidence"
+        in by_id["caroline_patient_trait"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_preference_fit_evidence_over_negative_noise() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     plan = build_query_expansion_plan(query)

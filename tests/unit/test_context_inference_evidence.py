@@ -125,6 +125,28 @@ def test_inference_evidence_signal_boosts_careful_behavior_evidence() -> None:
     assert signal.reason == "inference_behavior_evidence"
 
 
+def test_inference_evidence_signal_boosts_direct_trait_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Caroline be considered patient?",
+        text="Caroline is thoughtful and patient with new volunteers.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_behavior_evidence"
+
+
+def test_inference_evidence_signal_rejects_direct_trait_identity_mismatch() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered helpful?",
+        text="The onboarding guide is helpful for new users.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty > 0
+    assert signal.reason == "inference_behavior_topic_only_noise"
+
+
 def test_inference_evidence_signal_does_not_boost_behaviorless_topic_overlap() -> None:
     signal = inference_evidence_rerank_signal(
         query="Would Alex be considered reliable?",

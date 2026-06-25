@@ -728,7 +728,9 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
             return _career_inference_signal(query=query, text=text)
         return AnswerEvidenceSignal()
     if support_role_query_variants(query):
-        return _support_role_fit_signal(query=query, text=text)
+        support_role_signal = _support_role_fit_signal(query=query, text=text)
+        if support_role_signal.reason:
+            return support_role_signal
     if _requests_career_inference(query):
         return _career_inference_signal(query=query, text=text)
     preference_signal = preference_inference_signal(query=query, text=text)
