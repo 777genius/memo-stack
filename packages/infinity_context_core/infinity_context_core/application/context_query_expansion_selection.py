@@ -24,6 +24,13 @@ _WHO_ELSE_COMMONALITY_QUERY_RE = re.compile(
     r"увлечен|увлечён|предпочитает)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_BROAD_COMMONALITY_QUERY_RE = re.compile(
+    r"\b(?:what|which)\s+(?:do|did|does)\s+"
+    r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё._-]{1,39}\s+"
+    r"(?:and|&)\s+[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё._-]{1,39}\s+"
+    r"(?:both\s+)?(?:have\s+in\s+common|share)\b",
+    re.IGNORECASE | re.DOTALL,
+)
 _SOCIAL_SUPPORT_NETWORK_QUERY_RE = re.compile(
     r"\bwho\b(?=.{0,90}\b(?:support|supports|supported|supporting|help|helps|"
     r"helped|comfort|encourage|encourages|there\s+for|rocks?|family|friends?|"
@@ -185,6 +192,8 @@ def should_skip_expansion_rule(
         return True
     if reason == "career_intent_bridge" and {"future", "job"}.issubset(raw_tokens):
         return True
+    if reason == "business_commonality_bridge":
+        return not _BROAD_COMMONALITY_QUERY_RE.search(query)
     if reason == "children_count_sibling_bridge" and not raw_tokens.intersection(
         {"child", "children", "kid", "kids", "sibling", "siblings", "brother", "sister"}
     ):

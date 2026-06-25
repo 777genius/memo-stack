@@ -1273,11 +1273,19 @@ def test_query_expansion_covers_commonality_interest_bridges() -> None:
 
 def test_query_expansion_covers_business_commonality_bridge() -> None:
     plan = build_query_expansion_plan("What do Jon and Gina both have in common?")
+    broad_plan = build_query_expansion_plan("What do Jon and Gina have in common?")
+    common_causes = build_query_expansion_plan("What common causes does John support?")
 
     expansion = _expansion_query(plan, "business_commonality_bridge")
+    broad_expansion = _expansion_query(broad_plan, "business_commonality_bridge")
     assert expansion.startswith("Jon Gina ")
     assert "lost job lost jobs own business" in expansion
     assert "dance studio clothing store" in expansion
+    assert broad_expansion.startswith("Jon Gina ")
+    assert "lost job lost jobs own business" in broad_expansion
+    assert "business_commonality_bridge" not in {
+        expansion.reason for expansion in common_causes.expansions
+    }
 
 
 def test_query_expansion_covers_generic_multimodal_evidence_bridges() -> None:

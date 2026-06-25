@@ -1538,6 +1538,52 @@ def test_context_requirement_coverage_tracks_commonality_answer_shape() -> None:
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_broad_commonality_answer_shape() -> None:
+    query = "What do Jon and Gina have in common?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="shared_business_origin",
+        item_type="chunk",
+        text="Jon and Gina both lost their jobs and started their own businesses.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D1:4"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert "commonality" in coverage["requested_answer_shapes"]
+    assert "commonality" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
+def test_context_requirement_coverage_flags_broad_commonality_missing_shape() -> None:
+    query = "What do Jon and Gina have in common?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="single_business_update",
+        item_type="chunk",
+        text="Jon lost his job as a banker and started his own business.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D1:2"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert "commonality" in coverage["requested_answer_shapes"]
+    assert "commonality" not in coverage["covered_answer_shapes"]
+    assert "commonality" in coverage["missing_answer_shapes"]
+
+
 def test_context_requirement_coverage_tracks_russian_commonality_answer_shape() -> None:
     query = "Что Алиса и Мария обе любят?"
     intent = build_query_anchor_intent(query)
