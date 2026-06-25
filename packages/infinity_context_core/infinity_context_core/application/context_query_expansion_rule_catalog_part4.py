@@ -150,8 +150,9 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             (
                 "felt feel feeling emotion reaction after event accident roadtrip "
                 "family grateful thankful relieved lucky okay scared freaked bad "
-                "start means world important love support inspired proud happy sad "
-                "upset because reason"
+                "start means world mean world need them need family loved ones "
+                "cherish family everything important love support gratitude "
+                "inspired proud happy sad upset because reason"
             ),
             "post_event_emotion_bridge",
         ),

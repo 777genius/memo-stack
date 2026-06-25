@@ -6041,7 +6041,7 @@ def test_deterministic_rerank_prefers_friend_group_duration_evidence() -> None:
 
 
 def test_deterministic_rerank_prefers_post_event_emotion_evidence() -> None:
-    query = "How did Melanie feel about her family after the accident?"
+    query = "How did Caroline feel about her family after the accident?"
     plan = build_query_expansion_plan(query)
     intent = build_query_anchor_intent(query)
     generic = _item(
@@ -6050,18 +6050,29 @@ def test_deterministic_rerank_prefers_post_event_emotion_evidence() -> None:
         retrieval_source="keyword_chunks",
         text="D18:3 Melanie mentioned an accident during the family roadtrip.",
     )
-    emotion = _item(
-        "melanie_family_emotion",
-        score=0.7,
+    supportive = _item(
+        "supportive_family_statement",
+        score=0.72,
         retrieval_source="keyword_chunks",
         text=(
-            "D18:5 Melanie: After the accident, I felt grateful and thankful "
-            "for my family. They mean the world to me."
+            "D18:4 Caroline: Life's unpredictable, but moments like these "
+            "remind us how important our loved ones are. Family's everything."
+        ),
+    )
+    emotion = _item(
+        "melanie_family_emotion",
+        score=0.69,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D18:5 Melanie: Yeah, you're right, Caroline. Family's super "
+            "important to me. Especially after the accident, I've thought a "
+            "lot about how much I need them. They mean the world to me and "
+            "I'm so thankful to have them."
         ),
     )
 
     reranked = apply_deterministic_rerank_adjustments(
-        (generic, emotion),
+        (generic, supportive, emotion),
         query=query,
         plan=plan,
         query_anchor_intent=intent,
@@ -6071,8 +6082,11 @@ def test_deterministic_rerank_prefers_post_event_emotion_evidence() -> None:
     assert by_id["melanie_family_emotion"].score > by_id[
         "melanie_family_accident_generic"
     ].score
+    assert by_id["melanie_family_emotion"].score > by_id[
+        "supportive_family_statement"
+    ].score
     assert (
-        "post_event_emotion_exact_evidence"
+        "post_event_family_appreciation_evidence"
         in by_id["melanie_family_emotion"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]

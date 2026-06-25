@@ -2119,6 +2119,26 @@ def test_best_query_relevance_uses_post_event_emotion_bridge() -> None:
     assert relevance.distinctive_term_hits >= 7
 
 
+def test_best_query_relevance_uses_post_event_family_appreciation_wording() -> None:
+    plan = build_query_expansion_plan(
+        "How did Caroline feel about her family after the accident?"
+    )
+
+    query, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D18:5 Melanie: Yeah, you're right, Caroline. Family's super "
+            "important to me. Especially after the accident, I've thought a "
+            "lot about how much I need them. They mean the world to me and "
+            "I'm so thankful to have them."
+        ),
+    )
+
+    assert query.startswith("Caroline ")
+    assert reason == "post_event_emotion_bridge"
+    assert relevance.distinctive_term_hits >= 10
+
+
 def test_best_query_relevance_uses_source_evidence_bridge() -> None:
     plan = build_query_expansion_plan("Show proof for the Atlas decision")
 

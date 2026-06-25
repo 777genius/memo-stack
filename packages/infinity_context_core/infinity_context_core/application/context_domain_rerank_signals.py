@@ -743,8 +743,22 @@ _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE = re.compile(
 _POST_EVENT_EMOTION_EXACT_RE = re.compile(
     r"\b(?:felt|feel|feeling|grateful|thankful|relieved|lucky|scared|"
     r"freaked|inspired|proud|happy|sad|upset|awe|means?\s+the\s+world|"
-    r"important)\b",
+    r"meaningful)\b",
     re.IGNORECASE,
+)
+_POST_EVENT_FAMILY_APPRECIATION_RE = re.compile(
+    r"\b(?:i|i'm|i've|me|my|we|our)\b"
+    r"(?=.{0,220}\b(?:family|fam|loved\s+ones|them|they)\b)"
+    r"(?=.{0,180}\b(?:super\s+important|important\s+to\s+me|"
+    r"mean\s+the\s+world|means\s+the\s+world|need\s+them|"
+    r"thankful\s+to\s+have|grateful\s+to\s+have|cherish|"
+    r"biggest\s+motivation|support|rock)\b)|"
+    r"\b(?:super\s+important|important\s+to\s+me|mean\s+the\s+world|"
+    r"means\s+the\s+world|need\s+them|thankful\s+to\s+have|"
+    r"grateful\s+to\s+have|cherish|biggest\s+motivation|support|rock)\b"
+    r"(?=.{0,180}\b(?:family|fam|loved\s+ones|them|they)\b)"
+    r"(?=.{0,220}\b(?:i|i'm|i've|me|my|we|our)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _POST_EVENT_EMOTION_EVENT_ONLY_RE = re.compile(
     r"\b(?:accident|roadtrip|trip|event|happened|mentioned|talked|family)\b",
@@ -1476,6 +1490,11 @@ def post_event_emotion_rerank_signal(
 ) -> DomainRerankSignal:
     if not _is_post_event_emotion_candidate(query_reason=query_reason, item=item):
         return DomainRerankSignal()
+    if _POST_EVENT_FAMILY_APPRECIATION_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            boost=0.052,
+            reason="post_event_family_appreciation_evidence",
+        )
     if _POST_EVENT_EMOTION_EXACT_RE.search(item.text) is not None:
         return DomainRerankSignal(boost=0.026, reason="post_event_emotion_exact_evidence")
     if (

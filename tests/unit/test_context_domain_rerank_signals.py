@@ -13,6 +13,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     inventory_list_rerank_signal,
     item_purchase_rerank_signal,
     positive_preference_rerank_signal,
+    post_event_emotion_rerank_signal,
     recommendation_followup_rerank_signal,
     relationship_duration_rerank_signal,
     relationship_status_rerank_signal,
@@ -73,6 +74,28 @@ def test_support_network_signal_accepts_negative_experience_support_bridge() -> 
 
     assert signal.boost > 0
     assert signal.reason == "support_network_exact_evidence"
+
+
+def test_post_event_emotion_signal_prefers_family_appreciation_self_report() -> None:
+    item = _item(
+        "post_event_family_appreciation",
+        text=(
+            "D18:5 Melanie: Family's super important to me. Especially after "
+            "the accident, I've thought a lot about how much I need them. "
+            "They mean the world to me and I'm so thankful to have them."
+        ),
+        query_expansion_reason="post_event_emotion_bridge",
+    )
+
+    signal = post_event_emotion_rerank_signal(
+        query_reason="post_event_emotion_bridge",
+        item=item,
+        relevance=_relevance(distinctive_term_hits=10, unique_term_hits=10),
+    )
+
+    assert signal.boost >= 0.05
+    assert signal.penalty == 0
+    assert signal.reason == "post_event_family_appreciation_evidence"
 
 
 def test_inventory_signal_requires_query_specific_exact_slot() -> None:
