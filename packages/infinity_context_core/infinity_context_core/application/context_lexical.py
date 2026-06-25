@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from infinity_context_core.application.anchor_identity_normalization import (
@@ -442,7 +442,7 @@ def text_variant_sequence(text: str, *, min_chars: int = 2) -> tuple[tuple[str, 
     return sequence
 
 
-def query_term_frequency(term: LexicalQueryTerm, text_counts: Counter[str]) -> int:
+def query_term_frequency(term: LexicalQueryTerm, text_counts: Mapping[str, int]) -> int:
     exact_frequency = max((text_counts.get(variant, 0) for variant in term.variants), default=0)
     if exact_frequency > 0:
         return exact_frequency

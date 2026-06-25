@@ -49,6 +49,7 @@ from infinity_context_core.application.context_lexical import (
     LexicalQueryTerm,
     query_term_frequency,
     query_terms,
+    text_variant_profile,
     text_variant_stats,
 )
 from infinity_context_core.application.context_object_mismatch import (
@@ -103,6 +104,7 @@ from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
     is_query_relevance_sufficient,
     score_query_relevance,
+    score_query_relevance_against_profile,
 )
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
@@ -631,11 +633,16 @@ def best_query_relevance(
     *,
     text: str,
 ) -> tuple[str, str, QueryRelevance]:
+    text_counts, text_variants = text_variant_profile(text)
     scored = tuple(
         (
             expansion.query,
             expansion.reason,
-            score_query_relevance(query=expansion.query, text=text),
+            score_query_relevance_against_profile(
+                query=expansion.query,
+                text_counts=text_counts,
+                text_variants=text_variants,
+            ),
         )
         for expansion in plan.retrieval_queries
     )

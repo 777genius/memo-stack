@@ -13,6 +13,7 @@ from infinity_context_core.application.context_relevance import (
     is_query_relevance_specific_enough,
     is_query_relevance_sufficient,
     score_query_relevance,
+    score_query_relevance_against_profile,
 )
 
 
@@ -64,6 +65,18 @@ def test_score_query_relevance_uses_single_text_variant_profile(monkeypatch) -> 
     assert calls == ["Alex moved the Atlas launch deadline after the call."]
     assert relevance.unique_term_hits == 3
     assert relevance.phrase_bigram_hits == 1
+
+
+def test_profile_aware_query_relevance_matches_public_scoring() -> None:
+    query = "Alex Atlas launch"
+    text = "Alex moved the Atlas launch deadline after the call."
+    counts, variants = text_variant_profile(text)
+
+    assert score_query_relevance_against_profile(
+        query=query,
+        text_counts=counts,
+        text_variants=variants,
+    ) == score_query_relevance(query=query, text=text)
 
 
 def test_query_relevance_matches_cross_language_relative_event_terms() -> None:

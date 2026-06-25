@@ -297,6 +297,37 @@ def test_query_plan_bm25_lexical_boost_reuses_shared_term_frequencies(
     assert calls.count("alex") == len(items)
 
 
+def test_best_query_relevance_reuses_text_variant_profile(monkeypatch) -> None:
+    text = "Alex moved the Atlas launch deadline after the call."
+    plan = QueryExpansionPlan(
+        original_query="Alex Atlas",
+        decompositions=(
+            QueryExpansion(query="Alex launch deadline", reason="decomposition_temporal_answer"),
+        ),
+        expansions=(
+            QueryExpansion(query="Alex call notes", reason="meeting_evidence_bridge"),
+            QueryExpansion(query="Alex Atlas project", reason="project_summary_bridge"),
+        ),
+    )
+    real_text_variant_profile = context_ranking_module.text_variant_profile
+    calls: list[str] = []
+
+    def counting_text_variant_profile(value: str, *, min_chars: int = 2):
+        calls.append(value)
+        return real_text_variant_profile(value, min_chars=min_chars)
+
+    monkeypatch.setattr(
+        context_ranking_module,
+        "text_variant_profile",
+        counting_text_variant_profile,
+    )
+
+    _, _, relevance = best_query_relevance(plan, text=text)
+
+    assert calls == [text]
+    assert relevance.unique_term_hits >= 2
+
+
 def test_keyword_chunk_score_boosts_item_purchase_reason() -> None:
     plan = build_query_expansion_plan("What items has Melanie bought?")
     _, reason, relevance = best_query_relevance(

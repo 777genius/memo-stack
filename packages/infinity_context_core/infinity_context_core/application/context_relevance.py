@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from infinity_context_core.application.context_lexical import (
@@ -119,6 +120,22 @@ _RELATIONSHIP_DURATION_TEXT_TIME_RE = re.compile(
 
 
 def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> QueryRelevance:
+    text_counts, text_variants = text_variant_profile(text)
+    return score_query_relevance_against_profile(
+        query=query,
+        text_counts=text_counts,
+        text_variants=text_variants,
+        max_boost=max_boost,
+    )
+
+
+def score_query_relevance_against_profile(
+    *,
+    query: str,
+    text_counts: Mapping[str, int],
+    text_variants: tuple[tuple[str, ...], ...],
+    max_boost: float = 0.12,
+) -> QueryRelevance:
     terms = query_terms(query)
     if not terms:
         return QueryRelevance(
@@ -128,14 +145,13 @@ def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> 
             capped_frequency_hits=0,
             hit_ratio=0.0,
         )
-    counts, text_variants = text_variant_profile(text)
-    frequencies = tuple(query_term_frequency(term, counts) for term in terms)
+    frequencies = tuple(query_term_frequency(term, text_counts) for term in terms)
     unique_hits = sum(1 for frequency in frequencies if frequency > 0)
     capped_frequency_hits = sum(min(frequency, 3) for frequency in frequencies)
     hit_ratio = unique_hits / len(terms)
     distinctive_terms = tuple(term for term in terms if _is_distinctive_term(term))
     distinctive_hits = sum(
-        1 for term in distinctive_terms if query_term_frequency(term, counts) > 0
+        1 for term in distinctive_terms if query_term_frequency(term, text_counts) > 0
     )
     phrase_bigram_count = max(0, len(terms) - 1)
     phrase_bigram_hits = _phrase_bigram_hits(
