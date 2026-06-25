@@ -1019,8 +1019,7 @@ def _best_bm25_query_matches(
         )
         for _ in items
     )
-    for expansion in plan.retrieval_queries:
-        terms = query_terms(expansion.query)
+    for _, reason, terms in _query_expansion_terms(plan):
         if not terms:
             continue
         documents, raw_scores = _bm25_raw_scores_for_prepared(
@@ -1048,7 +1047,7 @@ def _best_bm25_query_matches(
                     ),
                     query_term_count=len(terms),
                     matched_term_count=matched_term_count,
-                    query_reason=expansion.reason,
+                    query_reason=reason,
                     query_coverage=coverage,
                 )
             )

@@ -297,6 +297,58 @@ def test_query_plan_bm25_lexical_boost_reuses_shared_term_frequencies(
     assert calls.count("alex") == len(items)
 
 
+def test_query_plan_bm25_and_relevance_share_cached_expansion_terms(monkeypatch) -> None:
+    items = (
+        _item(
+            "first",
+            score=0.7,
+            retrieval_source="keyword_chunks",
+            text="Alex moved the Atlas launch deadline after the call.",
+        ),
+        _item(
+            "second",
+            score=0.7,
+            retrieval_source="keyword_chunks",
+            text="Alex wrote a broad planning note about Atlas.",
+        ),
+    )
+    plan = QueryExpansionPlan(
+        original_query="Alex Atlas",
+        decompositions=(
+            QueryExpansion(query="Alex launch deadline", reason="decomposition_temporal_answer"),
+        ),
+        expansions=(
+            QueryExpansion(query="Alex call notes", reason="meeting_evidence_bridge"),
+            QueryExpansion(query="Alex Atlas project", reason="project_summary_bridge"),
+        ),
+    )
+    real_query_terms = context_ranking_module.query_terms
+    calls: list[str] = []
+
+    def counting_query_terms(query: str, *, min_chars: int = 2):
+        calls.append(query)
+        return real_query_terms(query, min_chars=min_chars)
+
+    context_ranking_module._query_expansion_terms_for_signature.cache_clear()
+    monkeypatch.setattr(context_ranking_module, "query_terms", counting_query_terms)
+
+    try:
+        apply_query_plan_bm25_lexical_boosts(
+            items,
+            plan=plan,
+            bm25_text_stats_cache={},
+        )
+        _, _, relevance = best_query_relevance(
+            plan,
+            text="Alex moved the Atlas launch deadline after the call.",
+        )
+    finally:
+        context_ranking_module._query_expansion_terms_for_signature.cache_clear()
+
+    assert calls == [expansion.query for expansion in plan.retrieval_queries]
+    assert relevance.unique_term_hits >= 2
+
+
 def test_best_query_relevance_reuses_text_variant_profile(monkeypatch) -> None:
     text = "Alex moved the Atlas launch deadline after the call."
     plan = QueryExpansionPlan(
