@@ -176,6 +176,7 @@ _GENERIC_BOOSTABLE_ANSWER_SHAPES = frozenset((
     "preference",
     "relationship",
     "speaker",
+    "summary",
     "temporal",
 ))
 _DETERMINISTIC_RERANK_MAX_BOOST = 0.055

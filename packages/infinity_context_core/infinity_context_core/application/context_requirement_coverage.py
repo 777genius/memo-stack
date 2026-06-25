@@ -483,6 +483,21 @@ _STATE_UPDATE_ANSWER_QUERY_RE = re.compile(
     r"обновил\w*|обновлен\w*|обновлён\w*|заменил\w*|поменял\w*)\b",
     re.IGNORECASE,
 )
+_SUMMARY_ANSWER_QUERY_RE = re.compile(
+    r"(?i:\bwho\s+(?:is|are|was|were)\s+)[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}"
+    r"\s*(?:\?|$)|"
+    r"(?i:\bwhat\s+(?:is|was)\s+project\s+)[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}"
+    r"(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}){0,3}\s*(?:\?|$)|"
+    r"(?i:\bwhat\s+(?:do|did)\s+(?:we|you)\s+know\s+about\b)|"
+    r"(?i:\btell\s+me\s+about\b|\bsummari[sz]e\b|\bprofile\s+(?:for|of)\b)|"
+    r"(?i:\boverview\s+(?:for|of)\b)|"
+    r"(?i:\bкто\s+(?:такой|такая|это)\s+)[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}"
+    r"\s*(?:\?|$)|"
+    r"(?i:\bчто\s+это\s+за\s+проект\s+)[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}"
+    r"(?:\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё._-]{1,39}){0,3}\s*(?:\?|$)|"
+    r"(?i:\bчто\s+(?:мы|ты)\s+зна(?:ем|ешь)\s+(?:об|о|про)\b)|"
+    r"(?i:\bрасскажи\s+(?:об|о|про)\b|\bпрофиль\b|\bобзор\b|\bсводка\b)",
+)
 _COUNT_ANSWER_TEXT_RE = re.compile(
     r"\b("
     r"first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
@@ -793,6 +808,13 @@ _STATE_UPDATE_ANSWER_TEXT_RE = re.compile(
     r"вс[её]\s+еще|вс[её]\s+ещ[её]|по-прежнему|больше\s+не|уже\s+не|"
     r"устаревш\w*|стар\w*|предыдущ\w*|раньше|изменил\w*|изменилось|"
     r"обновил\w*|обновлен\w*|обновлён\w*|заменил\w*|поменял\w*)\b",
+    re.IGNORECASE,
+)
+_SUMMARY_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:profile|summary|overview|background|biography|bio|key\s+facts?|"
+    r"person\s+profile|project\s+profile|project\s+summary|current\s+status)\b|"
+    r"\b(?:профиль|сводка|обзор|кратко|биография|ключев\w+\s+факт\w*|"
+    r"текущ\w+\s+статус)\b",
     re.IGNORECASE,
 )
 _EVENT_QUERY_HINT_RE = re.compile(
@@ -1200,6 +1222,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         or state_transition_query_variants(query)
     ) and not _is_social_old_query(query):
         shapes.append("state_update")
+    if _SUMMARY_ANSWER_QUERY_RE.search(query):
+        shapes.append("summary")
     return _bounded_unique(shapes)
 
 
@@ -1270,6 +1294,8 @@ def _covered_answer_shapes(
             shapes.append("existence")
         if item_has_state_lifecycle_evidence(item):
             shapes.append("state_update")
+        if _SUMMARY_ANSWER_TEXT_RE.search(text):
+            shapes.append("summary")
     return _bounded_unique(shapes)
 
 

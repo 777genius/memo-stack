@@ -4913,6 +4913,114 @@ def test_context_requirement_boost_prefers_audio_timestamp_evidence() -> None:
     )
 
 
+def test_context_requirement_boost_prefers_profile_summary_shape() -> None:
+    fact = _item(
+        "single_fact",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex likes hiking.",
+    )
+    summary = _item(
+        "profile_summary",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Alex profile summary: key facts include his work, residence, "
+            "preferences, recent events, and current goals."
+        ),
+    )
+    query = "Who is Alex?"
+
+    boosted = apply_context_requirement_boosts(
+        (fact, summary),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    assert boosted[1].score > boosted[0].score
+    assert (
+        "summary"
+        in boosted[1].diagnostics["provenance"]["context_requirement_matched_answer_shapes"]
+    )
+
+
+def test_context_requirement_boost_prefers_project_summary_shape() -> None:
+    fact = _item(
+        "single_project_fact",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Project Atlas uses the new ingestion worker.",
+    )
+    summary = _item(
+        "project_summary",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Project Atlas summary: current status, decisions, owners, "
+            "risks, documents, and recent meetings are tracked together."
+        ),
+    )
+    query = "What is Project Atlas?"
+
+    boosted = apply_context_requirement_boosts(
+        (fact, summary),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    assert boosted[1].score > boosted[0].score
+    assert (
+        "summary"
+        in boosted[1].diagnostics["provenance"]["context_requirement_matched_answer_shapes"]
+    )
+
+
+def test_context_requirement_boost_does_not_treat_responsibility_as_summary() -> None:
+    item = _item(
+        "responsible",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Alex is responsible for the Atlas launch checklist.",
+    )
+    query = "Who is responsible for Project Atlas?"
+
+    (boosted,) = apply_context_requirement_boosts(
+        (item,),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    assert "summary" not in boosted.diagnostics["provenance"].get(
+        "context_requirement_matched_answer_shapes",
+        [],
+    )
+
+
+def test_context_requirement_boost_does_not_treat_project_role_as_summary() -> None:
+    item = _item(
+        "project_role",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Project Atlas is responsible for the billing migration workflow.",
+    )
+    query = "What is Project Atlas responsible for?"
+
+    (boosted,) = apply_context_requirement_boosts(
+        (item,),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    assert "summary" not in boosted.diagnostics["provenance"].get(
+        "context_requirement_matched_answer_shapes",
+        [],
+    )
+
+
 def test_context_requirement_boost_skips_queries_without_explicit_requirements() -> None:
     item = _item(
         "status",
