@@ -435,6 +435,47 @@ def test_deterministic_rerank_prefers_business_commonality_origin_evidence() -> 
     )
 
 
+def test_deterministic_rerank_treats_charity_brand_deals_as_exact_evidence() -> None:
+    query = "What prominent charity organization might John work with and why?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    brand_deals = _item(
+        "brand_deals",
+        score=0.92,
+        retrieval_source="keyword_chunks",
+        score_signals={"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        text=(
+            "D3:13 John signed up Nike for a basketball shoe and gear deal "
+            "and is in talks with Gatorade about a potential sponsorship. "
+            "D3:15 John has always liked Under Armour and working with them "
+            "would be really cool."
+        ),
+    )
+    weak_update = _item(
+        "weak_update",
+        score=0.93,
+        retrieval_source="keyword_chunks",
+        score_signals={"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        text="John mentioned a general planning update about basketball brands.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (weak_update, brand_deals),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["brand_deals"].score > by_id["weak_update"].score
+    assert (
+        "causal_reason_exact_evidence"
+        in by_id["brand_deals"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_list_aggregation_over_single_mention() -> None:
     query = "What shelters does Maria volunteer at?"
     plan = build_query_expansion_plan(query)

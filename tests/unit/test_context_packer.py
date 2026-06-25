@@ -1100,6 +1100,59 @@ def test_answer_support_family_splits_business_commonality_slots() -> None:
     assert any(family.endswith(":gina-store-start") for family in families)
 
 
+def test_answer_support_family_splits_charity_brand_sponsorship_slots() -> None:
+    nike_gatorade = ContextItem(
+        item_id="nike_gatorade",
+        item_type="chunk",
+        text=(
+            "D3:13 John signed up Nike for a basketball shoe and gear deal "
+            "and is in talks with Gatorade about sponsorship."
+        ),
+        score=0.98,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D3:13:turn"),),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+    under_armour = ContextItem(
+        item_id="under_armour",
+        item_type="chunk",
+        text=(
+            "D3:15 John likes Under Armour and thinks working with them "
+            "would be really cool."
+        ),
+        score=0.98,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D3:15:turn"),),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+    charity_intent = ContextItem(
+        item_id="charity_intent",
+        item_type="chunk",
+        text=(
+            "D6:15 John wants to make a difference through charity, inspire "
+            "people, and give something back."
+        ),
+        score=0.98,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D6:15:turn"),),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    families = {
+        _answer_support_diversity_family(nike_gatorade),
+        _answer_support_diversity_family(under_armour),
+        _answer_support_diversity_family(charity_intent),
+    }
+
+    assert len(families) == 3
+    assert any(family.endswith(":nike-gatorade-deals") for family in families)
+    assert any(family.endswith(":under-armour-interest") for family in families)
+    assert any(family.endswith(":charity-intent") for family in families)
+
+
 def test_answer_support_family_prefers_exact_turn_for_animal_care_instruction() -> None:
     exact = ContextItem(
         item_id="animal_care_exact",

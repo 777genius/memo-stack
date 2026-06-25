@@ -42,6 +42,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "book-reading-list-bridge",
         "book-suggestion-bridge",
         "business-commonality-bridge",
+        "charity-brand-sponsorship-bridge",
         "children-count-event-bridge",
         "children-count-sibling-bridge",
         "cause-education-infrastructure-inventory-bridge",
@@ -984,6 +985,8 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
         return _degree_policy_answer_slot(item.text)
     if query_reason == "business_commonality_bridge":
         return _business_commonality_answer_slot(item.text)
+    if query_reason == "charity_brand_sponsorship_bridge":
+        return _charity_brand_sponsorship_answer_slot(item.text)
     if query_reason != "volunteer_career_inference_bridge":
         return ""
     text = item.text.casefold()
@@ -1048,6 +1051,21 @@ def _business_commonality_answer_slot(text: str) -> str:
         return "gina_store_start"
     if "own business" in text or "starting" in text:
         return "business_start_generic"
+    return ""
+
+
+def _charity_brand_sponsorship_answer_slot(text: str) -> str:
+    text = text.casefold()
+    if "under armour" in text or "under armor" in text:
+        return "under_armour_interest"
+    if "nike" in text and ("gatorade" in text or "sponsorship" in text):
+        return "nike_gatorade_deals"
+    if "good sports" in text or "disadvantaged kids" in text:
+        return "charity_org_fit"
+    if "give something back" in text or "charity" in text or "make a difference" in text:
+        return "charity_intent"
+    if "sports brand" in text or "big brands" in text:
+        return "sports_brand_generic"
     return ""
 
 
@@ -1324,6 +1342,8 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
         return _degree_policy_answer_content_rank(item.text)
     if query_reason == "business_commonality_bridge":
         return _business_commonality_answer_content_rank(item.text)
+    if query_reason == "charity_brand_sponsorship_bridge":
+        return _charity_brand_sponsorship_answer_content_rank(item.text)
     if query_reason == "exercise_activity_inventory_bridge":
         return _exercise_activity_answer_content_rank(item.text)
     if query_reason == "animal_care_instruction_bridge":
@@ -1355,6 +1375,17 @@ def _business_commonality_answer_content_rank(text: str) -> int:
         return 0
     if slot == "business_start_generic":
         return 1
+    return 3
+
+
+def _charity_brand_sponsorship_answer_content_rank(text: str) -> int:
+    slot = _charity_brand_sponsorship_answer_slot(text)
+    if slot in {"nike_gatorade_deals", "under_armour_interest", "charity_intent"}:
+        return 0
+    if slot == "charity_org_fit":
+        return 1
+    if slot == "sports_brand_generic":
+        return 2
     return 3
 
 

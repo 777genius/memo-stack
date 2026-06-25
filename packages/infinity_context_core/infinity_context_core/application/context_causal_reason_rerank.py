@@ -42,7 +42,9 @@ _CAUSAL_REASON_DOMAIN_EVIDENCE_RE = re.compile(
     r"passionate\s+about\s+fashion|blend\s+dance\s+and\s+fashion|"
     r"sitting\s+alone|looking\s+sad|no\s+other\s+family|offered\s+comfort|"
     r"listening\s+ear|made\s+her\s+laugh|give\s+back|make\s+a\s+difference|"
-    r"inspire\s+people|disadvantaged\s+kids|walking\s+dead|console\s+games|"
+    r"inspire\s+people|disadvantaged\s+kids|nike|gatorade|under\s+armou?r|"
+    r"sponsorship|basketball\s+shoe\s+and\s+gear|sports?\s+brands?|"
+    r"working\s+with\s+(?:such\s+)?big\s+brands|walking\s+dead|console\s+games|"
     r"instead\s+of\s+(?:doing\s+)?yoga|clear\s+(?:my|her|his|their)?\s*head|"
     r"stress\s+relief|relax|refresh|made\s+me\s+realize|mental\s+health|"
     r"help\s+people\s+feel\s+safe|catch\s+(?:the\s+)?eye|make\s+people\s+smile)\b",
