@@ -569,6 +569,71 @@ _PEOPLE_INVENTORY_ACTION_TERMS = frozenset(
         "работали",
     }
 )
+_SOCIAL_SUPPORT_ACTION_TERMS = frozenset(
+    {
+        "support",
+        "supported",
+        "supporting",
+        "supports",
+        "there",
+        "rocks",
+        "поддерживает",
+        "поддерживал",
+        "поддерживала",
+        "поддержал",
+        "поддержала",
+        "поддержали",
+        "рядом",
+    }
+)
+_SOCIAL_SUPPORT_RELATION_TERMS = frozenset(
+    {
+        "coach",
+        "family",
+        "father",
+        "friend",
+        "friends",
+        "mentor",
+        "mentors",
+        "mother",
+        "parent",
+        "parents",
+        "rock",
+        "rocks",
+        "system",
+        "друзья",
+        "наставники",
+        "родители",
+        "семья",
+    }
+)
+_TECHNICAL_SUPPORT_CONTEXT_TERMS = frozenset(
+    {
+        "api",
+        "backend",
+        "browser",
+        "client",
+        "cloud",
+        "customer",
+        "database",
+        "frontend",
+        "infra",
+        "infrastructure",
+        "integration",
+        "library",
+        "model",
+        "platform",
+        "provider",
+        "runtime",
+        "sdk",
+        "service",
+        "software",
+        "technical",
+        "tool",
+        "tools",
+        "web",
+    }
+)
 _PLACE_INVENTORY_ACTION_TERMS = frozenset(
     {
         "been",
@@ -2192,6 +2257,8 @@ def _requests_people_inventory_context(
     raw_tokens: frozenset[str],
     variants: frozenset[str],
 ) -> bool:
+    if _requests_social_support_network_context(raw_tokens=raw_tokens, variants=variants):
+        return False
     if not (
         raw_tokens.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
         or variants.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
@@ -2201,6 +2268,31 @@ def _requests_people_inventory_context(
         raw_tokens.intersection(_PEOPLE_INVENTORY_ACTION_TERMS)
         or variants.intersection(_PEOPLE_INVENTORY_ACTION_TERMS)
     )
+
+
+def _requests_social_support_network_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if not (
+        raw_tokens.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
+        or variants.intersection(_PEOPLE_INVENTORY_PROMPT_TERMS)
+    ):
+        return False
+    if raw_tokens.intersection(_TECHNICAL_SUPPORT_CONTEXT_TERMS):
+        return False
+    if variants.intersection(_TECHNICAL_SUPPORT_CONTEXT_TERMS):
+        return False
+    has_support_action = bool(
+        raw_tokens.intersection(_SOCIAL_SUPPORT_ACTION_TERMS)
+        or variants.intersection(_SOCIAL_SUPPORT_ACTION_TERMS)
+    )
+    has_relation_marker = bool(
+        raw_tokens.intersection(_SOCIAL_SUPPORT_RELATION_TERMS)
+        or variants.intersection(_SOCIAL_SUPPORT_RELATION_TERMS)
+    )
+    return has_support_action or has_relation_marker
 
 
 def _requests_place_inventory_context(

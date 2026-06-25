@@ -437,6 +437,28 @@ def test_query_decomposition_adds_people_inventory_for_who_met_helped_questions(
     }
 
 
+def test_query_decomposition_keeps_social_support_out_of_people_inventory() -> None:
+    english = build_query_decomposition_plan(
+        "Who supports Caroline when she has a negative experience?"
+    )
+    direct = build_query_decomposition_plan("Who supports Caroline?")
+    russian = build_query_decomposition_plan("Кто поддерживает Каролину?")
+    technical = build_query_decomposition_plan("Who supports the OpenAI provider integration?")
+
+    assert "decomposition_inventory_list" not in {
+        item.reason for item in english.decompositions
+    }
+    assert "decomposition_inventory_list" not in {
+        item.reason for item in direct.decompositions
+    }
+    assert "decomposition_inventory_list" not in {
+        item.reason for item in russian.decompositions
+    }
+    assert "decomposition_inventory_list" in {
+        item.reason for item in technical.decompositions
+    }
+
+
 def test_query_decomposition_adds_recommendation_source_query() -> None:
     source_plan = build_query_decomposition_plan(
         "What book did Melanie read from Caroline's suggestion?"
