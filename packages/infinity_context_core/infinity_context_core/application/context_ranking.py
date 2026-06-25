@@ -1217,9 +1217,7 @@ def _with_bm25_lexical_boost(
 
 
 def _bm25_lexical_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
-    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("bm25_lexical_applied") is True
+    return _provenance_flag_is_true(item.diagnostics, "bm25_lexical_applied")
 
 
 def _with_query_anchor_intent_boost(
@@ -1261,9 +1259,7 @@ def _with_query_anchor_intent_boost(
 
 
 def _query_anchor_intent_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
-    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("query_anchor_intent_applied") is True
+    return _provenance_flag_is_true(item.diagnostics, "query_anchor_intent_applied")
 
 
 def _with_context_requirement_boost(
@@ -1339,9 +1335,7 @@ def _with_context_requirement_boost(
 
 
 def _context_requirement_boost_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
-    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("context_requirement_boost_applied") is True
+    return _provenance_flag_is_true(item.diagnostics, "context_requirement_boost_applied")
 
 
 def _with_deterministic_rerank_adjustment(
@@ -1358,7 +1352,7 @@ def _with_deterministic_rerank_adjustment(
     max_penalty: float,
 ) -> ContextItem:
     normalized_item = normalize_context_item_diagnostics(item)
-    if _deterministic_rerank_already_applied(normalized_item):
+    if _deterministic_rerank_already_applied_in_diagnostics(normalized_item.diagnostics):
         return item
     signals = _deterministic_rerank_signals(
         normalized_item,
@@ -2344,9 +2338,7 @@ def _running_reason_weak_evidence(
 
 
 def _temporal_query_signal_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
-    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("temporal_query_intent_applied") is True
+    return _provenance_flag_is_true(item.diagnostics, "temporal_query_intent_applied")
 
 
 def _item_temporal_hint_code(item: ContextItem) -> str:
@@ -2730,9 +2722,17 @@ def _coverage_ratio(value: object) -> float:
 
 
 def _deterministic_rerank_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
-    provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("deterministic_rerank_applied") is True
+    return _provenance_flag_is_true(item.diagnostics, "deterministic_rerank_applied")
+
+
+def _deterministic_rerank_already_applied_in_diagnostics(
+    diagnostics: object,
+) -> bool:
+    return _provenance_flag_is_true(
+        diagnostics,
+        "deterministic_rerank_applied",
+        normalized=True,
+    )
 
 
 def _coverage_value_set(value: object) -> frozenset[str]:
@@ -2795,6 +2795,19 @@ def _with_rank_fusion_boost(
 
 
 def _rank_fusion_already_applied(item: ContextItem) -> bool:
-    diagnostics = normalize_context_diagnostics(item.diagnostics)
+    return _provenance_flag_is_true(item.diagnostics, "rank_fusion_applied")
+
+
+def _provenance_flag_is_true(
+    diagnostics: object,
+    flag: str,
+    *,
+    normalized: bool = False,
+) -> bool:
+    diagnostics = (
+        safe_diagnostic_mapping(diagnostics)
+        if normalized
+        else normalize_context_diagnostics(diagnostics)
+    )
     provenance = safe_diagnostic_mapping(diagnostics.get("provenance"))
-    return provenance.get("rank_fusion_applied") is True
+    return provenance.get(flag) is True

@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import infinity_context_core.application.context_ranking as context_ranking_module
 from infinity_context_core.application.context_diagnostics import context_rank_key
 from infinity_context_core.application.context_query_expansion import (
@@ -8419,6 +8421,44 @@ def test_deterministic_rerank_reuses_item_relevance_signals(monkeypatch) -> None
         reranked.diagnostics["score_signals"]["deterministic_rerank_query_reason"]
         == "friend_place_shelter_inventory_bridge"
     )
+
+
+def test_deterministic_rerank_already_applied_uses_normalized_fast_path(
+    monkeypatch,
+) -> None:
+    query = "Where has Maria made friends?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    item = _item(
+        "already_reranked",
+        score=0.94,
+        retrieval_source="keyword_chunks",
+        text="D2:1 Maria donated her old car to a homeless shelter where she volunteers.",
+    )
+    diagnostics = dict(item.diagnostics)
+    diagnostics["provenance"] = {
+        **dict(diagnostics["provenance"]),
+        "deterministic_rerank_applied": True,
+    }
+    item = replace(item, diagnostics=diagnostics)
+
+    def fail_renormalize(*args, **kwargs):
+        raise AssertionError("already-applied fast path re-normalized diagnostics")
+
+    monkeypatch.setattr(
+        context_ranking_module,
+        "normalize_context_diagnostics",
+        fail_renormalize,
+    )
+
+    (reranked,) = apply_deterministic_rerank_adjustments(
+        (item,),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked is item
 
 
 def test_deterministic_rerank_keeps_inventory_slots_query_specific() -> None:
