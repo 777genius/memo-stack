@@ -59,6 +59,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "family-activity-bridge",
         "family-hike-detail-bridge",
         "family-hike-activity-bridge",
+        "family-museum-activity-bridge",
         "friend-place-inventory-bridge",
         "friend-place-shelter-inventory-bridge",
         "friend-place-gym-inventory-bridge",
@@ -967,6 +968,7 @@ def _activity_answer_slot(item: ContextItem, *, query_reason: str) -> str:
         "family_activity_bridge",
         "family_hike_detail_bridge",
         "family_hike_activity_bridge",
+        "family_museum_activity_bridge",
         "family_painting_activity_bridge",
         "family_swimming_activity_bridge",
         "painting_inventory_bridge",
@@ -1275,6 +1277,7 @@ def _is_family_activity_reason(query_reason: str) -> bool:
         "family-activity-bridge",
         "family-hike-activity-bridge",
         "family-hike-detail-bridge",
+        "family-museum-activity-bridge",
         "family-painting-activity-bridge",
         "family-swimming-activity-bridge",
     }

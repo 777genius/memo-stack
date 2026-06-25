@@ -138,6 +138,14 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"activity", "family"}),
             (
+                "family kids children museum dinosaur exhibit bones learning "
+                "exploring eyes light up stoked excited animals local museum"
+            ),
+            "family_museum_activity_bridge",
+        ),
+    (
+            frozenset({"activity", "family"}),
+            (
                 "family swimming with kids swim taking care ourselves vital self care "
                 "after conversation talk soon"
             ),

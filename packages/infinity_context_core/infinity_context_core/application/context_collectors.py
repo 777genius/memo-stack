@@ -134,6 +134,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "family_activity_bridge",
         "family_hike_detail_bridge",
         "family_hike_activity_bridge",
+        "family_museum_activity_bridge",
         "family_motivation_context_bridge",
         "family_painting_activity_bridge",
         "family_swimming_activity_bridge",
@@ -1062,7 +1063,13 @@ def _bounded_derived_retrieval_queries(
 def _retrieval_query_selection_priority(query: QueryExpansion) -> int:
     if query.reason == "original_query":
         return 0
-    if query.reason == "activity_visual_selfcare_bridge":
+    if query.reason in {
+        "activity_visual_selfcare_bridge",
+        "family_activity_bridge",
+        "family_museum_activity_bridge",
+        "family_painting_activity_bridge",
+        "family_swimming_activity_bridge",
+    }:
         return 1
     if query.reason == "exercise_activity_inventory_bridge":
         return 1
@@ -1070,6 +1077,12 @@ def _retrieval_query_selection_priority(query: QueryExpansion) -> int:
         return 1
     if query.reason in _BROAD_AGGREGATION_EXPANSION_REASONS:
         return 1
+    if query.reason in {
+        "activity_aggregation_bridge",
+        "family_motivation_context_bridge",
+        "hobby_interest_bridge",
+    }:
+        return 3
     if query.reason in _HIGH_SIGNAL_EXPANSION_REASONS:
         return 2
     if query.reason.startswith("decomposition_"):

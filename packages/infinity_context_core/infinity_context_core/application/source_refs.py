@@ -31,7 +31,17 @@ def chunk_source_refs(chunk: MemoryChunk, *, text_preview: str) -> tuple[SourceR
             refs.append(ref)
         if len(refs) >= MAX_SOURCE_REFS_PER_ITEM:
             break
-    return tuple(refs) or (_fallback_chunk_source_ref(chunk, text_preview=text_preview),)
+    if refs:
+        refs.extend(
+            _dialogue_turn_source_refs_for_structured_metadata(
+                chunk,
+                source_refs=tuple(refs),
+                text_preview=text_preview,
+            )
+        )
+    return tuple(refs[:MAX_SOURCE_REFS_PER_ITEM]) or (
+        _fallback_chunk_source_ref(chunk, text_preview=text_preview),
+    )
 
 
 def source_ref_location_summary(source_refs: tuple[SourceRef, ...]) -> dict[str, object]:
@@ -131,6 +141,37 @@ def _dialogue_turn_source_refs(
         if len(refs) >= MAX_SOURCE_REFS_PER_ITEM - 1:
             break
     return tuple(refs)
+
+
+def _dialogue_turn_source_refs_for_structured_metadata(
+    chunk: MemoryChunk,
+    *,
+    source_refs: tuple[SourceRef, ...],
+    text_preview: str,
+) -> tuple[SourceRef, ...]:
+    base_source_id = _dialogue_turn_base_source_id(chunk.source_external_id)
+    if not base_source_id or not _structured_refs_belong_to_source_group(
+        source_refs,
+        base_source_id=base_source_id,
+    ):
+        return ()
+    inferred = _dialogue_turn_source_refs(chunk, text_preview=text_preview)
+    if not inferred:
+        return ()
+    seen = {ref.source_id for ref in source_refs}
+    return tuple(ref for ref in inferred if ref.source_id not in seen)
+
+
+def _structured_refs_belong_to_source_group(
+    source_refs: tuple[SourceRef, ...],
+    *,
+    base_source_id: str,
+) -> bool:
+    for ref in source_refs:
+        source_id = " ".join(str(ref.source_id).split())
+        if source_id == base_source_id or source_id.startswith(f"{base_source_id}:"):
+            return True
+    return False
 
 
 def _dialogue_turn_base_source_id(source_external_id: str) -> str:

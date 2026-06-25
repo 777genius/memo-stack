@@ -101,14 +101,16 @@ def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
         "1:decomposition_event_context": ("event_noise",),
         "2:family_swimming_activity_bridge": ("d1_swimming", "generic_a"),
         "3:family_hike_activity_bridge": ("d16_hike", "generic_b"),
-        "4:symbol_importance_bridge": ("d14_symbol", "d4_symbol", "generic_c"),
-        "5:meteor_shower_feeling_bridge": ("d10_feeling", "generic_d"),
-        "6:adoption_current_goal_bridge": ("d19_adoption", "generic_e"),
+        "4:family_museum_activity_bridge": ("d6_museum", "generic_c"),
+        "5:symbol_importance_bridge": ("d14_symbol", "d4_symbol", "generic_d"),
+        "6:meteor_shower_feeling_bridge": ("d10_feeling", "generic_e"),
+        "7:adoption_current_goal_bridge": ("d19_adoption", "generic_f"),
     }
 
     assert _protected_query_head_keys(rankings) == (
         "d1_swimming",
         "d16_hike",
+        "d6_museum",
         "d14_symbol",
         "d4_symbol",
         "d10_feeling",
@@ -646,6 +648,9 @@ def test_bounded_retrieval_queries_keep_activity_and_children_preference_bridges
     assert "activity_aggregation_bridge" in {query.reason for query in activity}
     assert "family_activity_bridge" in {query.reason for query in family_activity}
     assert "family_painting_activity_bridge" in {
+        query.reason for query in family_activity
+    }
+    assert "family_museum_activity_bridge" in {
         query.reason for query in family_activity
     }
     assert "activity_visual_selfcare_bridge" in {

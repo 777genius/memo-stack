@@ -979,6 +979,11 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
         ),
         (
             build_query_expansion_plan("What activities has Melanie done with her family?"),
+            "family_museum_activity_bridge",
+            "museum dinosaur exhibit",
+        ),
+        (
+            build_query_expansion_plan("What activities has Melanie done with her family?"),
             "family_swimming_activity_bridge",
             "swimming with kids swim",
         ),

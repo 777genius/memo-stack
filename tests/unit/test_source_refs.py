@@ -241,6 +241,38 @@ def test_chunk_source_refs_do_not_infer_dialogue_refs_over_structured_metadata()
     )
 
 
+def test_chunk_source_refs_add_dialogue_refs_for_same_group_structured_metadata() -> None:
+    chunk = _chunk(
+        metadata={
+            "source_refs": [
+                {
+                    "source_type": "locomo_observation",
+                    "source_id": "locomo:conv-26:session_6:observation",
+                    "quote_preview": "session_6 observation",
+                }
+            ]
+        },
+        source_type="locomo_observation",
+        source_external_id="locomo:conv-26:session_6:observation",
+        text=(
+            "D6:4 Melanie took the kids to the museum. "
+            "D6:6 Melanie said they liked the dinosaur exhibit. "
+            "D7:1 Different session marker should not be linked."
+        ),
+    )
+
+    refs = chunk_source_refs(chunk, text_preview=chunk.text)
+
+    assert [ref.source_id for ref in refs] == [
+        "locomo:conv-26:session_6:observation",
+        "locomo:conv-26:session_6:D6:4:turn",
+        "locomo:conv-26:session_6:D6:6:turn",
+    ]
+    assert refs[0].quote_preview == "session_6 observation"
+    assert refs[1].source_type == "locomo_observation"
+    assert refs[1].quote_preview == "D6:4 Melanie took the kids to the museum."
+
+
 def _chunk(
     *,
     metadata: dict[str, object],
