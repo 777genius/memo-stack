@@ -2,6 +2,8 @@ import asyncio
 from datetime import UTC, datetime
 
 from infinity_context_core.application.context_collectors import (
+    _HIGH_SIGNAL_EXPANSION_REASONS,
+    _PROTECTED_EXPANSION_HEAD_REASONS,
     _bounded_derived_retrieval_queries,
     _canonical_fact_candidate_limit,
     _fused_ranked_keys,
@@ -15,6 +17,9 @@ from infinity_context_core.application.context_query_expansion import (
     QueryExpansion,
     QueryExpansionPlan,
     build_query_expansion_plan,
+)
+from infinity_context_core.application.context_ranking_reason_policy import (
+    KEYWORD_EXPANSION_SCORE_CAPS,
 )
 from infinity_context_core.domain.entities import (
     MemoryChunk,
@@ -66,6 +71,23 @@ def test_keyword_query_search_limit_bounds_large_requests_per_variant() -> None:
     assert _keyword_query_search_limit(total_limit=4, candidate_limit=24) == 20
     assert _keyword_query_search_limit(total_limit=50, candidate_limit=300) == 150
     assert _keyword_query_search_limit(total_limit=500, candidate_limit=360) == 180
+
+
+def test_high_confidence_policy_bridges_have_retrieval_head_protection() -> None:
+    deliberately_unprotected = {
+        "identity_bridge",
+    }
+    protected_reasons = _HIGH_SIGNAL_EXPANSION_REASONS | _PROTECTED_EXPANSION_HEAD_REASONS
+    unprotected = {
+        reason
+        for reason, score_cap in KEYWORD_EXPANSION_SCORE_CAPS.items()
+        if reason.endswith("_bridge")
+        and score_cap >= 0.96
+        and reason not in protected_reasons
+        and reason not in deliberately_unprotected
+    }
+
+    assert unprotected == set()
 
 
 def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
