@@ -2631,6 +2631,23 @@ def test_keyword_chunk_score_boosts_multimodal_evidence_bridge_policies() -> Non
         assert score >= 0.9
 
 
+def test_keyword_chunk_score_boosts_event_summary_bridge() -> None:
+    plan = build_query_expansion_plan("What did we discuss during the launch review?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Launch review meeting notes: Alex discussed the Atlas rollout, "
+            "decision was to move the deadline, and Mira owns the follow up action item."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "event_summary_bridge"
+    assert query_expansion_reason_priority(reason) == 4
+    assert score >= 0.89
+
+
 def test_keyword_chunk_score_boosts_stale_state_temporal_bridge() -> None:
     plan = build_query_expansion_plan("Which memory is stale for Project Atlas?")
     _, reason, relevance = best_query_relevance(
@@ -3066,8 +3083,8 @@ def test_keyword_chunk_score_boosts_covered_call_topic_evidence() -> None:
 
     score = keyword_chunk_score(relevance, query_expansion_reason=reason)
 
-    assert reason == "conversation_transcript_evidence_bridge"
-    assert score >= 0.84
+    assert reason == "event_summary_bridge"
+    assert score >= 0.82
 
 
 def test_query_expansion_reason_priority_promotes_exact_trait_evidence() -> None:

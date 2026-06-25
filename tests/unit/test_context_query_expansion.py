@@ -167,6 +167,31 @@ def test_query_expansion_covers_entity_relation_inventory_questions() -> None:
     assert "Атлас" in _expansion_query(russian, "entity_relation_inventory_bridge")
 
 
+def test_query_expansion_covers_event_summary_questions() -> None:
+    recap = build_query_expansion_plan("Recap the last call with Alex")
+    discussed = build_query_expansion_plan("What did we discuss during the launch review?")
+    notes = build_query_expansion_plan("Action items from the Atlas sync")
+    russian = build_query_expansion_plan("Что обсудили на созвоне с Алексом?")
+
+    for plan in (recap, discussed, notes, russian):
+        summary = _expansion_query(plan, "event_summary_bridge")
+
+        assert "summary" in summary.casefold() or "саммари" in summary.casefold()
+        assert "decision" in summary.casefold() or "решения" in summary.casefold()
+        assert "action" in summary.casefold() or "поручения" in summary.casefold()
+
+    assert "Alex" in _expansion_query(recap, "event_summary_bridge")
+    assert "review" in _expansion_query(discussed, "event_summary_bridge")
+    assert "Atlas" in _expansion_query(notes, "event_summary_bridge")
+    assert "Алексом" in _expansion_query(russian, "event_summary_bridge")
+
+
+def test_query_expansion_does_not_treat_event_scheduling_as_event_summary() -> None:
+    plan = build_query_expansion_plan("When is the next meeting with Alex?")
+
+    assert "event_summary_bridge" not in {expansion.reason for expansion in plan.expansions}
+
+
 def test_query_expansion_covers_patriotic_service_inference() -> None:
     plan = build_query_expansion_plan("Would John be considered a patriotic person?")
 

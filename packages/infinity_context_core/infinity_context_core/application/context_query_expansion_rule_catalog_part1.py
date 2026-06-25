@@ -6,6 +6,9 @@ from infinity_context_core.application import context_query_expansion_rule_terms
 from infinity_context_core.application.context_query_entity_relation_expansions import (
     ENTITY_RELATION_EXPANSION_RULES,
 )
+from infinity_context_core.application.context_query_event_summary_expansions import (
+    EVENT_SUMMARY_EXPANSION_RULES,
+)
 from infinity_context_core.application.context_query_organization_summary_expansions import (
     ORGANIZATION_SUMMARY_EXPANSION_RULES,
 )
@@ -21,6 +24,7 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
     *PROJECT_SUMMARY_EXPANSION_RULES,
     *ORGANIZATION_SUMMARY_EXPANSION_RULES,
     *ENTITY_RELATION_EXPANSION_RULES,
+    *EVENT_SUMMARY_EXPANSION_RULES,
     (
             frozenset({"identity"}),
             (

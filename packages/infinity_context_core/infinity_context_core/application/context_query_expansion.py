@@ -11,6 +11,9 @@ from infinity_context_core.application.context_query_decomposition import (
 from infinity_context_core.application.context_query_entity_relation_expansions import (
     entity_relation_query_variants,
 )
+from infinity_context_core.application.context_query_event_summary_expansions import (
+    event_summary_query_variants,
+)
 from infinity_context_core.application.context_query_expansion_rules import (
     EXPANSION_RULES as _EXPANSION_RULES,
 )
@@ -102,6 +105,7 @@ def build_query_expansion_plan(
     query_term_variants.update(support_role_query_variants(query))
     query_term_variants.update(workflow_commitment_query_variants(query))
     query_term_variants.update(entity_relation_query_variants(query))
+    query_term_variants.update(event_summary_query_variants(query))
     query_term_variants.update(personal_fact_query_variants(query))
     query_term_variants.update(project_summary_query_variants(query))
     query_term_variants.update(organization_summary_query_variants(query))
