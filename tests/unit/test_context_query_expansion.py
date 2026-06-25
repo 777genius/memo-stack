@@ -1605,6 +1605,9 @@ def test_query_expansion_covers_generic_ally_inference_bridge() -> None:
 
 def test_query_expansion_covers_generic_behavior_inference_bridge() -> None:
     reliable = build_query_expansion_plan("Would Alex be considered reliable?")
+    responsible = build_query_expansion_plan("Would Alex be considered responsible?")
+    trustworthy = build_query_expansion_plan("Would Alex be considered trustworthy?")
+    dependable = build_query_expansion_plan("Would Alex be considered dependable?")
     organized = build_query_expansion_plan("Would Alex be considered organized?")
     creative = build_query_expansion_plan("Would Alex be considered creative?")
 
@@ -1615,6 +1618,11 @@ def test_query_expansion_covers_generic_behavior_inference_bridge() -> None:
         reliable,
         "generic_behavior_inference_bridge",
     )
+    for plan in (responsible, trustworthy, dependable):
+        assert "dependable responsible trustworthy" in _expansion_query(
+            plan,
+            "generic_behavior_inference_bridge",
+        )
     assert "organized planned prepared scheduled" in _expansion_query(
         organized,
         "generic_behavior_inference_bridge",

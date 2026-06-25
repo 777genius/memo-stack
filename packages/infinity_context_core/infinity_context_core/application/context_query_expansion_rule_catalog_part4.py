@@ -346,6 +346,30 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "generic_behavior_inference_bridge",
         ),
     (
+            frozenset({"responsible"}),
+            (
+                "behavior evidence reliable dependable responsible trustworthy kept "
+                "promises followed through prepared consistently"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"trustworthy"}),
+            (
+                "behavior evidence reliable dependable responsible trustworthy kept "
+                "promises followed through prepared consistently"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"dependable"}),
+            (
+                "behavior evidence reliable dependable responsible trustworthy kept "
+                "promises followed through prepared consistently"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
             frozenset({"organized"}),
             (
                 "behavior evidence organized planned prepared scheduled coordinated "
