@@ -310,6 +310,39 @@ def test_apply_domain_rerank_signals_penalizes_birdwatching_broad_activity_noise
     assert "birdwatching_city_schedule_broad_activity_noise" in adjustment.reasons
 
 
+def test_apply_domain_rerank_signals_keeps_national_park_trail_map_support() -> None:
+    item = ContextItem(
+        item_id="andrew_trail_map",
+        item_type="chunk",
+        text=(
+            "D11:9 Andrew: Looking forward to seeing them have fun hiking. "
+            "Let's get planning for next month! Here's the map for the trail."
+        ),
+        score=0.83,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-44:session_11:D11:9:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "national_park_inference_bridge"},
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="Which national park could Audrey and Andrew be referring to?",
+        query_reason="national_park_inference_bridge",
+        item=item,
+        relevance=_relevance(distinctive_term_hits=4),
+    )
+
+    assert adjustment.boost > 0
+    assert "national_park_trail_map_support_evidence" in adjustment.reasons
+    assert dict(adjustment.rank_signals)["national_park_inference_evidence"] >= 2
+
+
 def test_apply_domain_rerank_signals_boosts_slot_diverse_pottery_aggregation() -> None:
     item = ContextItem(
         item_id="pottery_aggregation",

@@ -71,6 +71,13 @@ def national_park_inference_rerank_signal(
             rank_signal_key="national_park_inference_evidence",
             rank_signal=max(3.0, float(relevance.distinctive_term_hits)),
         )
+    if has_trail_map:
+        return DomainRerankSignal(
+            boost=0.032,
+            reason="national_park_trail_map_support_evidence",
+            rank_signal_key="national_park_inference_evidence",
+            rank_signal=max(2.0, float(relevance.distinctive_term_hits)),
+        )
     if _GENERIC_PARK_NOISE_RE.search(text) and not has_trail_map:
         return DomainRerankSignal(
             penalty=0.074,
