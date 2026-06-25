@@ -5092,6 +5092,49 @@ def test_deterministic_rerank_prefers_canonical_person_anchor_for_profile_summar
     )
 
 
+def test_deterministic_rerank_prefers_multi_intent_decomposition_evidence() -> None:
+    generic = _item(
+        "generic_atlas_note",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Project Atlas owner Alex appears in a generic planning note.",
+    )
+    multi_intent = _item(
+        "multi_intent_decision",
+        score=0.711,
+        retrieval_source="keyword_chunks",
+        text=(
+            "After the billing call, Alex decided Project Atlas should wait "
+            "for invoice approval. The decision followed the call."
+        ),
+    )
+    query = "What decision did Alex make about Project Atlas after the billing call?"
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, multi_intent),
+        query=query,
+        plan=build_query_expansion_plan(query),
+        query_anchor_intent=build_query_anchor_intent(query),
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["multi_intent_decision"].score > by_id["generic_atlas_note"].score
+    assert (
+        "query_decomposition_multi_intent_covered"
+        in by_id["multi_intent_decision"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        by_id["multi_intent_decision"]
+        .diagnostics["score_signals"]["query_decomposition_covered_reason_count"]
+        >= 2
+    )
+    assert "query_decomposition_multi_intent_covered" not in by_id[
+        "generic_atlas_note"
+    ].diagnostics["provenance"].get("deterministic_rerank_reasons", [])
+
+
 def test_deterministic_rerank_prefers_canonical_project_anchor_for_summary() -> None:
     generic = _item(
         "generic_atlas_chunk",

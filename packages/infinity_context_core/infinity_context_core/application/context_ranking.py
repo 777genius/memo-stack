@@ -183,8 +183,17 @@ _DETERMINISTIC_RERANK_MAX_BOOST = 0.055
 _DETERMINISTIC_RERANK_MAX_PENALTY = 0.11
 _CANONICAL_ANCHOR_SUMMARY_RERANK_MAX_BOOST = 0.018
 _CITATION_EVIDENCE_RERANK_MAX_BOOST = 0.024
+_DECOMPOSITION_COVERAGE_RERANK_MAX_BOOST = 0.022
 _LOCALIZED_EVIDENCE_RERANK_MAX_BOOST = 0.022
 _DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
+_BROAD_DECOMPOSITION_COVERAGE_REASONS = frozenset(
+    {
+        "decomposition_clause",
+        "decomposition_inventory_list",
+        "decomposition_quantity_count",
+        "decomposition_temporal_answer",
+    }
+)
 _STRONG_EVIDENCE_RERANK_SOURCES = frozenset(
     {
         "approved_context_linked_anchors",
@@ -1428,6 +1437,7 @@ def _deterministic_rerank_signals(
     boost = 0.0
     penalty = 0.0
     reasons: list[str] = []
+    rank_signals: dict[str, float] = {}
     if len(sources) >= 2:
         boost += min(0.018, 0.006 * len(sources))
         reasons.append("hybrid_source_diversity")
@@ -1472,6 +1482,17 @@ def _deterministic_rerank_signals(
     if localized_evidence_boost > 0:
         boost += localized_evidence_boost
         reasons.append(localized_evidence_reason)
+    decomposition_boost, decomposition_reason, decomposition_signals = (
+        _decomposition_coverage_support_signal(
+            plan=plan,
+            text=item.text,
+            query_reason=query_reason,
+        )
+    )
+    if decomposition_boost > 0:
+        boost += decomposition_boost
+        reasons.append(decomposition_reason)
+        rank_signals.update(decomposition_signals)
     canonical_summary_boost, canonical_summary_reason = (
         _canonical_anchor_summary_support_signal(
             item=item,
@@ -1748,7 +1769,7 @@ def _deterministic_rerank_signals(
     boost += domain_adjustment.boost
     penalty += domain_adjustment.penalty
     reasons.extend(domain_adjustment.reasons)
-    rank_signals = dict(domain_adjustment.rank_signals)
+    rank_signals.update(domain_adjustment.rank_signals)
     slot_diverse_aggregation = aggregation_answer_slot_count(query=query, text=item.text) >= 2
     event_detail_requirement_support = "temporal_camping_detail_evidence" in reasons
     if requested_total > 0:
@@ -1857,6 +1878,65 @@ def _localized_evidence_support_signal(
         else "localized_evidence_source"
     )
     return round(min(_LOCALIZED_EVIDENCE_RERANK_MAX_BOOST, boost), 4), reason
+
+
+def _decomposition_coverage_support_signal(
+    *,
+    plan: QueryExpansionPlan,
+    text: str,
+    query_reason: str,
+) -> tuple[float, str, dict[str, float]]:
+    if len(plan.decompositions) < 2:
+        return 0.0, "", {}
+    if (
+        not query_reason.startswith("decomposition_")
+        or query_reason in _BROAD_DECOMPOSITION_COVERAGE_REASONS
+    ):
+        return 0.0, "", {}
+    matched_reasons: set[str] = set()
+    priority_total = 0
+    distinctive_hit_total = 0
+    for decomposition in plan.decompositions:
+        reason = decomposition.reason
+        if (
+            reason in _BROAD_DECOMPOSITION_COVERAGE_REASONS
+            or not reason.startswith("decomposition_")
+        ):
+            continue
+        relevance = score_query_relevance(query=decomposition.query, text=text)
+        priority = _query_reason_priority_for_relevance(reason, relevance)
+        if priority <= 0 and reason.startswith("decomposition_"):
+            priority = 3
+        min_distinctive_hits = max(
+            4,
+            _QUERY_REASON_PRIORITY_MIN_DISTINCTIVE_HITS.get(reason, 0),
+        )
+        if (
+            priority <= 0
+            or relevance.distinctive_term_hits < min_distinctive_hits
+            or (relevance.hit_ratio < 0.12 and relevance.phrase_bigram_hits <= 0)
+        ):
+            continue
+        matched_reasons.add(reason)
+        priority_total += priority
+        distinctive_hit_total += relevance.distinctive_term_hits
+    if len(matched_reasons) < 2:
+        return 0.0, "", {}
+
+    boost = 0.006 + min(0.012, 0.005 * len(matched_reasons))
+    if priority_total >= 8:
+        boost += 0.002
+    if distinctive_hit_total >= 8:
+        boost += 0.002
+    boost = round(min(_DECOMPOSITION_COVERAGE_RERANK_MAX_BOOST, boost), 4)
+    return (
+        boost,
+        "query_decomposition_multi_intent_covered",
+        {
+            "query_decomposition_covered_reason_count": float(len(matched_reasons)),
+            "query_decomposition_coverage_boost": boost,
+        },
+    )
 
 
 def _canonical_anchor_summary_support_signal(
