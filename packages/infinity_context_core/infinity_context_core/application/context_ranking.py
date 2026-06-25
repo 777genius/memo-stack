@@ -259,6 +259,7 @@ _PRECISE_EVIDENCE_SOURCE_REASONS = frozenset(
         "personality_drive_bridge",
         "personality_thoughtfulness_bridge",
         "personality_trait_bridge",
+        "post_athletic_career_bridge",
         "running_reason_bridge",
         "running_reason_question_bridge",
         "screenplay_count_bridge",

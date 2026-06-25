@@ -246,6 +246,21 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "yoga_delay_gaming_bridge",
         ),
     (
+            frozenset({"basketball", "career"}),
+            _terms._POST_ATHLETIC_CAREER_EXPANSION,
+            "post_athletic_career_bridge",
+        ),
+    (
+            frozenset({"athletic", "career"}),
+            _terms._POST_ATHLETIC_CAREER_EXPANSION,
+            "post_athletic_career_bridge",
+        ),
+    (
+            frozenset({"sports", "career"}),
+            _terms._POST_ATHLETIC_CAREER_EXPANSION,
+            "post_athletic_career_bridge",
+        ),
+    (
             frozenset({"pursue", "career"}),
             _terms._CAREER_INTENT_EXPANSION,
             "career_intent_bridge",

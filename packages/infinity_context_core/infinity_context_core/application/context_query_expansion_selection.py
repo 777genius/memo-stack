@@ -159,6 +159,29 @@ _POST_EVENT_CONTEXT_TERMS = frozenset(
         "why",
     }
 )
+_POST_ATHLETIC_CAREER_CONTEXT_TERMS = frozenset(
+    {
+        "athlete",
+        "athletes",
+        "athletic",
+        "basketball",
+        "career",
+        "court",
+        "sport",
+        "sports",
+    }
+)
+_POST_ATHLETIC_CAREER_FUTURE_TERMS = frozenset(
+    {
+        "after",
+        "could",
+        "future",
+        "life",
+        "might",
+        "next",
+        "post",
+    }
+)
 _STUDY_TIME_MANAGEMENT_CONTEXT_TERMS = frozenset(
     {
         "class",
@@ -314,6 +337,8 @@ def should_skip_expansion_rule(
         return not _requests_post_event_emotion(raw_tokens)
     if reason == "symbol_importance_bridge":
         return not _requests_symbol_importance(raw_tokens)
+    if reason == "post_athletic_career_bridge":
+        return not _requests_post_athletic_career(raw_tokens)
     if reason == "study_time_management_bridge":
         return not _requests_study_time_management(raw_tokens)
     if reason == "after_event_temporal_bridge":
@@ -409,6 +434,14 @@ def _requests_post_event_emotion(raw_tokens: set[str]) -> bool:
     return bool(
         raw_tokens.intersection(_POST_EVENT_EMOTION_TERMS)
         and raw_tokens.intersection(_POST_EVENT_CONTEXT_TERMS)
+    )
+
+
+def _requests_post_athletic_career(raw_tokens: set[str]) -> bool:
+    return bool(
+        "career" in raw_tokens
+        and raw_tokens.intersection(_POST_ATHLETIC_CAREER_CONTEXT_TERMS)
+        and raw_tokens.intersection(_POST_ATHLETIC_CAREER_FUTURE_TERMS)
     )
 
 

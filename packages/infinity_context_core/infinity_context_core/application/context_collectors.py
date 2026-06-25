@@ -163,6 +163,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "pet_inventory_bridge",
         "political_inference_bridge",
         "pottery_type_bridge",
+        "post_athletic_career_bridge",
         "public_office_service_bridge",
         "relocation_willingness_inference_bridge",
         "relationship_duration_bridge",
@@ -207,6 +208,7 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_habitat_setup_bridge",
         "family_activity_bridge",
         "item_purchase_bridge",
+        "post_athletic_career_bridge",
         "symbol_importance_bridge",
     }
 )

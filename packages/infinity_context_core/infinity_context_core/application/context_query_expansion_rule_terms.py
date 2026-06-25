@@ -140,6 +140,13 @@ _CAREER_INTENT_EXPANSION = (
     "current career option pursue looking into counseling counselor mental "
     "health jobs education options next steps figure out work goal decided"
 )
+_POST_ATHLETIC_CAREER_EXPANSION = (
+    "basketball coach coaching mentor leadership leader great puts others first "
+    "eventually becomes king aragorn sports marketing seminars helping people "
+    "share knowledge platform positive difference inspire charity foundation "
+    "meaningful legacy off court give back future after life post athletic young "
+    "athletes youth camp teaching"
+)
 _ART_STYLE_EXPANSION = (
     "art painting artwork art show preview abstract style kind type "
     "inclusivity diversity representation identity self acceptance"
@@ -191,6 +198,7 @@ __all__ = (
     "_TRIP_DESTINATION_EXPANSION",
     "_DESTRESS_ACTIVITY_EXPANSION",
     "_STUDY_TIME_MANAGEMENT_EXPANSION",
+    "_POST_ATHLETIC_CAREER_EXPANSION",
     "_ANIMAL_CAREER_INFERENCE_EXPANSION",
     "_ANIMAL_CARE_INSTRUCTION_EXPANSION",
     "_ANIMAL_DIET_EVIDENCE_EXPANSION",

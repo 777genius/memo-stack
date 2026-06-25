@@ -2984,6 +2984,60 @@ def test_best_query_relevance_bridges_charity_brand_sponsorship_evidence() -> No
         assert relevance.distinctive_term_hits >= min_hits
 
 
+def test_query_expansion_bridges_post_athletic_career_without_goal_noise() -> None:
+    post_career = build_query_expansion_plan(
+        "What could John do after his basketball career?"
+    )
+    in_career_goals = build_query_expansion_plan(
+        "What are John's goals with regards to his basketball career?"
+    )
+    off_court_goals = build_query_expansion_plan(
+        "What are John's goals for his career that are not related to his basketball skills?"
+    )
+
+    expansion = _expansion_query(post_career, "post_athletic_career_bridge")
+    assert expansion.startswith("John ")
+    assert "basketball coach coaching mentor leadership leader great" in expansion
+    assert "puts others first eventually becomes king aragorn" in expansion
+    assert "sports marketing seminars helping people share knowledge" in expansion
+    assert "post_athletic_career_bridge" not in {
+        item.reason for item in in_career_goals.expansions
+    }
+    assert "post_athletic_career_bridge" not in {
+        item.reason for item in off_court_goals.expansions
+    }
+
+
+def test_best_query_relevance_bridges_post_athletic_career_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "What could John do after his basketball career?"
+    )
+
+    evidence_cases = (
+        (
+            "D11:19 John wants to use his platform to make a positive "
+            "difference, inspire others, start a foundation, do charity work, "
+            "and leave a meaningful legacy.",
+            9,
+        ),
+        (
+            "D26:1 John started doing seminars, helping people with their "
+            "sports and marketing.",
+            5,
+        ),
+        (
+            "D27:26 John admires that Aragorn is a great leader and puts "
+            "others first.",
+            5,
+        ),
+    )
+    for text, min_hits in evidence_cases:
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "post_athletic_career_bridge"
+        assert relevance.distinctive_term_hits >= min_hits
+
+
 def test_query_expansion_covers_fantasy_author_preference_bridge() -> None:
     plan = build_query_expansion_plan(
         "Would Tim enjoy reading books by C. S. Lewis or John Greene?"
