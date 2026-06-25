@@ -41,6 +41,19 @@ def test_query_expansion_separates_relocation_destination_from_origin() -> None:
     }
 
 
+def test_query_expansion_separates_lgbtq_membership_from_support_only_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Would Melanie be considered a member of the LGBTQ community?"
+    )
+
+    membership = _expansion_query(plan, "community_membership_bridge")
+    support_only = _expansion_query(plan, "community_membership_support_bridge")
+
+    assert "identify refer herself member" in membership
+    assert "supportive ally support acceptance" in support_only
+    assert "transgender trans lgbtq community" in support_only
+
+
 def test_query_expansion_covers_relocation_willingness_inference() -> None:
     plan = build_query_expansion_plan("Would John be open to moving to another country?")
     willing = build_query_expansion_plan("Would John be willing to relocate abroad?")

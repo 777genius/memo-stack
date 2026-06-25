@@ -121,6 +121,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "charity_tournament_count_bridge",
         "children_preference_bridge",
         "community_membership_bridge",
+        "community_membership_support_bridge",
         "commonality_interest_bridge",
         "conversation_transcript_evidence_bridge",
         "counseling_workshop_bridge",

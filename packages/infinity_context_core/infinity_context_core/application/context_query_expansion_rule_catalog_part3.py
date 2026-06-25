@@ -24,6 +24,14 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "community_membership_bridge",
         ),
     (
+            frozenset({"member", "lgbtq"}),
+            (
+                "supportive ally support acceptance transgender trans lgbtq community "
+                "encouraging rights inclusion kind words"
+            ),
+            "community_membership_support_bridge",
+        ),
+    (
             frozenset({"political", "leaning"}),
             (
                 "rights lgbtq transition conservative conservatives religious hike "

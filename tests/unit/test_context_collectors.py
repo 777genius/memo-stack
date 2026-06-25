@@ -918,6 +918,9 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
     ally = build_query_expansion_plan(
         "Would Melanie be considered an ally to the transgender community?"
     )
+    membership = build_query_expansion_plan(
+        "Would Melanie be considered a member of the LGBTQ community?"
+    )
 
     assert [query.reason for query in _bounded_derived_retrieval_queries(
         religious,
@@ -937,6 +940,16 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
         "ally_support_bridge",
         "identity_bridge",
         "decomposition_identity_attribute",
+    ]
+    assert [query.reason for query in _bounded_derived_retrieval_queries(
+        membership,
+        fallback="fallback",
+        limit=4,
+    )] == [
+        "original_query",
+        "community_membership_bridge",
+        "community_membership_support_bridge",
+        "decomposition_inference_support",
     ]
 
 
