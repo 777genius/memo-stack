@@ -134,6 +134,21 @@ def test_protected_query_head_keys_keep_multiple_animal_evidence_facets() -> Non
     )
 
 
+def test_protected_query_head_keys_keep_commonality_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:business_commonality_bridge": ("job_business_match", "generic_b"),
+        "2:commonality_interest_bridge": ("shared_hobby_match", "generic_c"),
+        "3:decomposition_commonality": ("shared_clause_match", "generic_d"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "job_business_match",
+        "shared_hobby_match",
+        "shared_clause_match",
+    )
+
+
 def test_protected_query_head_keys_keep_duration_and_frequency_heads() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -555,6 +570,32 @@ def test_bounded_retrieval_queries_keep_generic_behavior_inference_bridge() -> N
         "original_query",
         "generic_behavior_inference_bridge",
         "decomposition_inference_support",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_commonality_bridges() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="generic clause", reason="decomposition_clause"),
+            QueryExpansion(query="common people", reason="decomposition_commonality"),
+        ),
+        expansions=(
+            QueryExpansion(query="shared hobbies", reason="commonality_interest_bridge"),
+            QueryExpansion(
+                query="lost jobs own business",
+                reason="business_commonality_bridge",
+            ),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "decomposition_commonality",
+        "commonality_interest_bridge",
+        "business_commonality_bridge",
     ]
 
 
