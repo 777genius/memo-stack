@@ -235,6 +235,13 @@ _POLITICAL_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:leaning|likely|would|infer|inference)\b(?=.{0,80}\bpolitical\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_DEGREE_FIELD_INFERENCE_ANSWER_QUERY_RE = re.compile(
+    r"\b(?:degree|major|studied|study|university)\b"
+    r"(?=.{0,120}\b(?:might|likely|would|could|infer|inference|field|what|which)\b)|"
+    r"\b(?:might|likely|would|could|infer|inference|field|what|which)\b"
+    r"(?=.{0,120}\b(?:degree|major|studied|study|university)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE = re.compile(
     r"\b(?:member|membership|part\s+of|belong(?:s|ed|ing)?)\b"
     r"(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|queer|pride|community)\b)|"
@@ -610,6 +617,21 @@ _POLITICAL_INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"\b(?:conservative|unwelcoming|support|supportive|acceptance|progressive|"
     r"liberal|rights)\b(?=.{0,120}\b(?:lgbtq?|trans(?:gender)?|transition|"
     r"rights|equality|inclusion)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_DEGREE_FIELD_DIRECT_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:political\s+science|public\s+(?:policy|administration|affairs)|"
+    r"policy\s+studies|government|civic\s+policy|law)\b"
+    r"(?=.{0,140}\b(?:degree|major|studied|study|university|college)\b)|"
+    r"\b(?:degree|major|studied|study|university|college)\b"
+    r"(?=.{0,140}\b(?:political\s+science|public\s+(?:policy|administration|affairs)|"
+    r"policy\s+studies|government|civic\s+policy|law)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_DEGREE_FIELD_INDIRECT_ANSWER_TEXT_RE = re.compile(
+    r"\b(?:policymaking|policy\s+making)\b(?=.{0,140}\bdegree\b)|"
+    r"\bdegree\b(?=.{0,140}\b(?:policymaking|policy\s+making)\b)|"
+    r"\bdegree\s+related\s+to\s+(?:policymaking|policy\s+making)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE = re.compile(
@@ -1216,6 +1238,8 @@ def _requested_answer_shapes(query: str) -> tuple[str, ...]:
         query
     ) or _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(
         query
+    ) or _DEGREE_FIELD_INFERENCE_ANSWER_QUERY_RE.search(
+        query
     ) or _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(
         query
     ) or _ALLERGY_CONDITION_INFERENCE_ANSWER_QUERY_RE.search(
@@ -1290,6 +1314,12 @@ def _covered_answer_shapes(
             _POLITICAL_INFERENCE_ANSWER_QUERY_RE.search(query)
             and _POLITICAL_INFERENCE_ANSWER_TEXT_RE.search(text)
         ) or (
+            _DEGREE_FIELD_INFERENCE_ANSWER_QUERY_RE.search(query)
+            and (
+                _DEGREE_FIELD_DIRECT_ANSWER_TEXT_RE.search(text)
+                or _DEGREE_FIELD_INDIRECT_ANSWER_TEXT_RE.search(text)
+            )
+        ) or (
             _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query)
             and (
                 _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(text)
@@ -1340,21 +1370,28 @@ def _answer_shape_warnings(
     query: str,
     items: tuple[ContextItem, ...],
 ) -> tuple[str, ...]:
-    if not _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query):
-        return ()
-    has_direct_membership = any(
-        _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(item.text)
-        for item in items
-    )
-    if has_direct_membership:
-        return ()
-    has_support_only_evidence = any(
-        _COMMUNITY_MEMBERSHIP_SUPPORT_ONLY_ANSWER_TEXT_RE.search(item.text)
-        for item in items
-    )
-    if not has_support_only_evidence:
-        return ()
-    return ("community_membership_support_only_without_self_identification",)
+    warnings: list[str] = []
+    if _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_QUERY_RE.search(query):
+        has_direct_membership = any(
+            _COMMUNITY_MEMBERSHIP_INFERENCE_ANSWER_TEXT_RE.search(item.text)
+            for item in items
+        )
+        has_support_only_evidence = any(
+            _COMMUNITY_MEMBERSHIP_SUPPORT_ONLY_ANSWER_TEXT_RE.search(item.text)
+            for item in items
+        )
+        if has_support_only_evidence and not has_direct_membership:
+            warnings.append("community_membership_support_only_without_self_identification")
+    if _DEGREE_FIELD_INFERENCE_ANSWER_QUERY_RE.search(query):
+        has_direct_degree_field = any(
+            _DEGREE_FIELD_DIRECT_ANSWER_TEXT_RE.search(item.text) for item in items
+        )
+        has_indirect_degree_field = any(
+            _DEGREE_FIELD_INDIRECT_ANSWER_TEXT_RE.search(item.text) for item in items
+        )
+        if has_indirect_degree_field and not has_direct_degree_field:
+            warnings.append("degree_field_inferred_from_policy_career_evidence")
+    return _bounded_unique(warnings)
 
 
 def _is_social_old_query(query: str) -> bool:

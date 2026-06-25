@@ -584,6 +584,59 @@ def test_context_requirement_coverage_tracks_political_inference_evidence() -> N
     assert coverage["missing_answer_shapes"] == []
 
 
+def test_context_requirement_coverage_tracks_indirect_degree_policy_inference_with_caveat() -> None:
+    query = "What might John's degree be in?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="john_policy_degree",
+        item_type="chunk",
+        text=(
+            "John: I'm considering going into policymaking because of my degree "
+            "and my passion for making a positive impact."
+        ),
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D9:6"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == [
+        "degree_field_inferred_from_policy_career_evidence"
+    ]
+
+
+def test_context_requirement_coverage_tracks_direct_degree_field_inference_without_caveat() -> None:
+    query = "What might John's degree be in?"
+    intent = build_query_anchor_intent(query)
+    item = ContextItem(
+        item_id="john_direct_degree",
+        item_type="chunk",
+        text="John studied political science and public policy at university.",
+        score=0.9,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="D9:4"),),
+        diagnostics={"memory_scope_id": "scope"},
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=(item,),
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+    assert coverage["answer_shape_warnings"] == []
+
+
 def test_context_requirement_coverage_tracks_community_membership_inference() -> None:
     query = "Would Melanie be considered a member of the LGBTQ community?"
     intent = build_query_anchor_intent(query)
