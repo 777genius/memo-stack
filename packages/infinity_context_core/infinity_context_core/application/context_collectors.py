@@ -203,6 +203,7 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_care_instruction_bridge",
         "animal_diet_evidence_bridge",
         "animal_habitat_setup_bridge",
+        "symbol_importance_bridge",
     }
 )
 _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
@@ -213,6 +214,7 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "allergy_inventory_bridge",
         "animal_career_inference_bridge",
         "art_style_bridge",
+        "artifact_inventory_bridge",
         "attribute_trait_inventory_bridge",
         "birthplace_origin_bridge",
         "book_suggestion_bridge",
@@ -236,6 +238,7 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "organization_summary_bridge",
         "painting_inventory_bridge",
         "person_summary_bridge",
+        "event_summary_bridge",
         "personality_authenticity_bridge",
         "personality_drive_bridge",
         "personality_thoughtfulness_bridge",

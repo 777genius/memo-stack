@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from infinity_context_core.application.context_collectors import (
     _HIGH_SIGNAL_EXPANSION_REASONS,
+    _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS,
     _PROTECTED_EXPANSION_HEAD_REASONS,
     _bounded_derived_retrieval_queries,
     _canonical_fact_candidate_limit,
@@ -77,7 +78,11 @@ def test_high_confidence_policy_bridges_have_retrieval_head_protection() -> None
     deliberately_unprotected = {
         "identity_bridge",
     }
-    protected_reasons = _HIGH_SIGNAL_EXPANSION_REASONS | _PROTECTED_EXPANSION_HEAD_REASONS
+    protected_reasons = (
+        _HIGH_SIGNAL_EXPANSION_REASONS
+        | _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS
+        | _PROTECTED_EXPANSION_HEAD_REASONS
+    )
     unprotected = {
         reason
         for reason, score_cap in KEYWORD_EXPANSION_SCORE_CAPS.items()
@@ -96,7 +101,7 @@ def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
         "1:decomposition_event_context": ("event_noise",),
         "2:family_swimming_activity_bridge": ("d1_swimming", "generic_a"),
         "3:family_hike_activity_bridge": ("d16_hike", "generic_b"),
-        "4:symbol_importance_bridge": ("d14_symbol", "generic_c"),
+        "4:symbol_importance_bridge": ("d14_symbol", "d4_symbol", "generic_c"),
         "5:meteor_shower_feeling_bridge": ("d10_feeling", "generic_d"),
         "6:adoption_current_goal_bridge": ("d19_adoption", "generic_e"),
     }
@@ -105,6 +110,7 @@ def test_protected_query_head_keys_keep_specialized_evidence_heads() -> None:
         "d1_swimming",
         "d16_hike",
         "d14_symbol",
+        "d4_symbol",
         "d10_feeling",
         "d19_adoption",
     )
