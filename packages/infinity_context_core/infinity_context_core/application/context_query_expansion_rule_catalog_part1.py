@@ -204,6 +204,49 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "business_start_reason_bridge",
         ),
     (
+            frozenset({"promote", "store"}),
+            (
+                "working online store local artist cool designs limited "
+                "edition line show off style creativity offers promotions new "
+                "customers bring developed video presentation teach fashion pieces"
+            ),
+            "store_promotion_inventory_bridge",
+        ),
+    (
+            frozenset({"events", "promote", "business"}),
+            (
+                "went fair show off studio possible leads networking events make "
+                "things happen yesterday chose determined focused online store offers "
+                "promotions new customers dance competition business venture"
+            ),
+            "business_promotion_event_bridge",
+        ),
+    (
+            frozenset({"events", "promote", "business"}),
+            (
+                "networking events make things happen yesterday chose determined "
+                "focused attending networking events guts drive make connections "
+                "business venture losing job"
+            ),
+            "business_networking_event_bridge",
+        ),
+    (
+            frozenset({"events", "promote", "business"}),
+            (
+                "online store offers promotions new customers bring wild ride "
+                "starting business not giving up business venture store promotion"
+            ),
+            "business_store_promotion_event_bridge",
+        ),
+    (
+            frozenset({"long", "open", "studio"}),
+            (
+                "lost job banker yesterday take shot starting own business grand "
+                "opening tomorrow open studio six months timeline duration"
+            ),
+            "business_opening_timeline_bridge",
+        ),
+    (
             frozenset({"shelter", "girl"}),
             (
                 "shelter little girl sitting alone sad no other family comfort "

@@ -1513,6 +1513,62 @@ def test_query_expansion_covers_business_commonality_bridge() -> None:
     }
 
 
+def test_query_expansion_covers_business_promotion_inventory_bridges() -> None:
+    store = build_query_expansion_plan("How did Gina promote her clothes store?")
+    events = build_query_expansion_plan(
+        "Which events has Jon participated in to promote his business venture?"
+    )
+    technical = build_query_expansion_plan("How did the API promote customer service events?")
+
+    store_expansion = _expansion_query(store, "store_promotion_inventory_bridge")
+    event_expansion = _expansion_query(events, "business_promotion_event_bridge")
+    networking_expansion = _expansion_query(events, "business_networking_event_bridge")
+    store_event_expansion = _expansion_query(events, "business_store_promotion_event_bridge")
+
+    assert not store_expansion.startswith("Gina ")
+    assert "local artist cool designs" in store_expansion
+    assert "limited edition line" in store_expansion
+    assert "offers promotions new customers" in store_expansion
+    assert "developed video presentation teach fashion pieces" in store_expansion
+    assert not event_expansion.startswith("Jon ")
+    assert "fair show off studio possible leads" in event_expansion
+    assert "networking events make things happen" in event_expansion
+    assert "yesterday chose determined focused" in event_expansion
+    assert "online store offers promotions" in event_expansion
+    assert "networking events make things happen" in networking_expansion
+    assert "attending networking events guts drive" in networking_expansion
+    assert "online store offers promotions new customers" in store_event_expansion
+    assert "wild ride starting business not giving up" in store_event_expansion
+    assert "store_promotion_inventory_bridge" not in {
+        expansion.reason for expansion in technical.expansions
+    }
+    assert "business_promotion_event_bridge" not in {
+        expansion.reason for expansion in technical.expansions
+    }
+    assert "business_networking_event_bridge" not in {
+        expansion.reason for expansion in technical.expansions
+    }
+    assert "business_store_promotion_event_bridge" not in {
+        expansion.reason for expansion in technical.expansions
+    }
+
+
+def test_query_expansion_covers_business_opening_timeline_bridge() -> None:
+    plan = build_query_expansion_plan("How long did it take for Jon to open his studio?")
+    technical = build_query_expansion_plan("How long did it take to open the studio API?")
+
+    expansion = _expansion_query(plan, "business_opening_timeline_bridge")
+
+    assert expansion.startswith("Jon ")
+    assert "lost job banker yesterday" in expansion
+    assert "take shot starting own business" in expansion
+    assert "grand opening tomorrow" in expansion
+    assert "six months timeline duration" in expansion
+    assert "business_opening_timeline_bridge" not in {
+        expansion.reason for expansion in technical.expansions
+    }
+
+
 def test_query_expansion_covers_generic_multimodal_evidence_bridges() -> None:
     screenshot = build_query_expansion_plan("What text is written in this screenshot image?")
     video = build_query_expansion_plan("What did Alex say in the video about the launch?")
@@ -2921,6 +2977,116 @@ def test_best_query_relevance_bridges_business_commonality_evidence() -> None:
 
         assert reason == expected_reason
         assert relevance.distinctive_term_hits >= 2
+
+
+def test_best_query_relevance_bridges_store_promotion_inventory_evidence() -> None:
+    plan = build_query_expansion_plan("How did Gina promote her clothes store?")
+
+    cases = (
+        (
+            "D5:5 Gina: I've been working hard on my online store and teamed "
+            "up with a local artist for some cool designs.",
+            7,
+        ),
+        (
+            "D16:3 Gina: I made a limited edition line last week to show off "
+            "my style and creativity.",
+            6,
+        ),
+        (
+            "D8:4 Gina: I got some new offers and promotions going on my "
+            "online store to bring in new customers.",
+            7,
+        ),
+        (
+            "D13:4 Gina: I have developed a video presentation to teach how "
+            "to style my fashion pieces.",
+            5,
+        ),
+    )
+
+    for text, min_hits in cases:
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "store_promotion_inventory_bridge"
+        assert relevance.distinctive_term_hits >= min_hits
+
+
+def test_best_query_relevance_bridges_business_promotion_event_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Which events has Jon participated in to promote his business venture?"
+    )
+
+    cases = (
+        (
+            "D10:1 Jon: I went to a fair to show off my studio and get "
+            "possible leads.",
+            6,
+        ),
+    )
+
+    for text, min_hits in cases:
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "business_promotion_event_bridge"
+        assert relevance.distinctive_term_hits >= min_hits
+
+
+def test_best_query_relevance_bridges_business_networking_event_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Which events has Jon participated in to promote his business venture?"
+    )
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D16:6 Jon: Yesterday I chose to go to networking events to make "
+            "things happen. It's been tough but I'm staying determined and focused."
+        ),
+    )
+
+    assert reason == "business_networking_event_bridge"
+    assert relevance.distinctive_term_hits >= 7
+
+
+def test_best_query_relevance_bridges_business_store_promotion_event_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Which events has Jon participated in to promote his business venture?"
+    )
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D8:4 Gina: I got some new offers and promotions going on my "
+            "online store to try and bring in new customers. It's been a wild "
+            "ride starting my business, but I'm not giving up!"
+        ),
+    )
+
+    assert reason == "business_store_promotion_event_bridge"
+    assert relevance.distinctive_term_hits >= 9
+
+
+def test_best_query_relevance_bridges_business_opening_timeline_evidence() -> None:
+    plan = build_query_expansion_plan("How long did it take for Jon to open his studio?")
+
+    cases = (
+        (
+            "D1:2 Jon: Lost my job as a banker yesterday, so I'm gonna take "
+            "a shot at starting my own business.",
+            10,
+        ),
+        (
+            "D15:13 Jon: tomorrow at the grand opening!",
+            5,
+        ),
+    )
+
+    for text, min_hits in cases:
+        _, reason, relevance = best_query_relevance(plan, text=text)
+
+        assert reason == "business_opening_timeline_bridge"
+        assert relevance.distinctive_term_hits >= min_hits
 
 
 def test_best_query_relevance_bridges_shelter_comfort_reason_evidence() -> None:

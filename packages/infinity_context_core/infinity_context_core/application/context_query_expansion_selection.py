@@ -68,6 +68,37 @@ _TECHNICAL_SUPPORT_CONTEXT_TERMS = frozenset(
         "web",
     }
 )
+_BUSINESS_PROMOTION_TECHNICAL_CONTEXT_TERMS = _TECHNICAL_SUPPORT_CONTEXT_TERMS | frozenset(
+    {
+        "campaign",
+        "dashboard",
+    }
+)
+_STORE_PROMOTION_TERMS = frozenset(
+    {
+        "clothes",
+        "clothing",
+        "fashion",
+        "shop",
+        "store",
+    }
+)
+_BUSINESS_EVENT_PROMOTION_TERMS = frozenset(
+    {
+        "business",
+        "startup",
+        "venture",
+    }
+)
+_STUDIO_OPENING_TIMELINE_TERMS = frozenset(
+    {
+        "long",
+        "months",
+        "time",
+        "timeline",
+        "took",
+    }
+)
 _SYMBOL_IMPORTANCE_OBJECT_TERMS = frozenset(
     {
         "cross",
@@ -274,6 +305,16 @@ def should_skip_expansion_rule(
         return True
     if reason == "business_commonality_bridge":
         return not _BROAD_COMMONALITY_QUERY_RE.search(query)
+    if reason == "store_promotion_inventory_bridge":
+        return not _requests_store_promotion_inventory(raw_tokens)
+    if reason == "business_promotion_event_bridge":
+        return not _requests_business_promotion_events(raw_tokens)
+    if reason == "business_networking_event_bridge":
+        return not _requests_business_promotion_events(raw_tokens)
+    if reason == "business_store_promotion_event_bridge":
+        return not _requests_business_promotion_events(raw_tokens)
+    if reason == "business_opening_timeline_bridge":
+        return not _requests_business_opening_timeline(raw_tokens)
     if reason == "children_count_sibling_bridge" and not raw_tokens.intersection(
         {"child", "children", "kid", "kids", "sibling", "siblings", "brother", "sister"}
     ):
@@ -454,6 +495,35 @@ def _requests_study_time_management(raw_tokens: set[str]) -> bool:
     )
 
 
+def _requests_store_promotion_inventory(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_BUSINESS_PROMOTION_TECHNICAL_CONTEXT_TERMS):
+        return False
+    return bool(
+        "promote" in raw_tokens
+        and raw_tokens.intersection(_STORE_PROMOTION_TERMS)
+    )
+
+
+def _requests_business_promotion_events(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_BUSINESS_PROMOTION_TECHNICAL_CONTEXT_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection({"event", "events", "participated", "attended"})
+        and "promote" in raw_tokens
+        and raw_tokens.intersection(_BUSINESS_EVENT_PROMOTION_TERMS)
+    )
+
+
+def _requests_business_opening_timeline(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_BUSINESS_PROMOTION_TECHNICAL_CONTEXT_TERMS):
+        return False
+    return bool(
+        "open" in raw_tokens
+        and "studio" in raw_tokens
+        and raw_tokens.intersection(_STUDIO_OPENING_TIMELINE_TERMS)
+    )
+
+
 def _requests_symbol_importance_variants(variants: set[str]) -> bool:
     if variants.intersection({"symbol", "symbols"}) or any(
         token.startswith(("symbolic", "symbolis", "symboliz")) for token in variants
@@ -478,6 +548,13 @@ def identity_terms_for_expansion(
     identity_terms: tuple[str, ...],
 ) -> tuple[str, ...]:
     if reason == "commonality_interest_bridge" and _WHO_ELSE_COMMONALITY_QUERY_RE.search(query):
+        return ()
+    if reason in {
+        "business_networking_event_bridge",
+        "business_promotion_event_bridge",
+        "business_store_promotion_event_bridge",
+        "store_promotion_inventory_bridge",
+    }:
         return ()
     if reason == "travel_country_inventory_bridge":
         return tuple(

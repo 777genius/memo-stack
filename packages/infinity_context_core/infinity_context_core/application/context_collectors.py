@@ -113,7 +113,12 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "beach_count_activity_bridge",
         "beach_or_mountains_inference_bridge",
         "business_commonality_bridge",
+        "business_networking_event_bridge",
+        "business_opening_timeline_bridge",
+        "business_promotion_event_bridge",
+        "business_store_promotion_event_bridge",
         "business_start_reason_bridge",
+        "store_promotion_inventory_bridge",
         "camping_detail_bridge",
         "cause_education_infrastructure_inventory_bridge",
         "cause_veterans_inventory_bridge",
@@ -206,9 +211,14 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_care_instruction_bridge",
         "animal_diet_evidence_bridge",
         "animal_habitat_setup_bridge",
+        "business_networking_event_bridge",
+        "business_opening_timeline_bridge",
+        "business_promotion_event_bridge",
+        "business_store_promotion_event_bridge",
         "family_activity_bridge",
         "item_purchase_bridge",
         "post_athletic_career_bridge",
+        "store_promotion_inventory_bridge",
         "symbol_importance_bridge",
     }
 )
@@ -1152,6 +1162,16 @@ def _protected_query_head_keys(rankings: dict[str, tuple[str, ...]]) -> tuple[st
 
 
 def _protected_query_head_limit_for_reason(reason: str) -> int:
+    if reason == "store_promotion_inventory_bridge":
+        return 4
+    if reason == "business_networking_event_bridge":
+        return 2
+    if reason == "business_promotion_event_bridge":
+        return 3
+    if reason == "business_store_promotion_event_bridge":
+        return 2
+    if reason == "business_opening_timeline_bridge":
+        return 2
     if reason in _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS:
         return 2
     if _protect_query_head_for_reason(reason):
