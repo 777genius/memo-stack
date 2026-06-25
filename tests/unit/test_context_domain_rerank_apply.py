@@ -113,6 +113,64 @@ def test_apply_domain_rerank_signals_includes_causal_reason_evidence() -> None:
     assert "causal_reason_exact_evidence" in adjustment.reasons
 
 
+def test_apply_domain_rerank_signals_includes_choice_reason_evidence() -> None:
+    item = ContextItem(
+        item_id="adoption_agency_reason",
+        item_type="chunk",
+        text=(
+            "D2:12 Caroline: I chose them 'cause they help LGBTQ+ folks "
+            "with adoption. Their inclusivity and support really spoke to me."
+        ),
+        score=0.7,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="conv-26:D2:12"),),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {"query_expansion_reason": "choice_reason_bridge"},
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="Why did Melanie choose the adoption agency?",
+        query_reason="choice_reason_bridge",
+        item=item,
+        relevance=_relevance(distinctive_term_hits=5),
+    )
+
+    assert adjustment.boost > 0
+    assert "choice_reason_exact_evidence" in adjustment.reasons
+    assert ("choice_reason_answer_evidence", 3.0) in adjustment.rank_signals
+
+
+def test_apply_domain_rerank_signals_includes_future_plan_timing_evidence() -> None:
+    item = ContextItem(
+        item_id="camping_next_month",
+        item_type="chunk",
+        text=(
+            "D2:7 Melanie: My kids are excited about summer break and "
+            "we're thinking about going camping next month."
+        ),
+        score=0.7,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="conv-26:D2:7"),),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {"query_expansion_reason": "future_plan_timing_bridge"},
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="When is Melanie planning on going camping?",
+        query_reason="future_plan_timing_bridge",
+        item=item,
+        relevance=_relevance(distinctive_term_hits=7),
+    )
+
+    assert adjustment.boost > 0
+    assert "future_plan_timing_exact_evidence" in adjustment.reasons
+    assert ("future_plan_timing_answer_evidence", 3.0) in adjustment.rank_signals
+
+
 def test_apply_domain_rerank_signals_includes_lifestyle_food_evidence() -> None:
     item = ContextItem(
         item_id="sam_roasted_veg_recipe",

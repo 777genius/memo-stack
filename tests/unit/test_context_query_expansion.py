@@ -532,6 +532,26 @@ def test_query_expansion_covers_adoption_current_goal_bridge() -> None:
     assert "passed adoption agency interviews" in milestone_bridge
 
 
+def test_query_expansion_covers_future_plan_timing_bridge() -> None:
+    plan = build_query_expansion_plan("When is Melanie planning on going camping?")
+
+    bridge = _expansion_query(plan, "future_plan_timing_bridge")
+
+    assert bridge.startswith("Melanie ")
+    assert "thinking about considering going to scheduled" in bridge
+    assert "next month next week summer break" in bridge
+
+
+def test_query_expansion_covers_choice_reason_without_speaker_identity_bias() -> None:
+    plan = build_query_expansion_plan("Why did Melanie choose the adoption agency?")
+
+    bridge = _expansion_query(plan, "choice_reason_bridge")
+
+    assert not bridge.startswith("Melanie ")
+    assert "reason choose chose chosen picked selected" in bridge
+    assert "because cause helps support inclusivity spoke to me" in bridge
+
+
 def test_query_decomposition_covers_active_commitment_current_goal_evidence() -> None:
     plan = build_query_expansion_plan("Would Maria move back to Chicago soon?")
     decompositions = {

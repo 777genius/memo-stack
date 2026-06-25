@@ -16,6 +16,9 @@ from infinity_context_core.application.context_birdwatching_schedule_rerank impo
 from infinity_context_core.application.context_causal_reason_rerank import (
     causal_reason_rerank_signal,
 )
+from infinity_context_core.application.context_choice_reason_rerank import (
+    choice_reason_rerank_signal,
+)
 from infinity_context_core.application.context_domain_rerank_signals import (
     DomainRerankSignal,
     age_birthday_rerank_signal,
@@ -46,6 +49,9 @@ from infinity_context_core.application.context_exercise_performance_rerank impor
 )
 from infinity_context_core.application.context_frequency_rerank import (
     frequency_recurrence_rerank_signal,
+)
+from infinity_context_core.application.context_future_plan_timing_rerank import (
+    future_plan_timing_rerank_signal,
 )
 from infinity_context_core.application.context_national_park_inference import (
     national_park_inference_rerank_signal,
@@ -178,7 +184,19 @@ def _domain_rerank_signals(
             item=item,
             relevance=relevance,
         ),
+        future_plan_timing_rerank_signal(
+            query=query,
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
         causal_reason_rerank_signal(
+            query=query,
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
+        choice_reason_rerank_signal(
             query=query,
             query_reason=query_reason,
             item=item,

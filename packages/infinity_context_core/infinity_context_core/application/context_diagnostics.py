@@ -87,6 +87,8 @@ _CONTEXT_REQUIREMENT_SCORE_SIGNAL_KEYS = (
 _DETERMINISTIC_RERANK_SCORE_SIGNAL_KEYS = (
     "book_author_preference_world_evidence",
     "cause_awareness_answer_evidence",
+    "choice_reason_answer_evidence",
+    "future_plan_timing_answer_evidence",
     "item_purchase_object_evidence",
     "symbol_importance_visual_evidence",
     "friend_place_shelter_anchor_evidence",

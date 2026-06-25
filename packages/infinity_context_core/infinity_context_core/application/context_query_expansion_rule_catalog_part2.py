@@ -144,6 +144,22 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "camping_detail_bridge",
         ),
     (
+            frozenset({"when", "planning"}),
+            (
+                "planning plans planned thinking about considering going to scheduled "
+                "upcoming future next month next week summer break date month"
+            ),
+            "future_plan_timing_bridge",
+        ),
+    (
+            frozenset({"when", "plan"}),
+            (
+                "planning plans planned thinking about considering going to scheduled "
+                "upcoming future next month next week summer break date month"
+            ),
+            "future_plan_timing_bridge",
+        ),
+    (
             frozenset({"where", "trip"}),
             _terms._TRIP_DESTINATION_EXPANSION,
             "trip_destination_bridge",
@@ -459,6 +475,30 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"decision", "adopt"}),
             "adoption family kids children mom support good luck",
             "adoption_support_bridge",
+        ),
+    (
+            frozenset({"why", "choose"}),
+            (
+                "reason choose chose chosen picked selected made pick because cause "
+                "helps support inclusivity spoke to me decision option agency provider"
+            ),
+            "choice_reason_bridge",
+        ),
+    (
+            frozenset({"why", "pick"}),
+            (
+                "reason choose chose chosen picked selected made pick because cause "
+                "helps support inclusivity spoke to me decision option agency provider"
+            ),
+            "choice_reason_bridge",
+        ),
+    (
+            frozenset({"why", "selected"}),
+            (
+                "reason choose chose chosen picked selected made pick because cause "
+                "helps support inclusivity spoke to me decision option agency provider"
+            ),
+            "choice_reason_bridge",
         ),
     (
             frozenset({"move", "home", "country", "soon"}),

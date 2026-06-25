@@ -1,6 +1,9 @@
 from infinity_context_core.application.context_causal_reason_rerank import (
     causal_reason_rerank_signal,
 )
+from infinity_context_core.application.context_choice_reason_rerank import (
+    choice_reason_rerank_signal,
+)
 from infinity_context_core.application.context_domain_rerank_signals import (
     age_birthday_rerank_signal,
     aggregation_evidence_rerank_signal,
@@ -22,6 +25,9 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     support_network_rerank_signal,
     symbol_importance_rerank_signal,
     temporal_camping_detail_rerank_signal,
+)
+from infinity_context_core.application.context_future_plan_timing_rerank import (
+    future_plan_timing_rerank_signal,
 )
 from infinity_context_core.application.context_relevance import QueryRelevance
 from infinity_context_core.application.dto import ContextItem
@@ -626,6 +632,76 @@ def test_temporal_camping_detail_signal_prefers_event_details_over_topic_only() 
     assert exact_signal.reason == "temporal_camping_detail_evidence"
     assert topic_signal.boost == 0
     assert topic_signal.penalty == 0
+
+
+def test_future_plan_timing_signal_prefers_future_plan_over_past_camping() -> None:
+    exact = _item(
+        "future_plan",
+        text=(
+            "D2:7 Melanie: My kids are excited about summer break and "
+            "we're thinking about going camping next month."
+        ),
+        query_expansion_reason="future_plan_timing_bridge",
+    )
+    past = _item(
+        "past_camping",
+        text="D4:6 Melanie went camping with family last week in the mountains.",
+        query_expansion_reason="future_plan_timing_bridge",
+    )
+
+    exact_signal = future_plan_timing_rerank_signal(
+        query="When is Melanie planning on going camping?",
+        query_reason="future_plan_timing_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=7, unique_term_hits=7),
+    )
+    past_signal = future_plan_timing_rerank_signal(
+        query="When is Melanie planning on going camping?",
+        query_reason="future_plan_timing_bridge",
+        item=past,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "future_plan_timing_exact_evidence"
+    assert exact_signal.rank_signal_key == "future_plan_timing_answer_evidence"
+    assert past_signal.penalty > 0
+    assert past_signal.reason == "future_plan_timing_weak_evidence"
+
+
+def test_choice_reason_signal_prefers_because_evidence_over_topic_only() -> None:
+    exact = _item(
+        "choice_reason",
+        text=(
+            "D2:12 Caroline: I chose them 'cause they help LGBTQ+ folks "
+            "with adoption. Their inclusivity and support really spoke to me."
+        ),
+        query_expansion_reason="choice_reason_bridge",
+    )
+    topic = _item(
+        "adoption_topic",
+        text="D13:1 Caroline is researching adoption agencies and hopes to build a family.",
+        query_expansion_reason="choice_reason_bridge",
+    )
+
+    exact_signal = choice_reason_rerank_signal(
+        query="Why did Melanie choose the adoption agency?",
+        query_reason="choice_reason_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=5, unique_term_hits=5),
+    )
+    topic_signal = choice_reason_rerank_signal(
+        query="Why did Melanie choose the adoption agency?",
+        query_reason="choice_reason_bridge",
+        item=topic,
+        relevance=_relevance(distinctive_term_hits=4, unique_term_hits=4),
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "choice_reason_exact_evidence"
+    assert exact_signal.rank_signal_key == "choice_reason_answer_evidence"
+    assert topic_signal.penalty > 0
+    assert topic_signal.reason == "choice_reason_weak_evidence"
 
 
 def test_commonality_signal_boosts_who_else_single_anchor_answer() -> None:

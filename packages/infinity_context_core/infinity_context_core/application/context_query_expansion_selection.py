@@ -575,6 +575,8 @@ def identity_terms_for_expansion(
     query: str,
     identity_terms: tuple[str, ...],
 ) -> tuple[str, ...]:
+    if reason == "choice_reason_bridge":
+        return ()
     if reason == "commonality_interest_bridge" and _WHO_ELSE_COMMONALITY_QUERY_RE.search(query):
         return ()
     if reason in {
