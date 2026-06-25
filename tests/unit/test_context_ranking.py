@@ -1,3 +1,4 @@
+import infinity_context_core.application.context_ranking as context_ranking_module
 from infinity_context_core.application.context_diagnostics import context_rank_key
 from infinity_context_core.application.context_query_expansion import (
     build_query_expansion_plan,
@@ -8374,6 +8375,49 @@ def test_deterministic_rerank_prefers_friend_place_shelter_anchor() -> None:
     assert (
         "friend_place_shelter_anchor_evidence"
         not in by_id["d11_shelter_talks"].diagnostics["score_signals"]
+    )
+
+
+def test_deterministic_rerank_reuses_item_relevance_signals(monkeypatch) -> None:
+    query = "Where has Maria made friends?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    item = _item(
+        "d2_shelter_anchor",
+        score=0.94,
+        retrieval_source="keyword_chunks",
+        text="D2:1 Maria donated her old car to a homeless shelter where she volunteers.",
+        score_signals={
+            "query_expansion_reason": "friend_place_shelter_inventory_bridge",
+            "query_term_count": 7,
+            "unique_term_hits": 6,
+            "capped_frequency_hits": 6,
+            "hit_ratio": 0.85,
+            "distinctive_term_count": 5,
+            "distinctive_term_hits": 5,
+            "phrase_bigram_count": 6,
+            "phrase_bigram_hits": 2,
+            "phrase_boost": 0.012,
+            "query_relevance_boost": 0.07,
+        },
+    )
+
+    def fail_recompute(*args, **kwargs):
+        raise AssertionError("diagnostic relevance fast-path was not used")
+
+    monkeypatch.setattr(context_ranking_module, "best_query_relevance", fail_recompute)
+
+    (reranked,) = apply_deterministic_rerank_adjustments(
+        (item,),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked.score > item.score
+    assert (
+        reranked.diagnostics["score_signals"]["deterministic_rerank_query_reason"]
+        == "friend_place_shelter_inventory_bridge"
     )
 
 
