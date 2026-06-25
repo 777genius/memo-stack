@@ -118,6 +118,12 @@ _DESTRESS_ACTIVITY_EXPANSION = (
     "расслабиться расслабляется расслаблялась отдохнуть отдыхает снять стресс "
     "успокоиться спокойствие терапевтичный прояснить голову"
 )
+_STUDY_TIME_MANAGEMENT_EXPANSION = (
+    "exam exams finals test tests prep prepare studying study time management "
+    "technique method strategy pomodoro 25 minutes 5 minutes intervals breaks "
+    "smaller parts focused focus less overwhelming keeps on track fun swamped "
+    "plowing through week"
+)
 _RUNNING_REASON_EXPANSION = (
     "running run farther longer de-stress destress clear mind headspace "
     "mood boost shoes purple walking or running what got into running"
@@ -184,6 +190,7 @@ __all__ = (
     "_CAUSE_VETERANS_EXPANSION",
     "_TRIP_DESTINATION_EXPANSION",
     "_DESTRESS_ACTIVITY_EXPANSION",
+    "_STUDY_TIME_MANAGEMENT_EXPANSION",
     "_ANIMAL_CAREER_INFERENCE_EXPANSION",
     "_ANIMAL_CARE_INSTRUCTION_EXPANSION",
     "_ANIMAL_DIET_EVIDENCE_EXPANSION",

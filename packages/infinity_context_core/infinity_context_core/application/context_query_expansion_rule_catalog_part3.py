@@ -63,6 +63,31 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "destress_activity_bridge",
         ),
     (
+            frozenset({"time", "management"}),
+            _terms._STUDY_TIME_MANAGEMENT_EXPANSION,
+            "study_time_management_bridge",
+        ),
+    (
+            frozenset({"exam", "technique"}),
+            _terms._STUDY_TIME_MANAGEMENT_EXPANSION,
+            "study_time_management_bridge",
+        ),
+    (
+            frozenset({"exams", "technique"}),
+            _terms._STUDY_TIME_MANAGEMENT_EXPANSION,
+            "study_time_management_bridge",
+        ),
+    (
+            frozenset({"study", "technique"}),
+            _terms._STUDY_TIME_MANAGEMENT_EXPANSION,
+            "study_time_management_bridge",
+        ),
+    (
+            frozenset({"pomodoro"}),
+            _terms._STUDY_TIME_MANAGEMENT_EXPANSION,
+            "study_time_management_bridge",
+        ),
+    (
             frozenset({"stress", "relief"}),
             _terms._DESTRESS_ACTIVITY_EXPANSION,
             "destress_activity_bridge",

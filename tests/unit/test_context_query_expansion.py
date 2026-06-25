@@ -2166,6 +2166,64 @@ def test_best_query_relevance_uses_relax_wording_for_destress_evidence() -> None
     assert relevance.distinctive_term_hits >= 6
 
 
+def test_query_expansion_bridges_study_time_management_evidence() -> None:
+    plan = build_query_expansion_plan(
+        "Which popular time management technique does Tim use to prepare for exams?"
+    )
+    technical = build_query_expansion_plan(
+        "How does the API time management queue behave during retry timeouts?"
+    )
+
+    expansion = _expansion_query(plan, "study_time_management_bridge")
+    assert expansion.startswith("Tim ")
+    assert "exam exams finals test tests prep prepare studying study" in expansion
+    assert "pomodoro 25 minutes 5 minutes intervals breaks smaller parts" in expansion
+    assert "study_time_management_bridge" not in {
+        item.reason for item in technical.expansions
+    }
+
+
+def test_best_query_relevance_uses_study_time_management_bridge() -> None:
+    plan = build_query_expansion_plan(
+        "Which popular time management technique does Tim use to prepare for exams?"
+    )
+
+    _, exam_reason, exam_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D18:3 Tim: This week has been swamped with exams for me but "
+            "I'm plowing through."
+        ),
+    )
+    _, technique_reason, technique_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D18:7 Tim: I like breaking up my studying into smaller parts. "
+            "25 minutes on, then 5 minutes off for something fun. It's less "
+            "overwhelming and keeps me on track."
+        ),
+    )
+    _, loose_reason, loose_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D5:1 Tim: We need to improve API time management in the backend "
+            "queue with retry limits."
+        ),
+    )
+
+    assert exam_reason == "study_time_management_bridge"
+    assert exam_relevance.distinctive_term_hits >= 4
+    assert technique_reason == "study_time_management_bridge"
+    assert technique_relevance.distinctive_term_hits >= 8
+    assert keyword_chunk_score(
+        technique_relevance,
+        query_expansion_reason=technique_reason,
+    ) > keyword_chunk_score(
+        loose_relevance,
+        query_expansion_reason=loose_reason,
+    )
+
+
 def test_best_query_relevance_uses_specific_support_origin_bridge() -> None:
     plan = build_query_expansion_plan(
         "Would Caroline still want to pursue counseling as a career if she hadn't "

@@ -159,6 +159,59 @@ _POST_EVENT_CONTEXT_TERMS = frozenset(
         "why",
     }
 )
+_STUDY_TIME_MANAGEMENT_CONTEXT_TERMS = frozenset(
+    {
+        "class",
+        "classes",
+        "exam",
+        "exams",
+        "final",
+        "finals",
+        "homework",
+        "prep",
+        "prepare",
+        "preparing",
+        "school",
+        "study",
+        "studying",
+        "test",
+        "tests",
+    }
+)
+_STUDY_TIME_MANAGEMENT_METHOD_TERMS = frozenset(
+    {
+        "break",
+        "breaks",
+        "focus",
+        "interval",
+        "intervals",
+        "management",
+        "method",
+        "methods",
+        "pomodoro",
+        "popular",
+        "strategy",
+        "technique",
+        "techniques",
+        "time",
+        "trick",
+        "tricks",
+    }
+)
+_STUDY_TIME_MANAGEMENT_TECHNICAL_TERMS = _TECHNICAL_SUPPORT_CONTEXT_TERMS | frozenset(
+    {
+        "cron",
+        "deployment",
+        "job",
+        "jobs",
+        "queue",
+        "rate",
+        "retry",
+        "server",
+        "timeout",
+        "workflow",
+    }
+)
 
 
 def query_expansion_variant_set(query: str) -> frozenset[str]:
@@ -261,6 +314,8 @@ def should_skip_expansion_rule(
         return not _requests_post_event_emotion(raw_tokens)
     if reason == "symbol_importance_bridge":
         return not _requests_symbol_importance(raw_tokens)
+    if reason == "study_time_management_bridge":
+        return not _requests_study_time_management(raw_tokens)
     if reason == "after_event_temporal_bridge":
         return not build_temporal_query_intent(query).after_event
     if reason == "before_event_temporal_bridge":
@@ -354,6 +409,15 @@ def _requests_post_event_emotion(raw_tokens: set[str]) -> bool:
     return bool(
         raw_tokens.intersection(_POST_EVENT_EMOTION_TERMS)
         and raw_tokens.intersection(_POST_EVENT_CONTEXT_TERMS)
+    )
+
+
+def _requests_study_time_management(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_STUDY_TIME_MANAGEMENT_TECHNICAL_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection(_STUDY_TIME_MANAGEMENT_CONTEXT_TERMS)
+        and raw_tokens.intersection(_STUDY_TIME_MANAGEMENT_METHOD_TERMS)
     )
 
 
