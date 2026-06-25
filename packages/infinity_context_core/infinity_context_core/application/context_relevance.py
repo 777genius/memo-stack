@@ -11,7 +11,7 @@ from infinity_context_core.application.context_lexical import (
     query_term_frequency,
     query_terms,
     text_variant_counts,
-    text_variant_sequence,
+    text_variant_profile,
 )
 
 
@@ -128,7 +128,7 @@ def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> 
             capped_frequency_hits=0,
             hit_ratio=0.0,
         )
-    counts = text_variant_counts(text)
+    counts, text_variants = text_variant_profile(text)
     frequencies = tuple(query_term_frequency(term, counts) for term in terms)
     unique_hits = sum(1 for frequency in frequencies if frequency > 0)
     capped_frequency_hits = sum(min(frequency, 3) for frequency in frequencies)
@@ -140,7 +140,7 @@ def score_query_relevance(*, query: str, text: str, max_boost: float = 0.12) -> 
     phrase_bigram_count = max(0, len(terms) - 1)
     phrase_bigram_hits = _phrase_bigram_hits(
         terms=terms,
-        text_variants=text_variant_sequence(text),
+        text_variants=text_variants,
     )
     frequency_boost = min(0.025, capped_frequency_hits * 0.002)
     phrase_boost = _phrase_boost(

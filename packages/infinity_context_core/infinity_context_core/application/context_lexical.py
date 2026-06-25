@@ -408,19 +408,28 @@ def query_terms(
     return tuple(terms)
 
 
-def text_variant_stats(text: str, *, min_chars: int = 2) -> tuple[Counter[str], int]:
+def text_variant_profile(
+    text: str,
+    *,
+    min_chars: int = 2,
+) -> tuple[Counter[str], tuple[tuple[str, ...], ...]]:
     counts: Counter[str] = Counter()
-    sequence_length = 0
+    sequence: list[tuple[str, ...]] = []
     for token in _tokens(text, split_underscores=True):
         if len(token) < min_chars:
             continue
         variants = _text_token_variants(token)
         if not variants:
             continue
-        sequence_length += 1
+        sequence.append(variants)
         for variant in variants:
             counts[variant] += 1
-    return counts, sequence_length
+    return counts, tuple(sequence)
+
+
+def text_variant_stats(text: str, *, min_chars: int = 2) -> tuple[Counter[str], int]:
+    counts, sequence = text_variant_profile(text, min_chars=min_chars)
+    return counts, len(sequence)
 
 
 def text_variant_counts(text: str, *, min_chars: int = 2) -> Counter[str]:
@@ -429,13 +438,8 @@ def text_variant_counts(text: str, *, min_chars: int = 2) -> Counter[str]:
 
 
 def text_variant_sequence(text: str, *, min_chars: int = 2) -> tuple[tuple[str, ...], ...]:
-    return tuple(
-        variants
-        for token in _tokens(text, split_underscores=True)
-        if len(token) >= min_chars
-        for variants in (_text_token_variants(token),)
-        if variants
-    )
+    _, sequence = text_variant_profile(text, min_chars=min_chars)
+    return sequence
 
 
 def query_term_frequency(term: LexicalQueryTerm, text_counts: Counter[str]) -> int:

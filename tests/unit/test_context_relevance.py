@@ -1,6 +1,8 @@
+import infinity_context_core.application.context_relevance as context_relevance_module
 from infinity_context_core.application.context_lexical import (
     query_terms,
     text_variant_counts,
+    text_variant_profile,
     text_variant_sequence,
     text_variant_stats,
 )
@@ -29,12 +31,39 @@ def test_query_relevance_matches_russian_case_variants() -> None:
 def test_text_variant_stats_matches_legacy_count_and_sequence_semantics() -> None:
     text = "Atlas_launch moved on 2026-08-15. Алекс обсуждал Atlas launch."
 
+    profile_counts, sequence = text_variant_profile(text)
     counts, sequence_length = text_variant_stats(text)
 
+    assert profile_counts == counts
+    assert sequence == text_variant_sequence(text)
     assert counts == text_variant_counts(text)
-    assert sequence_length == len(text_variant_sequence(text))
+    assert sequence_length == len(sequence)
     assert counts["atlas"] >= 2
     assert counts["date_2026_08_15"] == 1
+
+
+def test_score_query_relevance_uses_single_text_variant_profile(monkeypatch) -> None:
+    real_text_variant_profile = context_relevance_module.text_variant_profile
+    calls: list[str] = []
+
+    def counting_text_variant_profile(text: str, *, min_chars: int = 2):
+        calls.append(text)
+        return real_text_variant_profile(text, min_chars=min_chars)
+
+    monkeypatch.setattr(
+        context_relevance_module,
+        "text_variant_profile",
+        counting_text_variant_profile,
+    )
+
+    relevance = score_query_relevance(
+        query="Alex Atlas launch",
+        text="Alex moved the Atlas launch deadline after the call.",
+    )
+
+    assert calls == ["Alex moved the Atlas launch deadline after the call."]
+    assert relevance.unique_term_hits == 3
+    assert relevance.phrase_bigram_hits == 1
 
 
 def test_query_relevance_matches_cross_language_relative_event_terms() -> None:
