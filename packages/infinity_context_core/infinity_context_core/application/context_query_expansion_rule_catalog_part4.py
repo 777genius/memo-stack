@@ -386,6 +386,118 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "generic_behavior_inference_bridge",
         ),
     (
+            frozenset({"helpful"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"supportive"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"caring"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"patient"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"thoughtful"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"considerate"}),
+            (
+                "behavior evidence helpful supportive caring listened helped offered "
+                "comforted reassured encouraged patient thoughtful considerate"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"disciplined"}),
+            (
+                "behavior evidence disciplined hardworking dedicated practiced trained "
+                "worked consistently regularly completed finished focused prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"hardworking"}),
+            (
+                "behavior evidence disciplined hardworking dedicated practiced trained "
+                "worked consistently regularly completed finished focused prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"dedicated"}),
+            (
+                "behavior evidence disciplined hardworking dedicated practiced trained "
+                "worked consistently regularly completed finished focused prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"persistent"}),
+            (
+                "behavior evidence disciplined hardworking dedicated practiced trained "
+                "worked consistently regularly completed finished focused prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"careful"}),
+            (
+                "behavior evidence careful thorough meticulous cautious checked "
+                "verified reviewed detail carefully prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"thorough"}),
+            (
+                "behavior evidence careful thorough meticulous cautious checked "
+                "verified reviewed detail carefully prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"meticulous"}),
+            (
+                "behavior evidence careful thorough meticulous cautious checked "
+                "verified reviewed detail carefully prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"cautious"}),
+            (
+                "behavior evidence careful thorough meticulous cautious checked "
+                "verified reviewed detail carefully prepared"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
             frozenset({"roadtrip"}),
             "roadtrip accident scary scared bad start freaked lucky okay family",
             "adverse_trip_bridge",

@@ -70,11 +70,15 @@ _IDENTITY_STOP_TERMS = frozenset(
 _BEHAVIOR_EVIDENCE_TERMS = frozenset(
     {
         "always",
+        "cared",
+        "checked",
         "chose",
         "chosen",
         "completed",
+        "comforted",
         "consistently",
         "decided",
+        "encouraged",
         "enjoyed",
         "finished",
         "followed",
@@ -83,19 +87,27 @@ _BEHAVIOR_EVIDENCE_TERMS = frozenset(
         "joined",
         "keeps",
         "kept",
+        "listened",
         "often",
+        "offered",
         "organized",
         "planned",
+        "practiced",
         "prepared",
         "regularly",
         "repeatedly",
+        "reassured",
+        "reviewed",
         "showed",
         "shows",
         "started",
         "stayed",
+        "supported",
         "tends",
+        "trained",
         "tried",
         "usually",
+        "verified",
         "volunteered",
         "wanted",
         "wants",
@@ -125,6 +137,60 @@ _ORGANIZED_TRAIT_TEXT_TERMS = frozenset(
 _CREATIVE_TRAIT_QUERY_TERMS = frozenset({"creative", "artistic", "imaginative"})
 _CREATIVE_TRAIT_TEXT_TERMS = frozenset(
     {"art", "created", "designed", "drew", "made", "painted", "wrote"}
+)
+_HELPFUL_TRAIT_QUERY_TERMS = frozenset(
+    {"caring", "considerate", "helpful", "patient", "supportive", "thoughtful"}
+)
+_HELPFUL_TRAIT_TEXT_TERMS = frozenset(
+    {
+        "cared",
+        "caring",
+        "comforted",
+        "considerate",
+        "encouraged",
+        "helped",
+        "listened",
+        "offered",
+        "patient",
+        "reassured",
+        "supported",
+        "supportive",
+        "thoughtful",
+    }
+)
+_DISCIPLINED_TRAIT_QUERY_TERMS = frozenset(
+    {"dedicated", "disciplined", "hardworking", "persistent"}
+)
+_DISCIPLINED_TRAIT_TEXT_TERMS = frozenset(
+    {
+        "completed",
+        "consistently",
+        "dedicated",
+        "finished",
+        "focused",
+        "practiced",
+        "prepared",
+        "regularly",
+        "trained",
+        "worked",
+    }
+)
+_CAREFUL_TRAIT_QUERY_TERMS = frozenset(
+    {"careful", "cautious", "meticulous", "thorough"}
+)
+_CAREFUL_TRAIT_TEXT_TERMS = frozenset(
+    {
+        "careful",
+        "carefully",
+        "cautious",
+        "checked",
+        "detail",
+        "meticulous",
+        "prepared",
+        "reviewed",
+        "thorough",
+        "verified",
+    }
 )
 
 
@@ -159,6 +225,12 @@ def _trait_evidence_matches(
         return bool(text_tokens & _ORGANIZED_TRAIT_TEXT_TERMS)
     if query_tokens & _CREATIVE_TRAIT_QUERY_TERMS:
         return bool(text_tokens & _CREATIVE_TRAIT_TEXT_TERMS)
+    if query_tokens & _HELPFUL_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _HELPFUL_TRAIT_TEXT_TERMS)
+    if query_tokens & _DISCIPLINED_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _DISCIPLINED_TRAIT_TEXT_TERMS)
+    if query_tokens & _CAREFUL_TRAIT_QUERY_TERMS:
+        return bool(text_tokens & _CAREFUL_TRAIT_TEXT_TERMS)
     return False
 
 

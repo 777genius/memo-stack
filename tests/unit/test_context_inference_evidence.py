@@ -103,6 +103,28 @@ def test_inference_evidence_signal_boosts_generic_behavior_evidence() -> None:
     assert signal.reason == "inference_behavior_evidence"
 
 
+def test_inference_evidence_signal_boosts_helpful_behavior_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered helpful?",
+        text="Alex listened patiently, helped Sam debug the launch, and reassured the team.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_behavior_evidence"
+
+
+def test_inference_evidence_signal_boosts_careful_behavior_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered thorough?",
+        text="Alex checked the release notes carefully, reviewed the diff, and verified it.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_behavior_evidence"
+
+
 def test_inference_evidence_signal_does_not_boost_behaviorless_topic_overlap() -> None:
     signal = inference_evidence_rerank_signal(
         query="Would Alex be considered reliable?",

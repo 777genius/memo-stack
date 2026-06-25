@@ -1610,6 +1610,11 @@ def test_query_expansion_covers_generic_behavior_inference_bridge() -> None:
     dependable = build_query_expansion_plan("Would Alex be considered dependable?")
     organized = build_query_expansion_plan("Would Alex be considered organized?")
     creative = build_query_expansion_plan("Would Alex be considered creative?")
+    helpful = build_query_expansion_plan("Would Alex be considered helpful?")
+    thoughtful = build_query_expansion_plan("Would Alex be considered thoughtful?")
+    dedicated = build_query_expansion_plan("Would Alex be considered dedicated?")
+    thorough = build_query_expansion_plan("Would Alex be considered thorough?")
+    art_kind = build_query_expansion_plan("What kind of art does Alex make?")
 
     assert _expansion_query(reliable, "generic_behavior_inference_bridge").startswith(
         "Alex "
@@ -1631,6 +1636,22 @@ def test_query_expansion_covers_generic_behavior_inference_bridge() -> None:
         creative,
         "generic_behavior_inference_bridge",
     )
+    for plan in (helpful, thoughtful):
+        assert "helpful supportive caring listened helped" in _expansion_query(
+            plan,
+            "generic_behavior_inference_bridge",
+        )
+    assert "disciplined hardworking dedicated practiced trained" in _expansion_query(
+        dedicated,
+        "generic_behavior_inference_bridge",
+    )
+    assert "careful thorough meticulous cautious checked" in _expansion_query(
+        thorough,
+        "generic_behavior_inference_bridge",
+    )
+    assert "generic_behavior_inference_bridge" not in {
+        expansion.reason for expansion in art_kind.expansions
+    }
 
 
 def test_query_expansion_covers_temporal_change_bridges() -> None:
