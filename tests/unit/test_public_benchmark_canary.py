@@ -19,13 +19,18 @@ def test_official_public_benchmark_case_ids_route_by_benchmark_prefix() -> None:
     ) == ("shared-case", "longmemeval:abc")
 
 
-def test_official_public_benchmark_reports_unrouted_case_ids() -> None:
+def test_official_public_benchmark_reports_unrouted_case_ids(tmp_path: Path) -> None:
+    progress = tmp_path / "unrouted-progress.jsonl"
     result = canary.run_official_public_benchmark_canary(
         benchmark="longmemeval",
         max_cases=1,
         min_accuracy=1.0,
         case_ids=("locomo:conv-26:qa:70",),
+        progress_out=progress,
     )
+    progress_events = [
+        json.loads(line) for line in progress.read_text(encoding="utf-8").splitlines()
+    ]
 
     assert result["ok"] is False
     assert result["metrics"]["benchmark_count"] == 0
@@ -52,6 +57,15 @@ def test_official_public_benchmark_reports_unrouted_case_ids() -> None:
             "selected_benchmarks": ["longmemeval"],
         }
     ]
+    assert [event["event_type"] for event in progress_events] == [
+        "official_suite_started",
+        "official_benchmark_skipped",
+        "official_suite_completed",
+    ]
+    assert progress_events[1]["benchmark"] == "longmemeval"
+    assert progress_events[1]["reason"] == "case_ids_target_other_benchmark"
+    assert progress_events[-1]["ok"] is False
+    assert progress_events[-1]["skipped_benchmark_count"] == 1
 
 
 def test_official_public_benchmark_cli_writes_interrupted_report(
