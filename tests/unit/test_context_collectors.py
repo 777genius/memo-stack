@@ -155,12 +155,48 @@ def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
         "1:friends_team_inference_bridge": ("team_friend_match", "generic_b"),
         "2:degree_policy_inference_bridge": ("degree_policy_match", "generic_c"),
         "3:counseling_workshop_bridge": ("workshop_match", "generic_d"),
+        "4:education_career_field_bridge": ("education_field_match", "generic_e"),
+        "5:political_inference_bridge": ("political_values_match", "generic_f"),
+        "6:allergy_condition_inference_bridge": ("allergy_match", "generic_g"),
+        "7:beach_or_mountains_inference_bridge": ("outdoor_geo_match", "generic_h"),
+        "8:support_counterfactual_bridge": ("support_counterfactual_match", "generic_i"),
     }
 
     assert _protected_query_head_keys(rankings) == (
         "team_friend_match",
         "degree_policy_match",
         "workshop_match",
+        "education_field_match",
+        "political_values_match",
+        "allergy_match",
+        "outdoor_geo_match",
+        "support_counterfactual_match",
+    )
+
+
+def test_protected_query_head_keys_keep_temporal_state_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:decomposition_knowledge_update_current": ("current_decomp", "generic_b"),
+        "2:current_state_temporal_bridge": ("current_bridge", "generic_c"),
+        "3:decomposition_knowledge_update_previous": ("stale_decomp", "generic_d"),
+        "4:stale_state_temporal_bridge": ("stale_bridge", "generic_e"),
+        "5:decomposition_state_transition": ("transition_decomp", "generic_f"),
+        "6:state_transition_bridge": ("transition_bridge", "generic_g"),
+        "7:decomposition_counterfactual_evidence": (
+            "counterfactual_decomp",
+            "generic_h",
+        ),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "current_decomp",
+        "current_bridge",
+        "stale_decomp",
+        "stale_bridge",
+        "transition_decomp",
+        "transition_bridge",
+        "counterfactual_decomp",
     )
 
 
@@ -654,6 +690,129 @@ def test_bounded_retrieval_queries_prioritize_friend_team_inference_bridge() -> 
         "original_query",
         "decomposition_event_context",
         "counseling_workshop_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_high_signal_inference_bridges() -> None:
+    education = build_query_expansion_plan(
+        "What fields would Caroline be likely to pursue in her educaton?"
+    )
+    political = build_query_expansion_plan("What would Caroline's political leaning likely be?")
+    allergy = build_query_expansion_plan(
+        "What underlying condition might Joanna have based on her allergies?"
+    )
+    outdoor = build_query_expansion_plan("Does John live close to a beach or the mountains?")
+    support_counterfactual = build_query_expansion_plan(
+        "Would Caroline still want to pursue counseling as a career if she hadn't "
+        "received support growing up?"
+    )
+
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            education,
+            fallback="fallback",
+            limit=4,
+        )
+    ] == [
+        "original_query",
+        "education_career_field_bridge",
+        "decomposition_inference_support",
+        "decomposition_current_preference_or_goal",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            political,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "political_inference_bridge",
+        "decomposition_inference_support",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            allergy,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "allergy_condition_inference_bridge",
+        "decomposition_inference_support",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            outdoor,
+            fallback="fallback",
+            limit=2,
+        )
+    ] == [
+        "original_query",
+        "beach_or_mountains_inference_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            support_counterfactual,
+            fallback="fallback",
+            limit=6,
+        )
+    ] == [
+        "original_query",
+        "decomposition_counterfactual_evidence",
+        "support_career_motivation_bridge",
+        "support_origin_bridge",
+        "generic_behavior_inference_bridge",
+        "support_counterfactual_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_prioritize_temporal_state_bridges() -> None:
+    current = build_query_expansion_plan("Which Atlas provider is current?")
+    stale = build_query_expansion_plan("Which Atlas provider is no longer valid?")
+    transition = build_query_expansion_plan("What did Atlas switch from LocalAI to?")
+
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            current,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "decomposition_knowledge_update_current",
+        "current_state_temporal_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            stale,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "decomposition_knowledge_update_previous",
+        "stale_state_temporal_bridge",
+    ]
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            transition,
+            fallback="fallback",
+            limit=4,
+        )
+    ] == [
+        "original_query",
+        "decomposition_temporal_change",
+        "decomposition_state_transition",
+        "state_transition_bridge",
     ]
 
 
