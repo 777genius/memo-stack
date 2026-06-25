@@ -432,8 +432,22 @@ def test_official_public_benchmark_canary_merges_locomo_and_longmemeval_reports(
     assert written["provenance"]["generated_by"] == (
         "infinity_context_server.official_public_benchmark"
     )
-    assert [event["event_type"] for event in progress_events].count("run_started") == 2
-    assert progress_events[-1]["event_type"] == "run_completed"
+    event_types = [event["event_type"] for event in progress_events]
+    official_events = [
+        event for event in progress_events if "official_event_index" in event
+    ]
+    assert event_types.count("run_started") == 2
+    assert event_types.count("official_benchmark_started") == 2
+    assert event_types.count("official_benchmark_completed") == 2
+    assert event_types[0] == "official_suite_started"
+    assert event_types[-1] == "official_suite_completed"
+    assert [event["official_event_index"] for event in official_events] == list(
+        range(1, len(official_events) + 1)
+    )
+    assert official_events[0]["selected_benchmarks"] == ["locomo", "longmemeval"]
+    assert official_events[-1]["ok"] is True
+    assert official_events[-1]["benchmark_count"] == 2
+    assert official_events[-1]["case_count"] == 2
     assert locomo_progress["processed_case_count"] == 1
     assert longmemeval_progress["processed_case_count"] == 1
 

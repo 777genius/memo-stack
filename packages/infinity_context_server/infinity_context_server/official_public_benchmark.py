@@ -28,6 +28,7 @@ from infinity_context_server.public_benchmark import (
     CASE_SELECTION_STRATIFIED,
     run_public_memory_benchmark,
 )
+from infinity_context_server.public_benchmark_metrics import bounded_progress_fields
 from infinity_context_server.public_benchmark_selection import normalize_requested_capabilities
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -312,6 +313,24 @@ def run_official_public_benchmark_canary(
     effective_checkpoint_out = checkpoint_out or _default_checkpoint_out(report_out)
     run_id = f"official-public-{time.time_ns()}"
     started = time.perf_counter()
+    official_progress_event_index = 0
+    official_progress_event_index = _emit_official_progress_event(
+        progress_out=effective_progress_out,
+        started=started,
+        event_index=official_progress_event_index,
+        event_type="official_suite_started",
+        benchmark=benchmark,
+        selected_benchmarks=selected,
+        selected_benchmark_count=len(selected),
+        requested_max_cases=max_cases,
+        requested_min_accuracy=min_accuracy,
+        competitive_floor=competitive_floor,
+        case_selection_strategy=case_selection_strategy,
+        requested_case_ids=requested_case_ids,
+        requested_capabilities=requested_capabilities,
+        requested_parallelism=parallelism,
+        request_timeout_seconds=request_timeout_seconds,
+    )
     with tempfile.TemporaryDirectory(prefix="memo-official-public-benchmark-") as tmp_dir:
         tmp_path = Path(tmp_dir)
         reports: list[dict[str, object]] = []
@@ -326,6 +345,15 @@ def run_official_public_benchmark_canary(
                     skipped=True,
                     reason="case_ids_target_other_benchmark",
                 )
+                official_progress_event_index = _emit_official_progress_event(
+                    progress_out=effective_progress_out,
+                    started=started,
+                    event_index=official_progress_event_index,
+                    event_type="official_benchmark_skipped",
+                    benchmark=name,
+                    reason="case_ids_target_other_benchmark",
+                    requested_case_ids=benchmark_case_ids,
+                )
                 continue
             case_id_routing[name] = _case_id_routing_report(
                 requested_case_ids=benchmark_case_ids,
@@ -338,6 +366,16 @@ def run_official_public_benchmark_canary(
                 competitive_floor=competitive_floor,
             )
             run_policies[name] = policy
+            official_progress_event_index = _emit_official_progress_event(
+                progress_out=effective_progress_out,
+                started=started,
+                event_index=official_progress_event_index,
+                event_type="official_benchmark_started",
+                benchmark=name,
+                effective_max_cases=int(policy["max_cases"]),
+                effective_min_accuracy=float(policy["min_accuracy"]),
+                requested_case_ids=benchmark_case_ids,
+            )
             selection = _dataset_selection(
                 name=name,
                 tmp_dir=tmp_path,
@@ -370,6 +408,21 @@ def run_official_public_benchmark_canary(
             )
             report["_official_benchmark_name"] = name
             reports.append(report)
+            official_progress_event_index = _emit_official_progress_event(
+                progress_out=effective_progress_out,
+                started=started,
+                event_index=official_progress_event_index,
+                event_type="official_benchmark_completed",
+                benchmark=name,
+                status=report.get("status"),
+                ok=bool(report.get("ok")),
+                case_count=_report_metric_int(report, "case_count"),
+                accuracy=_report_metric_float(report, "accuracy"),
+                effective_parallelism=_report_metric_int(report, "effective_parallelism"),
+                parallelism_degraded=bool(
+                    _report_metric_value(report, "parallelism_degraded") or False
+                ),
+            )
             dataset_sources[name] = _dataset_source_metadata(
                 name=name,
                 selection=selection,
@@ -393,6 +446,21 @@ def run_official_public_benchmark_canary(
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
         progress_out=effective_progress_out,
         checkpoint_out=effective_checkpoint_out,
+    )
+    _emit_official_progress_event(
+        progress_out=effective_progress_out,
+        started=started,
+        event_index=official_progress_event_index,
+        event_type="official_suite_completed",
+        benchmark=benchmark,
+        status=result.get("status"),
+        ok=bool(result.get("ok")),
+        benchmark_count=_result_metric_int(result, "benchmark_count"),
+        selected_benchmark_count=_result_metric_int(result, "selected_benchmark_count"),
+        skipped_benchmark_count=_result_metric_int(result, "skipped_benchmark_count"),
+        case_count=_result_metric_int(result, "case_count"),
+        accuracy=_result_metric_float(result, "accuracy"),
+        elapsed_ms=result.get("elapsed_ms"),
     )
     result = with_report_provenance(
         result,
@@ -460,6 +528,30 @@ def _interrupted_cli_result(
         ],
         "elapsed_ms": elapsed_ms,
     }
+
+
+def _emit_official_progress_event(
+    *,
+    progress_out: Path | None,
+    started: float,
+    event_index: int,
+    event_type: str,
+    **fields: object,
+) -> int:
+    if progress_out is None:
+        return event_index
+    next_index = event_index + 1
+    payload = {
+        "schema_version": "official-public-benchmark-progress-v1",
+        "event_type": event_type,
+        "official_event_index": next_index,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+    }
+    payload.update(bounded_progress_fields(fields))
+    progress_out.parent.mkdir(parents=True, exist_ok=True)
+    with progress_out.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    return next_index
 
 
 def _case_ids_from_env() -> list[str]:
@@ -851,6 +943,34 @@ def _report_metric_int(report: Mapping[str, object], key: str) -> int:
         return 0
     value = metrics.get(key)
     return value if isinstance(value, int) else 0
+
+
+def _report_metric_float(report: Mapping[str, object], key: str) -> float:
+    value = _report_metric_value(report, key)
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+
+def _report_metric_value(report: Mapping[str, object], key: str) -> object:
+    metrics = report.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return None
+    return metrics.get(key)
+
+
+def _result_metric_int(result: Mapping[str, object], key: str) -> int:
+    metrics = result.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return 0
+    value = metrics.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def _result_metric_float(result: Mapping[str, object], key: str) -> float:
+    metrics = result.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return 0.0
+    value = metrics.get(key)
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
 def _write_report(result: dict[str, object], report_out: Path | None) -> None:
