@@ -2928,6 +2928,26 @@ def test_best_query_relevance_bridges_state_residence_inference_evidence() -> No
     assert relevance.distinctive_term_hits >= 5
 
 
+def test_query_expansion_bridges_named_state_residence_city_aliases() -> None:
+    plan = build_query_expansion_plan("Does James live in Connecticut?")
+
+    bridge_query = _expansion_query(plan, "state_residence_inference_bridge")
+    assert bridge_query.startswith("James Connecticut ")
+    assert "connecticut stamford" in bridge_query
+    assert "shelter adopted" in bridge_query
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D5:1 James adopted a pup from a shelter in Stamford last week "
+            "and named it Ned."
+        ),
+    )
+
+    assert reason == "state_residence_inference_bridge"
+    assert relevance.distinctive_term_hits >= 4
+
+
 def test_best_query_relevance_bridges_business_start_reason_evidence() -> None:
     plan = build_query_expansion_plan("Why did Gina start her own clothing store?")
 

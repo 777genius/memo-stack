@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 
+from infinity_context_core.application.context_geo_residence_aliases import (
+    requests_named_state_residence,
+)
+
 _AGE_BIRTHDAY_EXPANSION = "age years old born birthday date of birth birth year dob"
 _BORN_BIRTHDAY_EXPANSION = "born birthday date of birth birth year age years old dob"
 _BIRTH_DATE_EXPANSION = "birth date of birth born birthday birth year age years old dob"
@@ -16,7 +20,7 @@ _CURRENT_RESIDENCE_EXPANSION = (
 )
 _STATE_RESIDENCE_INFERENCE_EXPANSION = (
     "us state hiking trails map trail route park national park state park "
-    "city county minnesota voyageurs"
+    "city county minnesota voyageurs local home address town shelter adopted"
 )
 _CURRENT_OCCUPATION_EXPANSION = (
     "current job work occupation profession role title position works as employed company"
@@ -140,6 +144,11 @@ PERSONAL_FACT_EXPANSION_RULES: tuple[tuple[frozenset[str], str, str], ...] = (
     ),
     (
         frozenset({"state", "lives"}),
+        _STATE_RESIDENCE_INFERENCE_EXPANSION,
+        "state_residence_inference_bridge",
+    ),
+    (
+        frozenset({"state_residence_named_state_query"}),
         _STATE_RESIDENCE_INFERENCE_EXPANSION,
         "state_residence_inference_bridge",
     ),
@@ -278,6 +287,8 @@ def personal_fact_query_variants(query: str) -> frozenset[str]:
         variants.add("origin_from_query")
     if _PERSON_SUMMARY_QUERY_RE.search(query):
         variants.add("person_summary_query")
+    if requests_named_state_residence(query):
+        variants.add("state_residence_named_state_query")
     if _RU_CURRENT_OCCUPATION_QUERY_RE.search(query):
         variants.add("ru_current_occupation_query")
     if _RU_PERSON_SUMMARY_QUERY_RE.search(query):

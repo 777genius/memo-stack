@@ -4391,6 +4391,46 @@ def test_deterministic_rerank_prefers_state_residence_geo_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_named_state_city_residence_evidence() -> None:
+    query = "Does James live in Connecticut?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    technical_noise = _item(
+        "james_state_machine_noise",
+        score=0.73,
+        retrieval_source="keyword_chunks",
+        text="James mentioned Connecticut while debugging state machine code in the app.",
+    )
+    city_evidence = _item(
+        "james_stamford_shelter",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="James adopted a pup from a shelter in Stamford last week and named it Ned.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (technical_noise, city_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["james_stamford_shelter"].score > by_id["james_state_machine_noise"].score
+    assert (
+        "inference_state_residence_city_state_evidence"
+        in by_id["james_stamford_shelter"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "inference_state_residence_technical_noise"
+        in by_id["james_state_machine_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_political_values_evidence() -> None:
     query = "What would Caroline's political leaning likely be?"
     plan = build_query_expansion_plan(query)

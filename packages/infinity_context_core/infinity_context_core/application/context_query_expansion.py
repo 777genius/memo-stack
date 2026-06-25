@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from infinity_context_core.application.context_geo_residence_aliases import (
+    state_residence_expansion_suffix,
+)
 from infinity_context_core.application.context_query_artifact_inventory_expansions import (
     artifact_inventory_query_variants,
 )
@@ -128,7 +131,7 @@ def build_query_expansion_plan(
                 query=query,
                 identity_terms=identity_terms,
             ),
-            expansion,
+            _expansion_text_for_query(reason=reason, expansion=expansion, query=query),
         )
         normalized_expanded_query = expanded_query.casefold()
         if normalized_expanded_query in seen_queries:
@@ -175,3 +178,12 @@ def _expansion_candidate_selection_key(
         -specificity,
         rule_index,
     )
+
+
+def _expansion_text_for_query(*, reason: str, expansion: str, query: str) -> str:
+    if reason != "state_residence_inference_bridge":
+        return expansion
+    suffix = state_residence_expansion_suffix(query)
+    if not suffix:
+        return expansion
+    return f"{expansion} {suffix}"
