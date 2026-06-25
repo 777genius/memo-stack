@@ -4,10 +4,14 @@ import json
 import time
 from pathlib import Path
 
-from infinity_context_server.public_benchmark import _BenchmarkProgress
-from infinity_context_server.public_benchmark import _emit_case_progress_snapshot
-from infinity_context_server.public_benchmark_checkpoint import BenchmarkSeedStats
-from infinity_context_server.public_benchmark_checkpoint import CaseRunResult
+from infinity_context_server.public_benchmark import (
+    _BenchmarkProgress,
+    _emit_case_progress_snapshot,
+)
+from infinity_context_server.public_benchmark_checkpoint import (
+    BenchmarkSeedStats,
+    CaseRunResult,
+)
 
 
 def _case_result(
@@ -71,7 +75,10 @@ def test_public_benchmark_progress_writes_time_interval_checkpoint(
     assert payload["progress"]["last_case_status"] == "ok"
     assert payload["progress"]["elapsed_since_checkpoint_ms"] >= 1000
     assert payload["progress"]["average_case_ms"] > 0
-    assert payload["progress"]["estimated_total_ms"] >= payload["progress"]["estimated_remaining_ms"]
+    assert (
+        payload["progress"]["estimated_total_ms"]
+        >= payload["progress"]["estimated_remaining_ms"]
+    )
     assert payload["progress"]["eta_confidence"] == "warming_up"
 
 
@@ -213,3 +220,38 @@ def test_public_benchmark_progress_writes_completed_checkpoint_without_force(
     payload = json.loads(checkpoint.read_text(encoding="utf-8"))
     assert payload["status"] == "completed"
     assert payload["checkpoint_policy"]["checkpoint_reason"] == "completed"
+
+
+def test_public_benchmark_checkpoint_includes_execution_manifest(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint.json"
+    progress = _BenchmarkProgress(
+        dataset_path=tmp_path / "dataset.json",
+        dataset_hash="dataset-hash",
+        total_case_count=1,
+        case_selection=None,
+        started=time.perf_counter(),
+        checkpoint_out=checkpoint,
+        checkpoint_every_cases=1,
+        execution_manifest={
+            "schema_version": "public-benchmark-execution-manifest-v1",
+            "execution_fingerprint": "execution-fingerprint",
+            "manifest_fingerprint": "manifest-fingerprint",
+        },
+    )
+
+    progress.checkpoint(
+        processed_case_count=1,
+        run_results=(_case_result(),),
+        failures=(),
+        seeded_source_count=1,
+    )
+
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert payload["execution_fingerprint"] == "execution-fingerprint"
+    assert payload["execution_manifest"] == {
+        "schema_version": "public-benchmark-execution-manifest-v1",
+        "execution_fingerprint": "execution-fingerprint",
+        "manifest_fingerprint": "manifest-fingerprint",
+    }

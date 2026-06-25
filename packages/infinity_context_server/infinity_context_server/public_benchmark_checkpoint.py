@@ -83,12 +83,14 @@ def load_checkpoint_resume_state(
     dataset_hash: str,
     case_selection: Mapping[str, object] | None,
     cases: Sequence[Any],
+    execution_fingerprint: str | None = None,
 ) -> BenchmarkResumeState | None:
     return load_checkpoint_resume_state_with_diagnostics(
         checkpoint_out=checkpoint_out,
         dataset_hash=dataset_hash,
         case_selection=case_selection,
         cases=cases,
+        execution_fingerprint=execution_fingerprint,
     ).state
 
 
@@ -98,6 +100,7 @@ def load_checkpoint_resume_state_with_diagnostics(
     dataset_hash: str,
     case_selection: Mapping[str, object] | None,
     cases: Sequence[Any],
+    execution_fingerprint: str | None = None,
 ) -> BenchmarkResumeLoadResult:
     selected_case_count = len(cases)
     if checkpoint_out is None or not checkpoint_out.exists():
@@ -141,6 +144,18 @@ def load_checkpoint_resume_state_with_diagnostics(
     if dict(_as_mapping(payload.get("case_selection"))) != dict(case_selection or {}):
         return _resume_load_skipped(
             "case_selection_mismatch",
+            selected_case_count=selected_case_count,
+        )
+    checkpoint_execution_fingerprint = _non_empty_str(
+        payload.get("execution_fingerprint")
+    )
+    if (
+        execution_fingerprint
+        and checkpoint_execution_fingerprint
+        and checkpoint_execution_fingerprint != execution_fingerprint
+    ):
+        return _resume_load_skipped(
+            "execution_fingerprint_mismatch",
             selected_case_count=selected_case_count,
         )
     selected_cases = {case_result_key(case.benchmark, case.case_id): case for case in cases}

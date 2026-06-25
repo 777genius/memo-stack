@@ -1913,6 +1913,58 @@ def test_checkpoint_resume_skips_selected_case_fingerprint_mismatch(
     assert result.checkpoint_case_count == 1
 
 
+def test_checkpoint_resume_skips_execution_fingerprint_mismatch(
+    tmp_path: Path,
+) -> None:
+    checkpoint_out = tmp_path / "checkpoint.json"
+    checkpoint_out.write_text(
+        json.dumps(
+            {
+                "schema_version": "public-benchmark-checkpoint-v1",
+                "dataset_hash": "dataset-hash",
+                "case_selection": {},
+                "execution_fingerprint": "old-execution",
+                "cases": [
+                    {
+                        "benchmark": "locomo",
+                        "case_id": "resume-one",
+                        "capability": "locomo_unknown",
+                        "status": "ok",
+                        "expected_ok": True,
+                        "forbidden_ok": True,
+                        "missing_terms": [],
+                        "leaked_terms": [],
+                        "item_ids": ["chunk_shared"],
+                        "latency_ms": 10.0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cases = (
+        PublicBenchmarkCase(
+            benchmark="locomo",
+            case_id="resume-one",
+            question="Where is the marker?",
+            expected_terms=("SHARED_MARKER",),
+        ),
+    )
+
+    result = load_checkpoint_resume_state_with_diagnostics(
+        checkpoint_out=checkpoint_out,
+        dataset_hash="dataset-hash",
+        case_selection=None,
+        cases=cases,
+        execution_fingerprint="new-execution",
+    )
+
+    assert result.state is None
+    assert result.status == "skipped"
+    assert result.reason == "execution_fingerprint_mismatch"
+    assert result.selected_case_count == 1
+
+
 def test_public_memory_benchmark_resumes_from_compatible_checkpoint(
     tmp_path: Path,
 ) -> None:
@@ -2013,6 +2065,16 @@ def test_public_memory_benchmark_resumes_from_compatible_checkpoint(
     assert result["metrics"]["seed_cache_hit_count"] == 1
     assert result["metrics"]["resumed_case_count"] == 1
     assert result["metrics"]["pending_case_count"] == 1
+    assert result["execution_manifest"]["schema_version"] == (
+        "public-benchmark-execution-manifest-v1"
+    )
+    assert result["execution_manifest"]["execution"]["transport_mode"] == "custom_adapter"
+    assert result["execution_manifest"]["dataset"]["selected_case_count"] == 2
+    assert result["execution_manifest"]["checkpoint"]["resume_from_checkpoint"] is True
+    checkpoint_payload = json.loads(checkpoint_out.read_text(encoding="utf-8"))
+    assert checkpoint_payload["execution_fingerprint"] == result["execution_manifest"][
+        "execution_fingerprint"
+    ]
     assert result["resume"] == {
         "requested": True,
         "status": "loaded",

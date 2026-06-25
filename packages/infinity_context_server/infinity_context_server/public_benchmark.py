@@ -109,6 +109,9 @@ from infinity_context_server.public_benchmark_execution import (
 from infinity_context_server.public_benchmark_execution import (
     ordered_run_results as _ordered_run_results,
 )
+from infinity_context_server.public_benchmark_manifest import (
+    build_execution_manifest as _build_execution_manifest,
+)
 from infinity_context_server.public_benchmark_metrics import (
     accuracy as _accuracy,
 )
@@ -448,6 +451,7 @@ def run_public_memory_benchmark(
                 checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
                 resume_from_checkpoint=resume_from_checkpoint,
                 parallelism=parallelism,
+                transport_mode="external_http",
                 request_timeout_seconds=request_timeout_seconds,
             )
     else:
@@ -517,6 +521,7 @@ def run_public_memory_benchmark(
                     resume_from_checkpoint=(resume_from_checkpoint and local_state_dir is not None),
                     parallelism=parallelism,
                     force_sequential_reason="local_in_process_transport",
+                    transport_mode="local_in_process",
                     request_timeout_seconds=request_timeout_seconds,
                 )
 
@@ -620,6 +625,7 @@ def _execute_cases(
     resume_from_checkpoint: bool = False,
     parallelism: int = 1,
     force_sequential_reason: str | None = None,
+    transport_mode: str = "custom_adapter",
     request_timeout_seconds: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     _validate_distinct_artifact_paths(
@@ -669,6 +675,28 @@ def _execute_cases(
         requested_parallelism=requested_parallelism,
         request_timeout_seconds=request_timeout_seconds,
         checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
+        transport_mode=transport_mode,
+    )
+    execution_manifest_preview = _build_execution_manifest(
+        suite=PUBLIC_MEMORY_BENCHMARK_SUITE,
+        evaluation_mode="retrieved_expected_terms",
+        dataset_path=dataset_path,
+        dataset_hash=dataset_hash,
+        selected_case_count=len(cases),
+        selected_case_fingerprint=progress.selected_case_fingerprint or "",
+        case_selection=case_selection,
+        requested_case_ids=requested_case_ids,
+        requested_capabilities=requested_capabilities,
+        transport_mode=transport_mode,
+        requested_parallelism=requested_parallelism,
+        effective_parallelism=requested_parallelism,
+        parallelism_degraded_reason=None,
+        request_timeout_seconds=request_timeout_seconds,
+        checkpoint_every_cases=checkpoint_every_cases,
+        checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
+        resume_from_checkpoint=resume_from_checkpoint,
+        resume_reuse_policy=_RESUME_REUSE_POLICY,
+        retrieval_contract=_retrieval_contract_manifest(),
     )
     resumed_case_keys: set[tuple[str, str]] = set()
     resume_report: dict[str, object] = {
@@ -694,6 +722,9 @@ def _execute_cases(
             dataset_hash=dataset_hash,
             case_selection=case_selection,
             cases=cases,
+            execution_fingerprint=str(
+                execution_manifest_preview["execution_fingerprint"]
+            ),
         )
         checkpoint_failures = [dict(item) for item in resume_load.checkpoint_failures]
         checkpoint_failed_case_ids, checkpoint_failed_case_id_truncated_count = (
@@ -818,6 +849,39 @@ def _execute_cases(
         checkpoint_failed_case_id_truncated_count=resume_report[
             "checkpoint_failed_case_id_truncated_count"
         ],
+        transport_mode=transport_mode,
+    )
+    execution_manifest = _build_execution_manifest(
+        suite=PUBLIC_MEMORY_BENCHMARK_SUITE,
+        evaluation_mode="retrieved_expected_terms",
+        dataset_path=dataset_path,
+        dataset_hash=dataset_hash,
+        selected_case_count=len(cases),
+        selected_case_fingerprint=progress.selected_case_fingerprint or "",
+        case_selection=case_selection,
+        requested_case_ids=requested_case_ids,
+        requested_capabilities=requested_capabilities,
+        transport_mode=transport_mode,
+        requested_parallelism=requested_parallelism,
+        effective_parallelism=effective_parallelism,
+        parallelism_degraded_reason=parallelism_degraded_reason,
+        request_timeout_seconds=request_timeout_seconds,
+        checkpoint_every_cases=checkpoint_every_cases,
+        checkpoint_min_interval_seconds=checkpoint_min_interval_seconds,
+        resume_from_checkpoint=resume_from_checkpoint,
+        resume_reuse_policy=_RESUME_REUSE_POLICY,
+        retrieval_contract=_retrieval_contract_manifest(),
+    )
+    progress.execution_manifest = execution_manifest
+    progress.event(
+        "run_execution_manifest",
+        execution_fingerprint=execution_manifest["execution_fingerprint"],
+        manifest_fingerprint=execution_manifest["manifest_fingerprint"],
+        transport_mode=transport_mode,
+        requested_parallelism=requested_parallelism,
+        effective_parallelism=effective_parallelism,
+        parallelism_degraded_reason=parallelism_degraded_reason,
+        resume_reuse_policy=_RESUME_REUSE_POLICY,
     )
 
     def run_case_adapter(
@@ -1070,6 +1134,7 @@ def _execute_cases(
             ),
         },
         "resume": resume_report,
+        "execution_manifest": execution_manifest,
         "benchmarks": benchmarks,
         "cases": [_case_payload(item) for item in run_results],
         "failures": (
@@ -1160,6 +1225,15 @@ def _normalize_checkpoint_min_interval_seconds(value: float) -> float:
             "checkpoint_min_interval_seconds must be greater than or equal to zero"
         )
     return float(value)
+
+
+def _retrieval_contract_manifest() -> dict[str, object]:
+    return {
+        "context_token_budget": _PUBLIC_BENCHMARK_CONTEXT_TOKEN_BUDGET,
+        "max_facts": _PUBLIC_BENCHMARK_MAX_FACTS,
+        "max_chunks": _PUBLIC_BENCHMARK_MAX_CHUNKS,
+        "max_reuse_detail_events_per_case": _PUBLIC_BENCHMARK_MAX_REUSE_DETAIL_EVENTS_PER_CASE,
+    }
 
 
 def _run_case(

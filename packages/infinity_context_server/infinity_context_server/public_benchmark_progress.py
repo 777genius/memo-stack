@@ -75,6 +75,7 @@ class _BenchmarkProgress:
     checkpoint_every_cases: int = 25
     checkpoint_min_interval_seconds: float = DEFAULT_CHECKPOINT_MIN_INTERVAL_SECONDS
     selected_case_fingerprint: str | None = None
+    execution_manifest: Mapping[str, object] | None = None
     _event_index: int = field(default=0, init=False, repr=False)
     _last_checkpoint_at: float = field(default=0.0, init=False, repr=False)
 
@@ -177,6 +178,11 @@ class _BenchmarkProgress:
         }
         if self.selected_case_fingerprint:
             payload["selected_case_fingerprint"] = self.selected_case_fingerprint
+        if self.execution_manifest:
+            payload["execution_manifest"] = dict(self.execution_manifest)
+            execution_fingerprint = self.execution_manifest.get("execution_fingerprint")
+            if isinstance(execution_fingerprint, str) and execution_fingerprint:
+                payload["execution_fingerprint"] = execution_fingerprint
         self.checkpoint_out.parent.mkdir(parents=True, exist_ok=True)
         _write_json_atomic(self.checkpoint_out, payload)
         self._last_checkpoint_at = now
