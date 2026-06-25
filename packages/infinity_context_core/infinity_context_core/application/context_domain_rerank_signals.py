@@ -551,7 +551,8 @@ _AGGREGATION_COUNT_QUERY_RE = re.compile(
 )
 _AGGREGATION_LIST_QUERY_RE = re.compile(
     r"\b(?:what|which|where)\b(?=.{0,80}\b(?:items?|things?|countries|places|"
-    r"types?|kinds?|events?|activities|bands?|artists?|shelters?|causes?|people)\b)|"
+    r"types?|kinds?|events?|activities|bands?|artists?|shelters?|causes?|people|"
+    r"foods?|recipes?|meals?|dishes?)\b)|"
     r"\b(?:какие|какой|где|кого|кому)\b",
     re.IGNORECASE | re.DOTALL,
 )

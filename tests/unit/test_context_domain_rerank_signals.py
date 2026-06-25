@@ -830,6 +830,41 @@ def test_aggregation_signal_keeps_single_multi_value_list_evidence() -> None:
     assert signal.reason == "aggregation_list_slot_diverse_evidence"
 
 
+def test_aggregation_signal_keeps_food_recipe_inventory_evidence() -> None:
+    aggregation = _item(
+        "sam_food_recommendations",
+        text=(
+            "D7:8 Sam shared a roasted veg recipe. "
+            "D8:7 Sam suggested grilled chicken and veggie stir-fry. "
+            "D23:26 Sam recommended trying local dishes on the trip."
+        ),
+        query_expansion_reason="food_recipe_recommendation_bridge",
+        retrieval_source="keyword_aggregation_chunks",
+        source_ref_count=3,
+    )
+    single_recipe = _item(
+        "sam_single_recipe",
+        text="D8:7 Sam suggested grilled chicken and veggie stir-fry.",
+        query_expansion_reason="food_recipe_recommendation_bridge",
+    )
+
+    exact_signal = aggregation_evidence_rerank_signal(
+        query="What kind of foods or recipes has Sam recommended to Evan?",
+        item=aggregation,
+        has_multi_evidence_competitor=True,
+    )
+    single_signal = aggregation_evidence_rerank_signal(
+        query="What kind of foods or recipes has Sam recommended to Evan?",
+        item=single_recipe,
+        has_multi_evidence_competitor=True,
+    )
+
+    assert exact_signal.boost > 0
+    assert exact_signal.reason == "aggregation_list_slot_diverse_evidence"
+    assert single_signal.penalty > 0
+    assert single_signal.reason == "aggregation_list_single_evidence_incomplete"
+
+
 def test_aggregation_signal_keeps_direct_numeric_count_answer() -> None:
     direct_count = _item(
         "children_count",

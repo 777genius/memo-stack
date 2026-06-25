@@ -213,6 +213,35 @@ _SLOT_RULES: tuple[
             ),
         ),
     ),
+    (
+        re.compile(r"\b(?:foods?|recipes?|meals?|dishes?)\b", re.IGNORECASE),
+        (
+            (
+                "vegetable_recipe",
+                re.compile(
+                    r"\b(?:roasted\s+veg(?:etables?)?|grilled\s+vegetables?|"
+                    r"vegetable\s+recipe|veg\s+recipe)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+            (
+                "chicken_stir_fry",
+                re.compile(
+                    r"\b(?:grilled\s+chicken|veggie\s+stir-fry|"
+                    r"vegetable\s+stir-fry|chicken\s+and\s+veggie)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+            (
+                "local_dish",
+                re.compile(
+                    r"\b(?:local\s+dishes|poutine|french\s+fries|"
+                    r"regional\s+dishes|local\s+food)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+        ),
+    ),
 )
 
 

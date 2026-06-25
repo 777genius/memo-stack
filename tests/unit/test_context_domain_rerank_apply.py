@@ -210,6 +210,50 @@ def test_apply_domain_rerank_signals_includes_lifestyle_food_evidence() -> None:
     assert ("food_recipe_recommendation_evidence", 3.0) in adjustment.rank_signals
 
 
+def test_apply_domain_rerank_signals_keeps_food_recipe_aggregation() -> None:
+    aggregation = ContextItem(
+        item_id="sam_food_recommendations",
+        item_type="chunk",
+        text=(
+            "D7:8 Sam shared a roasted veg recipe. "
+            "D8:7 Sam suggested grilled chicken and veggie stir-fry. "
+            "D23:26 Sam recommended trying local dishes on the trip."
+        ),
+        score=0.7,
+        source_refs=(
+            SourceRef(source_type="locomo_turn", source_id="conv-49:D7:8"),
+            SourceRef(source_type="locomo_turn", source_id="conv-49:D8:7"),
+            SourceRef(source_type="locomo_turn", source_id="conv-49:D23:26"),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_aggregation_chunks",
+            "retrieval_sources": ["keyword_aggregation_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "food_recipe_recommendation_bridge"
+            },
+        },
+    )
+
+    adjustment = apply_domain_rerank_signals(
+        query="What kind of foods or recipes has Sam recommended to Evan?",
+        query_reason="food_recipe_recommendation_bridge",
+        item=aggregation,
+        relevance=QueryRelevance(
+            score_boost=0.0,
+            query_term_count=6,
+            unique_term_hits=5,
+            capped_frequency_hits=5,
+            hit_ratio=0.8,
+            distinctive_term_count=6,
+            distinctive_term_hits=5,
+        ),
+        has_multi_evidence_aggregation_candidate=True,
+    )
+
+    assert adjustment.boost >= 0.058
+    assert "aggregation_list_slot_diverse_evidence" in adjustment.reasons
+
+
 def test_apply_domain_rerank_signals_includes_wellness_activity_effect() -> None:
     item = ContextItem(
         item_id="sam_yoga_effect",
