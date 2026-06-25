@@ -92,6 +92,39 @@ def test_inference_evidence_signal_penalizes_generic_counterfactual_support_nois
     assert signal.reason == "inference_counterfactual_support_noise"
 
 
+def test_inference_evidence_signal_boosts_generic_behavior_evidence() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered reliable?",
+        text="Alex kept his promises, followed through, and prepared the launch notes early.",
+    )
+
+    assert signal.boost > 0
+    assert signal.penalty == 0
+    assert signal.reason == "inference_behavior_evidence"
+
+
+def test_inference_evidence_signal_does_not_boost_behaviorless_topic_overlap() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered reliable?",
+        text="Alex discussed reliability as a product metric in the backend review.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty == 0
+    assert signal.reason == ""
+
+
+def test_inference_evidence_signal_does_not_boost_identity_only_behavior_overlap() -> None:
+    signal = inference_evidence_rerank_signal(
+        query="Would Alex be considered unusual?",
+        text="Alex worked regularly and prepared notes for the weekly launch meeting.",
+    )
+
+    assert signal.boost == 0
+    assert signal.penalty == 0
+    assert signal.reason == ""
+
+
 def test_inference_evidence_signal_boosts_preference_fit_evidence() -> None:
     signal = inference_evidence_rerank_signal(
         query='Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?',

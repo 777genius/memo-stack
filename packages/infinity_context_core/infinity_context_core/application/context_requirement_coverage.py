@@ -549,6 +549,8 @@ _INFERENCE_ANSWER_TEXT_RE = re.compile(
     r"fan\s+of|"
     r"mentors?|mentored|mentoring|guided?|guidance|counsel(?:ed|ing)?|"
     r"listened|empathy|empathetic|patient|volunteered?|volunteering|"
+    r"kept\s+(?:his|her|their|my|our)?\s*promises?|followed\s+through|"
+    r"prepared|planned|organized|organised|coordinated|consistently|"
     r"похоже|вероятно|показывает|поддержк\w*|помога\w*|принял\w*|приняла\w*"
     r")\b",
     re.IGNORECASE,

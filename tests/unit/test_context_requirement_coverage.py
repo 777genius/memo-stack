@@ -451,6 +451,34 @@ def test_context_requirement_coverage_tracks_support_role_inference_evidence() -
     assert "inference" not in coverage["missing_answer_shapes"]
 
 
+def test_context_requirement_coverage_tracks_generic_behavior_inference_evidence() -> None:
+    query = "Would Alex be considered reliable?"
+    intent = build_query_anchor_intent(query)
+    items = (
+        ContextItem(
+            item_id="alex_reliable_behavior",
+            item_type="chunk",
+            text=(
+                "Alex kept his promises, followed through, and prepared the "
+                "launch notes early."
+            ),
+            score=0.9,
+            source_refs=(SourceRef(source_type="locomo_turn", source_id="D4:9"),),
+            diagnostics={"memory_scope_id": "scope"},
+        ),
+    )
+
+    coverage = context_requirement_coverage(
+        query=query,
+        query_anchor_intent=intent,
+        items=items,
+    )
+
+    assert coverage["requested_answer_shapes"] == ["inference"]
+    assert "inference" in coverage["covered_answer_shapes"]
+    assert coverage["missing_answer_shapes"] == []
+
+
 def test_context_requirement_coverage_tracks_preference_inference_evidence() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     intent = build_query_anchor_intent(query)
@@ -2152,7 +2180,7 @@ def test_context_requirement_coverage_tracks_missing_state_update_shape() -> Non
     assert coverage["missing_answer_shapes"] == ["state_update"]
 
 
-def test_context_requirement_coverage_does_not_cover_state_update_from_temporal_before_only() -> None:
+def test_context_requirement_coverage_does_not_cover_state_update_from_before_only() -> None:
     query = "What is the latest current Atlas provider?"
     intent = build_query_anchor_intent(query)
     item = ContextItem(

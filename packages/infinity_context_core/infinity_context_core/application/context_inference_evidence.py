@@ -13,6 +13,9 @@ from infinity_context_core.application.context_answer_evidence_types import (
 from infinity_context_core.application.context_community_membership_inference import (
     community_membership_inference_signal,
 )
+from infinity_context_core.application.context_generic_behavior_inference import (
+    generic_behavior_inference_signal,
+)
 from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_political_inference import (
     political_inference_signal,
@@ -739,7 +742,10 @@ def answer_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSig
         return _religious_inference_signal(query=query, text=text)
     if _requests_patriotic_inference(query):
         return _patriotic_service_inference_signal(query=query, text=text)
-    return _counterfactual_support_signal(query=query, text=text)
+    counterfactual_signal = _counterfactual_support_signal(query=query, text=text)
+    if counterfactual_signal.reason:
+        return counterfactual_signal
+    return generic_behavior_inference_signal(query=query, text=text)
 
 
 def inference_evidence_rerank_signal(*, query: str, text: str) -> AnswerEvidenceSignal:

@@ -6080,6 +6080,40 @@ def test_deterministic_rerank_prefers_counterfactual_support_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_generic_behavior_inference_evidence() -> None:
+    query = "Would Alex be considered reliable?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    topic_only = _item(
+        "alex_reliability_topic",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="Alex discussed reliability as a product metric in the backend review.",
+    )
+    behavior = _item(
+        "alex_reliable_behavior",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Alex kept his promises, followed through, and prepared the launch notes early.",
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (topic_only, behavior),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["alex_reliable_behavior"].score > by_id["alex_reliability_topic"].score
+    assert (
+        "inference_behavior_evidence"
+        in by_id["alex_reliable_behavior"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_prefers_preference_fit_evidence_over_negative_noise() -> None:
     query = 'Would Melanie likely enjoy the song "The Four Seasons" by Vivaldi?'
     plan = build_query_expansion_plan(query)
