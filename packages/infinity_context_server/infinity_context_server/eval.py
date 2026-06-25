@@ -79,6 +79,7 @@ from infinity_context_server.eval_constants import (
     PUBLIC_MEMORY_BENCHMARK_SUITE,
     QUALITY_GOLDEN_SUITE,
     SEMANTIC_LINKING_GOLDEN_SUITE,
+    SEMANTIC_RETRIEVAL_CANARY_SUITE,
     SMALL_GOLDEN_SUITE,
 )
 from infinity_context_server.eval_fixtures import (
@@ -104,6 +105,9 @@ from infinity_context_server.eval_scorecard import (
     memory_quality_scorecard_policy_snapshot,
 )
 from infinity_context_server.eval_semantic_linking import run_semantic_linking_golden
+from infinity_context_server.eval_semantic_retrieval_canary import (
+    run_semantic_retrieval_canary,
+)
 from infinity_context_server.eval_types import (  # noqa: F401
     EvalCase,
     EvalCaseResult,
@@ -155,11 +159,13 @@ __all__ = (
     "PUBLIC_MEMORY_BENCHMARK_SUITE",
     "QUALITY_GOLDEN_SUITE",
     "SEMANTIC_LINKING_GOLDEN_SUITE",
+    "SEMANTIC_RETRIEVAL_CANARY_SUITE",
     "SMALL_GOLDEN_SUITE",
     "build_memory_quality_scorecard",
     "build_prompt_contract_snapshot",
     "memory_quality_scorecard_policy_snapshot",
     "run_semantic_linking_golden",
+    "run_semantic_retrieval_canary",
     "run_multimodal_offline_golden",
 )
 
@@ -2441,6 +2447,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 auth_token=_eval_auth_token_from_env() if args.api_url else None,
                 report_out=args.report_out,
             )
+        elif args.suite == SEMANTIC_RETRIEVAL_CANARY_SUITE:
+            if args.api_url:
+                raise SystemExit(
+                    f"{SEMANTIC_RETRIEVAL_CANARY_SUITE} is deterministic offline-only"
+                )
+            result = run_semantic_retrieval_canary(report_out=args.report_out)
         elif args.suite == MULTIMODAL_OFFLINE_GOLDEN_SUITE:
             if args.api_url:
                 raise SystemExit(
@@ -2471,6 +2483,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "Supported: "
                 f"{SMALL_GOLDEN_SUITE}, {QUALITY_GOLDEN_SUITE}, "
                 f"{SEMANTIC_LINKING_GOLDEN_SUITE}, {LONG_MEMORY_GOLDEN_SUITE}, "
+                f"{SEMANTIC_RETRIEVAL_CANARY_SUITE}, "
                 f"{MULTIMODAL_OFFLINE_GOLDEN_SUITE}, "
                 f"{AUTO_MEMORY_GOLDEN_SUITE}, "
                 f"{GRAPH_NATIVE_GOLDEN_SUITE}"
