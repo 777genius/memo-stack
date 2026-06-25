@@ -1210,6 +1210,60 @@ def test_deterministic_rerank_prefers_broad_inventory_slot_coverage() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_cause_awareness_event_evidence() -> None:
+    query = "What did the charity race raise awareness for?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    exact = _item(
+        "mental_health_race_awareness",
+        score=0.76,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D2:2 Caroline: That charity race sounds great, Mel! Making a "
+            "difference and raising awareness for mental health is super rewarding."
+        ),
+        score_signals={"query_expansion_reason": "cause_awareness_event_bridge"},
+    )
+    promotion_noise = _item(
+        "promotion_awareness_noise",
+        score=0.79,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D12:5 Jon needed marketing strategies to reach his target audience "
+            "and raise awareness for the dance studio."
+        ),
+        score_signals={"query_expansion_reason": "cause_awareness_event_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (promotion_noise, exact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["mental_health_race_awareness"].score > by_id[
+        "promotion_awareness_noise"
+    ].score
+    assert (
+        by_id["mental_health_race_awareness"]
+        .diagnostics["score_signals"]
+        .get("cause_awareness_answer_evidence")
+        == 3.0
+    )
+    assert (
+        "cause_awareness_exact_evidence"
+        in by_id["mental_health_race_awareness"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "cause_awareness_promotion_noise"
+        in by_id["promotion_awareness_noise"]
+        .diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_prefers_activity_companion_evidence() -> None:
     query = "Who did Melanie go camping with?"
     plan = build_query_expansion_plan(query)

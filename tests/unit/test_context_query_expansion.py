@@ -2752,6 +2752,35 @@ def test_best_query_relevance_uses_cause_inventory_bridges() -> None:
     assert veterans_relevance.distinctive_term_hits >= 5
 
 
+def test_best_query_relevance_uses_cause_awareness_event_bridge() -> None:
+    plan = build_query_expansion_plan("What did the charity race raise awareness for?")
+
+    assert "mental health domestic abuse animal welfare" in _expansion_query(
+        plan,
+        "cause_awareness_event_bridge",
+    )
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D2:2 Caroline: That charity race sounds great, Mel! Making a "
+            "difference and raising awareness for mental health is super rewarding."
+        ),
+    )
+    _, weak_reason, weak_relevance = best_query_relevance(
+        plan,
+        text=(
+            "D12:5 The product marketing dashboard improved brand awareness "
+            "for the dance studio target audience."
+        ),
+    )
+
+    assert reason == "cause_awareness_event_bridge"
+    assert relevance.distinctive_term_hits >= 7
+    assert weak_reason == "cause_awareness_event_bridge"
+    assert weak_relevance.distinctive_term_hits < relevance.distinctive_term_hits
+
+
 def test_best_query_relevance_uses_inventory_list_for_where_place_lists() -> None:
     plan = build_query_expansion_plan("Where has Maria made friends?")
 

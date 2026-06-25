@@ -74,6 +74,25 @@ _BUSINESS_PROMOTION_TECHNICAL_CONTEXT_TERMS = _TECHNICAL_SUPPORT_CONTEXT_TERMS |
         "dashboard",
     }
 )
+_AWARENESS_CAUSE_EVENT_CONTEXT_TERMS = frozenset(
+    {
+        "campaign",
+        "cause",
+        "causes",
+        "charity",
+        "event",
+        "fundraiser",
+        "fundraising",
+        "issue",
+        "issues",
+        "race",
+        "raise",
+        "raised",
+        "raising",
+        "spread",
+        "spreading",
+    }
+)
 _STORE_PROMOTION_TERMS = frozenset(
     {
         "clothes",
@@ -361,6 +380,8 @@ def should_skip_expansion_rule(
                 {"support", "supporting", "passionate", "interested", "interest"}
             )
         )
+    if reason == "cause_awareness_event_bridge":
+        return not _requests_awareness_cause_event(raw_tokens)
     if reason == "support_network_bridge":
         return (
             not _SOCIAL_SUPPORT_NETWORK_QUERY_RE.search(query)
@@ -521,6 +542,13 @@ def _requests_business_opening_timeline(raw_tokens: set[str]) -> bool:
         "open" in raw_tokens
         and "studio" in raw_tokens
         and raw_tokens.intersection(_STUDIO_OPENING_TIMELINE_TERMS)
+    )
+
+
+def _requests_awareness_cause_event(raw_tokens: set[str]) -> bool:
+    return bool(
+        raw_tokens.intersection({"aware", "awareness"})
+        and raw_tokens.intersection(_AWARENESS_CAUSE_EVENT_CONTEXT_TERMS)
     )
 
 

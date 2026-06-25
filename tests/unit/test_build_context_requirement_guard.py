@@ -128,6 +128,31 @@ def test_requirement_guard_keeps_domain_exact_evidence_for_relation_shape() -> N
     assert diagnostics["requirement_guard_items_dropped"] == 0
 
 
+def test_requirement_guard_keeps_cause_awareness_exact_evidence() -> None:
+    item = _item(
+        "charity_race_awareness",
+        (
+            "D2:2 Caroline: That charity race sounds great. Raising awareness "
+            "for mental health is super rewarding."
+        ),
+        deterministic_reasons=(
+            "relation_requirement_missing_relation",
+            "cause_awareness_exact_evidence",
+        ),
+    )
+    query = "What did the charity race raise awareness for?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == (item,)
+    assert diagnostics["requirement_guard_status"] == "satisfied"
+    assert diagnostics["requirement_guard_items_dropped"] == 0
+
+
 def test_requirement_guard_drops_missing_count_answer_shape_evidence() -> None:
     item = _item(
         "generic_pet_note",

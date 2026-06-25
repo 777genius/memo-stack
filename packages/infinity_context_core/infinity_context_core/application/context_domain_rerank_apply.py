@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from infinity_context_core.application.context_activity_duration_rerank import (
     activity_duration_rerank_signal,
 )
+from infinity_context_core.application.context_awareness_cause_rerank import (
+    awareness_cause_rerank_signal,
+)
 from infinity_context_core.application.context_birdwatching_schedule_rerank import (
     birdwatching_city_schedule_rerank_signal,
 )
@@ -176,6 +179,12 @@ def _domain_rerank_signals(
             relevance=relevance,
         ),
         causal_reason_rerank_signal(
+            query=query,
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
+        awareness_cause_rerank_signal(
             query=query,
             query_reason=query_reason,
             item=item,

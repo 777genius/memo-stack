@@ -254,6 +254,17 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "event_participation_bridge",
         ),
     (
+            frozenset({"awareness"}),
+            (
+                "raise raised raising spread spreading awareness charity race run "
+                "fundraiser campaign event cause issue mental health domestic abuse "
+                "animal welfare veterans rights education infrastructure lgbtq "
+                "community trans rights gender identity inclusion public health "
+                "make a difference start conversations"
+            ),
+            "cause_awareness_event_bridge",
+        ),
+    (
             frozenset({"lgbtq", "event", "attend"}),
             (
                 "lgbtq pride parade marched flags signs celebrating love diversity "

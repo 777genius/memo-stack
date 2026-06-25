@@ -86,6 +86,7 @@ _CONTEXT_REQUIREMENT_SCORE_SIGNAL_KEYS = (
 )
 _DETERMINISTIC_RERANK_SCORE_SIGNAL_KEYS = (
     "book_author_preference_world_evidence",
+    "cause_awareness_answer_evidence",
     "item_purchase_object_evidence",
     "symbol_importance_visual_evidence",
     "friend_place_shelter_anchor_evidence",
@@ -522,6 +523,7 @@ def context_rank_key(
         -_score_signal_float(item, "source_sibling_dialogue_visual_reference"),
         -_score_signal_float(item, "source_sibling_visual_continuation"),
         -_score_signal_float(item, "book_author_preference_world_evidence"),
+        -_score_signal_float(item, "cause_awareness_answer_evidence"),
         -_score_signal_float(item, "item_purchase_object_evidence"),
         -_score_signal_float(item, "symbol_importance_visual_evidence"),
         -_score_signal_float(item, "friend_place_shelter_anchor_evidence"),

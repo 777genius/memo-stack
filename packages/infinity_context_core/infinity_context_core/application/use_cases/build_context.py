@@ -287,6 +287,7 @@ _RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS = frozenset(
 _RELATION_REQUIREMENT_MATCH_RERANK_REASON = "relation_requirement_match"
 _RELATION_REQUIREMENT_SUPPORT_RERANK_REASONS = frozenset(
     {
+        "cause_awareness_exact_evidence",
         "inventory_list_exact_evidence",
     }
 )
