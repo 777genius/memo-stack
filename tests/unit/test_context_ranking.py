@@ -9245,6 +9245,55 @@ def test_deterministic_rerank_prefers_localized_transcript_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_quote_backed_source_citation() -> None:
+    query = "Show source citation for the Atlas decision"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    summary = _item(
+        "atlas_decision_summary",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="Atlas decision summary: Alex approved the launch path.",
+    )
+    citation = ContextItem(
+        item_id="atlas_decision_quote",
+        item_type="chunk",
+        text="Evidence quote from the meeting transcript: Alex approved the Atlas launch path.",
+        score=0.7,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="meeting-notes-1",
+                chunk_id="chunk-7",
+                quote_preview="Alex approved the Atlas launch path.",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {"base_score": 0.7},
+            "provenance": {"retrieval_sources": ["keyword_chunks"]},
+        },
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (summary, citation),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[1].score > reranked[0].score
+    assert (
+        "citation_quote_evidence"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "citation_quote_evidence"
+        not in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_does_not_localize_plain_source_ref() -> None:
     query = "What did Alex say in the Project Atlas call?"
     plan = build_query_expansion_plan(query)

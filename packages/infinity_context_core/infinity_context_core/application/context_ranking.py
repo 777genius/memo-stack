@@ -180,6 +180,7 @@ _GENERIC_BOOSTABLE_ANSWER_SHAPES = frozenset((
 ))
 _DETERMINISTIC_RERANK_MAX_BOOST = 0.055
 _DETERMINISTIC_RERANK_MAX_PENALTY = 0.11
+_CITATION_EVIDENCE_RERANK_MAX_BOOST = 0.024
 _LOCALIZED_EVIDENCE_RERANK_MAX_BOOST = 0.022
 _DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
 _STRONG_EVIDENCE_RERANK_SOURCES = frozenset(
@@ -1466,6 +1467,16 @@ def _deterministic_rerank_signals(
     if localized_evidence_boost > 0:
         boost += localized_evidence_boost
         reasons.append(localized_evidence_reason)
+    citation_evidence_boost, citation_evidence_reason = _citation_evidence_support_signal(
+        item=item,
+        coverage=coverage,
+        relevance=relevance,
+        anchor_matched=anchor_match is not None,
+        strong_source_count=strong_source_count,
+    )
+    if citation_evidence_boost > 0:
+        boost += citation_evidence_boost
+        reasons.append(citation_evidence_reason)
     owner_boost, owner_penalty, owner_reason = _activity_owner_signal(
         query_anchor_intent=query_anchor_intent,
         query_reason=query_reason,
@@ -1831,6 +1842,34 @@ def _localized_evidence_support_signal(
 
 def _source_ref_has_precise_location(ref: SourceRef) -> bool:
     return bool(_source_ref_location_features(ref))
+
+
+def _citation_evidence_support_signal(
+    *,
+    item: ContextItem,
+    coverage: _RequirementCoverageSignals,
+    relevance: QueryRelevance,
+    anchor_matched: bool,
+    strong_source_count: int,
+) -> tuple[float, str]:
+    if "citation" not in coverage.requested_evidence_features:
+        return 0.0, ""
+    if (
+        not is_query_relevance_sufficient(relevance)
+        and coverage.ratio <= 0
+        and not anchor_matched
+        and strong_source_count <= 0
+    ):
+        return 0.0, ""
+    quote_count = sum(1 for ref in item.source_refs if (ref.quote_preview or "").strip())
+    localized_count = sum(1 for ref in item.source_refs if _source_ref_has_precise_location(ref))
+    if quote_count <= 0 and localized_count <= 0:
+        return 0.0, ""
+    boost = 0.01
+    boost += min(0.008, quote_count * 0.004)
+    boost += min(0.006, localized_count * 0.003)
+    reason = "citation_quote_evidence" if quote_count > 0 else "citation_localized_evidence"
+    return round(min(_CITATION_EVIDENCE_RERANK_MAX_BOOST, boost), 4), reason
 
 
 def _source_ref_location_features(ref: SourceRef) -> tuple[str, ...]:
