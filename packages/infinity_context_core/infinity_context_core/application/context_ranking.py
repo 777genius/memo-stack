@@ -6,6 +6,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from functools import lru_cache
 
 from infinity_context_core.application.context_action_roles import action_role_rerank_signal
 from infinity_context_core.application.context_activity_companion import (
@@ -104,7 +105,7 @@ from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
     is_query_relevance_sufficient,
     score_query_relevance,
-    score_query_relevance_against_profile,
+    score_query_terms_relevance_against_profile,
 )
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
@@ -153,6 +154,7 @@ _DEFAULT_RRF_SOURCE_WEIGHTS = {
 _BM25_K1 = 1.2
 _BM25_B = 0.75
 _BM25_MAX_BOOST = 0.035
+_QueryExpansionTerms = tuple[tuple[str, str, tuple[LexicalQueryTerm, ...]], ...]
 _QUERY_ANCHOR_INTENT_MAX_BOOST = 0.035
 _CONTEXT_REQUIREMENT_MAX_BOOST = 0.04
 _CONTEXT_REQUIREMENT_ANCHOR_BOOST = 0.008
@@ -628,6 +630,19 @@ def reciprocal_rank_fusion_scores(
     return scores
 
 
+@lru_cache(maxsize=512)
+def _query_expansion_terms_for_signature(
+    signature: tuple[tuple[str, str], ...],
+) -> _QueryExpansionTerms:
+    return tuple((query, reason, query_terms(query)) for query, reason in signature)
+
+
+def _query_expansion_terms(plan: QueryExpansionPlan) -> _QueryExpansionTerms:
+    return _query_expansion_terms_for_signature(
+        tuple((expansion.query, expansion.reason) for expansion in plan.retrieval_queries)
+    )
+
+
 def best_query_relevance(
     plan: QueryExpansionPlan,
     *,
@@ -636,15 +651,15 @@ def best_query_relevance(
     text_counts, text_variants = text_variant_profile(text)
     scored = tuple(
         (
-            expansion.query,
-            expansion.reason,
-            score_query_relevance_against_profile(
-                query=expansion.query,
+            query,
+            reason,
+            score_query_terms_relevance_against_profile(
+                terms=terms,
                 text_counts=text_counts,
                 text_variants=text_variants,
             ),
         )
-        for expansion in plan.retrieval_queries
+        for query, reason, terms in _query_expansion_terms(plan)
     )
     return max(scored, key=query_relevance_rank_key)
 

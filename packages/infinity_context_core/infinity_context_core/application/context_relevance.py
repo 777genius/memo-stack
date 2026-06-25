@@ -137,6 +137,21 @@ def score_query_relevance_against_profile(
     max_boost: float = 0.12,
 ) -> QueryRelevance:
     terms = query_terms(query)
+    return score_query_terms_relevance_against_profile(
+        terms=terms,
+        text_counts=text_counts,
+        text_variants=text_variants,
+        max_boost=max_boost,
+    )
+
+
+def score_query_terms_relevance_against_profile(
+    *,
+    terms: tuple[LexicalQueryTerm, ...],
+    text_counts: Mapping[str, int],
+    text_variants: tuple[tuple[str, ...], ...],
+    max_boost: float = 0.12,
+) -> QueryRelevance:
     if not terms:
         return QueryRelevance(
             score_boost=0.0,

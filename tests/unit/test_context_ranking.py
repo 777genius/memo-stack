@@ -328,6 +328,44 @@ def test_best_query_relevance_reuses_text_variant_profile(monkeypatch) -> None:
     assert relevance.unique_term_hits >= 2
 
 
+def test_best_query_relevance_reuses_query_terms_for_plan(monkeypatch) -> None:
+    plan = QueryExpansionPlan(
+        original_query="Alex Atlas",
+        decompositions=(
+            QueryExpansion(query="Alex launch deadline", reason="decomposition_temporal_answer"),
+        ),
+        expansions=(
+            QueryExpansion(query="Alex call notes", reason="meeting_evidence_bridge"),
+            QueryExpansion(query="Alex Atlas project", reason="project_summary_bridge"),
+        ),
+    )
+    real_query_terms = context_ranking_module.query_terms
+    calls: list[str] = []
+
+    def counting_query_terms(query: str, *, min_chars: int = 2):
+        calls.append(query)
+        return real_query_terms(query, min_chars=min_chars)
+
+    context_ranking_module._query_expansion_terms_for_signature.cache_clear()
+    monkeypatch.setattr(context_ranking_module, "query_terms", counting_query_terms)
+
+    try:
+        first = best_query_relevance(
+            plan,
+            text="Alex moved the Atlas launch deadline after the call.",
+        )
+        second = best_query_relevance(
+            plan,
+            text="Alex wrote separate Atlas project notes yesterday.",
+        )
+    finally:
+        context_ranking_module._query_expansion_terms_for_signature.cache_clear()
+
+    assert calls == [expansion.query for expansion in plan.retrieval_queries]
+    assert first[2].unique_term_hits >= 2
+    assert second[2].unique_term_hits >= 2
+
+
 def test_keyword_chunk_score_boosts_item_purchase_reason() -> None:
     plan = build_query_expansion_plan("What items has Melanie bought?")
     _, reason, relevance = best_query_relevance(

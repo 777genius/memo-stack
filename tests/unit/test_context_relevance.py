@@ -14,6 +14,7 @@ from infinity_context_core.application.context_relevance import (
     is_query_relevance_sufficient,
     score_query_relevance,
     score_query_relevance_against_profile,
+    score_query_terms_relevance_against_profile,
 )
 
 
@@ -74,6 +75,18 @@ def test_profile_aware_query_relevance_matches_public_scoring() -> None:
 
     assert score_query_relevance_against_profile(
         query=query,
+        text_counts=counts,
+        text_variants=variants,
+    ) == score_query_relevance(query=query, text=text)
+
+
+def test_terms_aware_query_relevance_matches_public_scoring() -> None:
+    query = "Alex Atlas launch"
+    text = "Alex moved the Atlas launch deadline after the call."
+    counts, variants = text_variant_profile(text)
+
+    assert score_query_terms_relevance_against_profile(
+        terms=query_terms(query),
         text_counts=counts,
         text_variants=variants,
     ) == score_query_relevance(query=query, text=text)
