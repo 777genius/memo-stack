@@ -206,10 +206,15 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
 _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
     {
         "adverse_trip_bridge",
+        "age_birthday_bridge",
         "attribute_trait_inventory_bridge",
+        "birthplace_origin_bridge",
         "book_suggestion_bridge",
         "children_books_inference_bridge",
+        "current_occupation_bridge",
         "current_recommendation_bridge",
+        "current_residence_bridge",
+        "family_origin_bridge",
         "negative_experience_support_bridge",
         "negative_preference_bridge",
         "personality_authenticity_bridge",
@@ -217,6 +222,8 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "personality_thoughtfulness_bridge",
         "personality_trait_bridge",
         "recommendation_source_bridge",
+        "relocation_destination_bridge",
+        "relocation_origin_bridge",
     }
 )
 _T = TypeVar("_T")

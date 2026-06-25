@@ -192,6 +192,30 @@ def test_protected_query_head_keys_keep_recommendation_and_negative_heads() -> N
     )
 
 
+def test_protected_query_head_keys_keep_bio_location_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:age_birthday_bridge": ("age_match", "generic_b"),
+        "2:birthplace_origin_bridge": ("birthplace_match", "generic_c"),
+        "3:current_residence_bridge": ("residence_match", "generic_d"),
+        "4:current_occupation_bridge": ("occupation_match", "generic_e"),
+        "5:family_origin_bridge": ("family_origin_match", "generic_f"),
+        "6:relocation_origin_bridge": ("move_from_match", "generic_g"),
+        "7:relocation_destination_bridge": ("move_to_match", "generic_h"),
+        "8:identity_bridge": ("identity_generic",),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "age_match",
+        "birthplace_match",
+        "residence_match",
+        "occupation_match",
+        "family_origin_match",
+        "move_from_match",
+        "move_to_match",
+    )
+
+
 def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
