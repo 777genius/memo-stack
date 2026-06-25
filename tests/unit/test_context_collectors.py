@@ -938,8 +938,8 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
     )] == [
         "original_query",
         "ally_support_bridge",
-        "identity_bridge",
-        "decomposition_identity_attribute",
+        "decomposition_ally_support_evidence",
+        "decomposition_inference_support",
     ]
     assert [query.reason for query in _bounded_derived_retrieval_queries(
         membership,

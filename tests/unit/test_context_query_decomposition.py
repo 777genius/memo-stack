@@ -646,6 +646,25 @@ def test_query_decomposition_adds_community_membership_evidence_query() -> None:
     }
 
 
+def test_query_decomposition_adds_ally_support_evidence_without_identity_noise() -> None:
+    plan = build_query_decomposition_plan(
+        "Would Melanie be considered an ally to the transgender community?"
+    )
+
+    ally = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_ally_support_evidence"
+    )
+    reasons = {item.reason for item in plan.decompositions}
+
+    assert ally.query.casefold().startswith("melanie ")
+    assert "ally allies supportive support acceptance encouraging" in ally.query
+    assert "transition transgender trans lgbtq community" in ally.query
+    assert "decomposition_identity_attribute" not in reasons
+    assert "decomposition_inference_support" in reasons
+
+
 def test_query_decomposition_adds_counterfactual_evidence_query() -> None:
     plan = build_query_decomposition_plan("Would Caroline support Alex joining the pride group?")
 

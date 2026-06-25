@@ -782,6 +782,15 @@ _COMMUNITY_MEMBERSHIP_QUERY_TERMS = frozenset(
         "membership",
     }
 )
+_ALLY_SUPPORT_QUERY_TERMS = frozenset(
+    {
+        "allies",
+        "ally",
+        "support",
+        "supporter",
+        "supportive",
+    }
+)
 _RELATIONSHIP_STATUS_TERMS = frozenset(
     {
         "breakup",
@@ -1457,7 +1466,21 @@ def build_query_decomposition_plan(
             ),
             reason="decomposition_community_membership_evidence",
         )
-    if raw_tokens.intersection(_IDENTITY_ATTRIBUTE_TERMS):
+    requests_ally_support = _requests_ally_support_inference(variants=variants)
+    if requests_ally_support:
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                identities,
+                (
+                    "ally allies supportive support acceptance encouraging kind words "
+                    "rights inclusion respected transition transgender trans lgbtq "
+                    "community care help advocated stood up"
+                ),
+            ),
+            reason="decomposition_ally_support_evidence",
+        )
+    if raw_tokens.intersection(_IDENTITY_ATTRIBUTE_TERMS) and not requests_ally_support:
         _append_candidate(
             candidates,
             query=_compose_query(
@@ -1813,6 +1836,13 @@ def _requests_community_membership_inference(*, variants: frozenset[str]) -> boo
     return bool(
         variants.intersection(_COMMUNITY_MEMBERSHIP_IDENTITY_TERMS)
         and variants.intersection(_COMMUNITY_MEMBERSHIP_QUERY_TERMS)
+    )
+
+
+def _requests_ally_support_inference(*, variants: frozenset[str]) -> bool:
+    return bool(
+        variants.intersection(_ALLY_SUPPORT_QUERY_TERMS)
+        and variants.intersection(_COMMUNITY_MEMBERSHIP_IDENTITY_TERMS)
     )
 
 

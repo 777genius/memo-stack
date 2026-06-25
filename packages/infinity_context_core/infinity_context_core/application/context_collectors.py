@@ -1040,6 +1040,7 @@ def _bounded_derived_retrieval_queries(
         if plan is not None
         else (QueryExpansion(query=fallback, reason="original_query"),)
     )
+    raw_queries = _drop_ally_support_identity_noise(raw_queries)
     ranked_queries = sorted(
         enumerate(raw_queries),
         key=lambda item: (_retrieval_query_selection_priority(item[1]), item[0]),
@@ -1059,6 +1060,19 @@ def _bounded_derived_retrieval_queries(
     if selected:
         return tuple(selected)
     return (QueryExpansion(query=fallback, reason="original_query"),)
+
+
+def _drop_ally_support_identity_noise(
+    queries: tuple[QueryExpansion, ...],
+) -> tuple[QueryExpansion, ...]:
+    reasons = {query.reason for query in queries}
+    if not {
+        "ally_support_bridge",
+        "decomposition_ally_support_evidence",
+        "identity_bridge",
+    }.issubset(reasons):
+        return queries
+    return tuple(query for query in queries if query.reason != "identity_bridge")
 
 
 def _retrieval_query_selection_priority(query: QueryExpansion) -> int:
