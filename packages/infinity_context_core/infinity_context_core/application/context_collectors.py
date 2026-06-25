@@ -203,6 +203,22 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_habitat_setup_bridge",
     }
 )
+_PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
+    {
+        "adverse_trip_bridge",
+        "attribute_trait_inventory_bridge",
+        "book_suggestion_bridge",
+        "children_books_inference_bridge",
+        "current_recommendation_bridge",
+        "negative_experience_support_bridge",
+        "negative_preference_bridge",
+        "personality_authenticity_bridge",
+        "personality_drive_bridge",
+        "personality_thoughtfulness_bridge",
+        "personality_trait_bridge",
+        "recommendation_source_bridge",
+    }
+)
 _T = TypeVar("_T")
 
 
@@ -1069,6 +1085,7 @@ def _protected_query_head_limit_for_reason(reason: str) -> int:
 def _protect_query_head_for_reason(reason: str) -> bool:
     return (
         reason in _HIGH_SIGNAL_EXPANSION_REASONS
+        or reason in _PROTECTED_EXPANSION_HEAD_REASONS
         or reason in _BROAD_AGGREGATION_EXPANSION_REASONS
         or reason
         in {

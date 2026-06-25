@@ -149,6 +149,49 @@ def test_protected_query_head_keys_keep_commonality_heads() -> None:
     )
 
 
+def test_protected_query_head_keys_keep_personality_trait_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:personality_trait_bridge": ("trait_match", "generic_b"),
+        "2:personality_thoughtfulness_bridge": ("thoughtful_match", "generic_c"),
+        "3:personality_authenticity_bridge": ("authentic_match", "generic_d"),
+        "4:personality_drive_bridge": ("drive_match", "generic_e"),
+        "5:attribute_trait_inventory_bridge": ("attribute_match", "generic_f"),
+        "6:attribute_description_bridge": ("generic_attribute",),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "trait_match",
+        "thoughtful_match",
+        "authentic_match",
+        "drive_match",
+        "attribute_match",
+    )
+
+
+def test_protected_query_head_keys_keep_recommendation_and_negative_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:adverse_trip_bridge": ("adverse_trip_match", "generic_b"),
+        "2:book_suggestion_bridge": ("book_suggestion_match", "generic_c"),
+        "3:children_books_inference_bridge": ("children_books_match", "generic_d"),
+        "4:current_recommendation_bridge": ("current_recommendation_match", "generic_e"),
+        "5:recommendation_source_bridge": ("recommendation_source_match", "generic_f"),
+        "6:negative_experience_support_bridge": ("negative_support_match", "generic_g"),
+        "7:negative_preference_bridge": ("negative_preference_match", "generic_h"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "adverse_trip_match",
+        "book_suggestion_match",
+        "children_books_match",
+        "current_recommendation_match",
+        "recommendation_source_match",
+        "negative_support_match",
+        "negative_preference_match",
+    )
+
+
 def test_protected_query_head_keys_keep_friend_team_inference_head() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
