@@ -177,6 +177,14 @@ _BROAD_AGGREGATION_EXPANSION_REASONS = frozenset(
         "event_participation_bridge",
     }
 )
+_MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
+    {
+        "animal_affinity_pet_store_bridge",
+        "animal_care_instruction_bridge",
+        "animal_diet_evidence_bridge",
+        "animal_habitat_setup_bridge",
+    }
+)
 _T = TypeVar("_T")
 
 
@@ -1017,15 +1025,27 @@ def _protected_query_head_keys(rankings: dict[str, tuple[str, ...]]) -> tuple[st
     seen: set[str] = set()
     for ranking_key, ranked_keys in rankings.items():
         _, _, reason = ranking_key.partition(":")
-        if not _protect_query_head_for_reason(reason):
+        head_limit = _protected_query_head_limit_for_reason(reason)
+        if head_limit <= 0:
             continue
+        head_count = 0
         for raw_key in ranked_keys:
             key = raw_key.strip()
             if key and key not in seen:
                 seen.add(key)
                 protected.append(key)
-                break
+                head_count += 1
+                if head_count >= head_limit:
+                    break
     return tuple(protected)
+
+
+def _protected_query_head_limit_for_reason(reason: str) -> int:
+    if reason in _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS:
+        return 2
+    if _protect_query_head_for_reason(reason):
+        return 1
+    return 0
 
 
 def _protect_query_head_for_reason(reason: str) -> bool:

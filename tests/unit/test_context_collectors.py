@@ -107,6 +107,33 @@ def test_protected_query_head_keys_keep_inventory_and_friend_place_heads() -> No
     )
 
 
+def test_protected_query_head_keys_keep_multiple_animal_evidence_facets() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:animal_care_instruction_bridge": (
+            "care_clean_feed_light",
+            "care_followup",
+            "care_noise",
+        ),
+        "2:animal_affinity_pet_store_bridge": (
+            "affinity_pet_store",
+            "affinity_followup",
+        ),
+        "3:generic_behavior_inference_bridge": (
+            "behavior_exact",
+            "behavior_followup",
+        ),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "care_clean_feed_light",
+        "care_followup",
+        "affinity_pet_store",
+        "affinity_followup",
+        "behavior_exact",
+    )
+
+
 def test_protected_query_head_keys_keep_duration_and_frequency_heads() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -640,6 +667,55 @@ def test_keyword_search_chunks_uses_weighted_rrf_across_query_variants() -> None
 
     assert result == (exact, decoy)
     assert uow.chunks.searched_queries == ["original", "broad one", "broad two"]
+
+
+def test_keyword_search_chunks_preserves_second_animal_care_facet_head() -> None:
+    care_primary = _chunk(
+        "care_primary",
+        "Nate keeps the reptile area clean and checks the tank every day.",
+    )
+    care_followup = _chunk(
+        "care_followup",
+        "Nate says to feed them properly and make sure they get enough light.",
+    )
+    care_noise = _chunk("care_noise", "General pet store inventory notes.")
+    broad_decoy = _chunk(
+        "broad_decoy",
+        "A generic gaming career conversation without animal care evidence.",
+    )
+    uow = _FakeKeywordSearchUow(
+        {
+            "alternative career after gaming": [broad_decoy],
+            "care instructions": [care_primary, care_followup, care_noise],
+            "broad after event": [broad_decoy],
+        }
+    )
+    plan = QueryExpansionPlan(
+        original_query="alternative career after gaming",
+        decompositions=(
+            QueryExpansion(query="broad after event", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(
+                query="care instructions",
+                reason="animal_care_instruction_bridge",
+            ),
+        ),
+    )
+
+    result = asyncio.run(
+        _keyword_search_chunks(
+            uow,
+            space_id="space_test",
+            memory_scope_ids=("scope_test",),
+            thread_id=None,
+            retrieval_queries=plan.retrieval_queries,
+            limit=1,
+        )
+    )
+
+    assert result[:2] == (care_primary, care_followup)
+    assert broad_decoy in result
 
 
 def test_rank_facts_for_query_uses_normalized_lexical_variants() -> None:
