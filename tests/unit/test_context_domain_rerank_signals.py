@@ -11,6 +11,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     event_sequence_rerank_signal,
     family_hike_detail_rerank_signal,
     inventory_list_rerank_signal,
+    item_purchase_rerank_signal,
     positive_preference_rerank_signal,
     recommendation_followup_rerank_signal,
     relationship_duration_rerank_signal,
@@ -238,6 +239,42 @@ def test_symbol_importance_signal_ranks_visual_symbol_over_necklace_meaning() ->
     assert visual_signal.rank_signal_key == "symbol_importance_visual_evidence"
     assert visual_signal.rank_signal > meaning_signal.rank_signal
     assert meaning_signal.reason == "symbol_importance_exact_evidence"
+
+
+def test_item_purchase_signal_prefers_purchase_object_over_temporal_visual_noise() -> None:
+    exact = _item(
+        "figurine_purchase",
+        text=(
+            "D19:2 Melanie: These figurines I bought yesterday remind me of "
+            "family love. image caption: wooden dolls on a shelf."
+        ),
+        query_expansion_reason="item_purchase_bridge",
+    )
+    weak = _item(
+        "temporal_visual_noise",
+        text=(
+            "D14:3 Caroline mentioned yesterday. image caption: people smiling "
+            "near a framed family picture."
+        ),
+        query_expansion_reason="item_purchase_bridge",
+    )
+
+    exact_signal = item_purchase_rerank_signal(
+        query_reason="item_purchase_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=6, unique_term_hits=6),
+    )
+    weak_signal = item_purchase_rerank_signal(
+        query_reason="item_purchase_bridge",
+        item=weak,
+        relevance=_relevance(distinctive_term_hits=2, unique_term_hits=2),
+    )
+
+    assert exact_signal.reason == "item_purchase_object_evidence"
+    assert exact_signal.rank_signal_key == "item_purchase_object_evidence"
+    assert exact_signal.boost > 0
+    assert weak_signal.reason == "item_purchase_temporal_weak_evidence"
+    assert weak_signal.penalty > 0
 
 
 def test_current_goal_signal_prefers_goal_evidence_over_weak_decoy() -> None:

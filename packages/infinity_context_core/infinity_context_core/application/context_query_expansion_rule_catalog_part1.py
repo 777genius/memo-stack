@@ -615,7 +615,18 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"item", "bought"}),
-            "bought purchased got new shoes figurines items belongings sneakers",
+            (
+                "bought purchased buy got new shoes figurines wooden dolls items "
+                "belongings sneakers yesterday image caption visual query"
+            ),
+            "item_purchase_bridge",
+        ),
+    (
+            frozenset({"buy", "figurine"}),
+            (
+                "bought purchased buy got new figurines wooden dolls items "
+                "belongings yesterday image caption visual query"
+            ),
             "item_purchase_bridge",
         ),
     (

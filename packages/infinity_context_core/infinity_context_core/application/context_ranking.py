@@ -317,6 +317,16 @@ _TEMPORAL_ANSWER_EVIDENCE_RE = re.compile(
     r"dec(?:ember)?)\s+\d{1,2}(?:,?\s+\d{2,4})?\b",
     re.IGNORECASE,
 )
+_ITEM_PURCHASE_TEMPORAL_ANSWER_EVIDENCE_RE = re.compile(
+    r"\b(?:buy|bought|purchase(?:d|s|ing)?|got|picked\s+up|ordered|acquired)\b"
+    r"(?=.{0,140}\b(?:figurines?|wooden\s+dolls?|shoes?|sneakers?|items?|"
+    r"belongings?|objects?|possessions?)\b)|"
+    r"\b(?:figurines?|wooden\s+dolls?|shoes?|sneakers?|items?|belongings?|"
+    r"objects?|possessions?)\b"
+    r"(?=.{0,140}\b(?:buy|bought|purchase(?:d|s|ing)?|got|picked\s+up|"
+    r"ordered|acquired)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _MISSED_EVENT_TEXT_RE = re.compile(r"\bmissed\s+(?:it|the|that)?\b", re.IGNORECASE)
 _SELF_MISSED_EVENT_TEXT_RE = re.compile(r"\b(?:i|we)\s+missed\s+(?:it|the|that)?\b", re.IGNORECASE)
 _POSITIVE_EVENT_TEXT_RE = re.compile(
@@ -1549,7 +1559,10 @@ def _deterministic_rerank_signals(
     if relation_signal.boost > 0:
         boost += relation_signal.boost
         reasons.append(relation_signal.reason)
-    if relation_signal.penalty > 0:
+    if (
+        relation_signal.penalty > 0
+        and not _is_item_purchase_temporal_answer_evidence(query_reason=query_reason, item=item)
+    ):
         penalty += relation_signal.penalty
         reasons.append(relation_signal.reason)
     conversation_boost, conversation_penalty, conversation_reason = (
@@ -1614,7 +1627,7 @@ def _deterministic_rerank_signals(
             penalty += abs(temporal_signal.boost)
             reasons.append(f"temporal_query_{temporal_signal.code}")
     temporal_answer_boost, temporal_answer_penalty, temporal_answer_reason = (
-        _temporal_answer_signal(query=query, item=item)
+        _temporal_answer_signal(query=query, query_reason=query_reason, item=item)
     )
     if temporal_answer_boost > 0:
         boost += temporal_answer_boost
@@ -1829,12 +1842,32 @@ def _item_temporal_hint_code(item: ContextItem) -> str:
     return temporal_hint_code_from_metadata(diagnostics, provenance)
 
 
-def _temporal_answer_signal(*, query: str, item: ContextItem) -> tuple[float, float, str]:
+def _temporal_answer_signal(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> tuple[float, float, str]:
     if not _TEMPORAL_ANSWER_QUERY_RE.search(query):
         return 0.0, 0.0, ""
+    if (
+        query_reason == "item_purchase_bridge"
+        and not _is_item_purchase_temporal_answer_evidence(query_reason=query_reason, item=item)
+    ):
+        return 0.0, 0.012, "temporal_answer_evidence_missing"
     if _item_has_temporal_answer_evidence(item):
         return 0.026, 0.0, "temporal_answer_evidence"
     return 0.0, 0.012, "temporal_answer_evidence_missing"
+
+
+def _is_item_purchase_temporal_answer_evidence(
+    *,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    if query_reason != "item_purchase_bridge":
+        return False
+    return _ITEM_PURCHASE_TEMPORAL_ANSWER_EVIDENCE_RE.search(item.text) is not None
 
 
 def _item_has_temporal_answer_evidence(item: ContextItem) -> bool:

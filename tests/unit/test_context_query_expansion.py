@@ -141,10 +141,19 @@ def test_query_expansion_covers_future_conference_and_duration_answers() -> None
 def test_query_expansion_covers_purchased_item_questions() -> None:
     plan = build_query_expansion_plan("What items has Melanie bought?")
 
-    assert "bought purchased got new shoes" in _expansion_query(
+    assert "bought purchased buy got new shoes" in _expansion_query(
         plan,
         "item_purchase_bridge",
     )
+
+
+def test_query_expansion_covers_temporal_figurine_purchase_questions() -> None:
+    plan = build_query_expansion_plan("When did Melanie buy the figurines?")
+
+    bridge = _expansion_query(plan, "item_purchase_bridge")
+
+    assert "bought purchased buy got new figurines wooden dolls" in bridge
+    assert "yesterday image caption visual query" in bridge
 
 
 def test_query_expansion_covers_running_reason_questions() -> None:

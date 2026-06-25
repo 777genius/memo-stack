@@ -22,6 +22,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     event_sequence_rerank_signal,
     family_hike_detail_rerank_signal,
     inventory_list_rerank_signal,
+    item_purchase_rerank_signal,
     positive_preference_rerank_signal,
     post_event_emotion_rerank_signal,
     recommendation_followup_rerank_signal,
@@ -195,6 +196,11 @@ def _domain_rerank_signals(
         ),
         beach_or_mountains_rerank_signal(
             query=query,
+            query_reason=query_reason,
+            item=item,
+            relevance=relevance,
+        ),
+        item_purchase_rerank_signal(
             query_reason=query_reason,
             item=item,
             relevance=relevance,

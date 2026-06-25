@@ -137,6 +137,7 @@ _STALE_STATE_RERANK_REASONS = frozenset(("stale_state_temporal_bridge",))
 _AGE_BIRTHDAY_RERANK_REASONS = frozenset(("age_birthday_bridge",))
 _BIRTHPLACE_RERANK_REASONS = frozenset(("birthplace_origin_bridge",))
 _BEACH_OR_MOUNTAINS_RERANK_REASONS = frozenset(("beach_or_mountains_inference_bridge",))
+_ITEM_PURCHASE_RERANK_REASONS = frozenset(("item_purchase_bridge",))
 _SYMBOL_IMPORTANCE_RERANK_REASONS = frozenset(("symbol_importance_bridge",))
 _POST_EVENT_EMOTION_RERANK_REASONS = frozenset(("post_event_emotion_bridge",))
 _INVENTORY_POTTERY_QUERY_RE = re.compile(
@@ -693,6 +694,30 @@ _BEACH_OR_MOUNTAINS_TOPIC_ONLY_RE = re.compile(
     r"(?=.{0,120}\b(?:whether|sounded\s+nice|someday|maybe|vacation|"
     r"wallpaper|poster|preference|would\s+like|dream(?:ed)?\s+of)\b)",
     re.IGNORECASE | re.DOTALL,
+)
+_ITEM_PURCHASE_OBJECT_RE = re.compile(
+    r"\b(?:figurines?|wooden\s+dolls?|shoes?|sneakers?|items?|belongings?|"
+    r"objects?|possessions?)\b",
+    re.IGNORECASE,
+)
+_ITEM_PURCHASE_VERB_RE = re.compile(
+    r"\b(?:buy|bought|purchase(?:d|s|ing)?|got|picked\s+up|ordered|acquired)\b",
+    re.IGNORECASE,
+)
+_ITEM_PURCHASE_EXACT_RE = re.compile(
+    r"\b(?:buy|bought|purchase(?:d|s|ing)?|got|picked\s+up|ordered|acquired)\b"
+    r"(?=.{0,140}\b(?:figurines?|wooden\s+dolls?|shoes?|sneakers?|items?|"
+    r"belongings?|objects?|possessions?)\b)|"
+    r"\b(?:figurines?|wooden\s+dolls?|shoes?|sneakers?|items?|belongings?|"
+    r"objects?|possessions?)\b"
+    r"(?=.{0,140}\b(?:buy|bought|purchase(?:d|s|ing)?|got|picked\s+up|"
+    r"ordered|acquired)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ITEM_PURCHASE_TEMPORAL_OR_MEDIA_RE = re.compile(
+    r"\b(?:today|yesterday|tomorrow|last\s+\w+|ago|date:|session_\d+\s+date|"
+    r"image\s+caption|visual\s+query|caption)\b",
+    re.IGNORECASE,
 )
 _SYMBOL_IMPORTANCE_EXACT_RE = re.compile(
     r"\b(?:symboli[sz](?:e|es|ed|ing)|represents?|meaning|means|stands?\s+for|"
@@ -1396,6 +1421,34 @@ def beach_or_mountains_rerank_signal(
     return DomainRerankSignal()
 
 
+def item_purchase_rerank_signal(
+    *,
+    query_reason: str,
+    item: ContextItem,
+    relevance: QueryRelevance,
+) -> DomainRerankSignal:
+    if not _is_item_purchase_candidate(query_reason=query_reason, item=item):
+        return DomainRerankSignal()
+    if _ITEM_PURCHASE_EXACT_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            boost=0.055,
+            reason="item_purchase_object_evidence",
+            rank_signal_key="item_purchase_object_evidence",
+            rank_signal=3.0,
+        )
+    if (
+        _ITEM_PURCHASE_TEMPORAL_OR_MEDIA_RE.search(item.text) is not None
+        or _ITEM_PURCHASE_OBJECT_RE.search(item.text) is None
+        or _ITEM_PURCHASE_VERB_RE.search(item.text) is None
+        or relevance.distinctive_term_hits < 4
+    ):
+        return DomainRerankSignal(
+            penalty=0.11,
+            reason="item_purchase_temporal_weak_evidence",
+        )
+    return DomainRerankSignal()
+
+
 def symbol_importance_rerank_signal(
     *,
     query_reason: str,
@@ -1714,6 +1767,12 @@ def _is_symbol_importance_candidate(*, query_reason: str, item: ContextItem) -> 
     if query_reason in _SYMBOL_IMPORTANCE_RERANK_REASONS:
         return True
     return _score_signal_reason(item) in _SYMBOL_IMPORTANCE_RERANK_REASONS
+
+
+def _is_item_purchase_candidate(*, query_reason: str, item: ContextItem) -> bool:
+    if query_reason in _ITEM_PURCHASE_RERANK_REASONS:
+        return True
+    return _score_signal_reason(item) in _ITEM_PURCHASE_RERANK_REASONS
 
 
 def _is_post_event_emotion_candidate(*, query_reason: str, item: ContextItem) -> bool:

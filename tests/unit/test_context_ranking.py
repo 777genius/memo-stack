@@ -258,6 +258,88 @@ def test_keyword_chunk_score_boosts_item_purchase_reason() -> None:
     assert score >= 0.88
 
 
+def test_keyword_chunk_score_boosts_temporal_figurine_purchase_reason() -> None:
+    plan = build_query_expansion_plan("When did Melanie buy the figurines?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D19:2 Melanie: These figurines I bought yesterday remind me of "
+            "family love. image caption: wooden dolls on a shelf."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "item_purchase_bridge"
+    assert score >= 0.88
+
+
+def test_deterministic_rerank_prefers_item_purchase_object_over_temporal_visual_noise() -> None:
+    query = "When did Melanie buy the figurines?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    purchase_evidence = _item(
+        "figurine_purchase",
+        score=0.8914,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D19:2 Melanie: These figurines I bought yesterday remind me of "
+            "family love. image caption: wooden dolls on a shelf."
+        ),
+        score_signals={"query_expansion_reason": "item_purchase_bridge"},
+    )
+    temporal_visual_noise = _item(
+        "temporal_visual_noise",
+        score=0.99,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D14:3 Caroline talked yesterday. image caption: people smiling "
+            "near a family picture."
+        ),
+        score_signals={"query_expansion_reason": "item_purchase_bridge"},
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (temporal_visual_noise, purchase_evidence),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["figurine_purchase"].score > by_id["temporal_visual_noise"].score
+    assert (
+        "item_purchase_object_evidence"
+        in by_id["figurine_purchase"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "item_purchase_temporal_weak_evidence"
+        in by_id["temporal_visual_noise"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
+def test_context_rank_key_prefers_item_purchase_object_signal() -> None:
+    purchase_evidence = _item(
+        "figurine_purchase",
+        score=0.99,
+        retrieval_source="keyword_chunks",
+        text="D19:2 Melanie bought family figurines yesterday.",
+        score_signals={"item_purchase_object_evidence": 3.0},
+    )
+    temporal_visual_noise = _item(
+        "temporal_visual_noise",
+        score=0.99,
+        retrieval_source="keyword_chunks",
+        text="D14:3 Caroline talked yesterday beside a family picture.",
+    )
+
+    assert context_rank_key(purchase_evidence) < context_rank_key(temporal_visual_noise)
+
+
 def test_keyword_chunk_score_boosts_event_participation_bridge() -> None:
     plan = build_query_expansion_plan("What events has Caroline participated in?")
     _, reason, relevance = best_query_relevance(
