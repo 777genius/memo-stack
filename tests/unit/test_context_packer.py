@@ -1541,6 +1541,66 @@ def test_context_packer_diversity_item_does_not_block_precise_answer_support_tur
     assert "D14:15" in result.bundle.rendered_text
 
 
+def test_answer_support_family_prefers_visual_symbol_turn_over_necklace_meaning() -> None:
+    meaning = ContextItem(
+        item_id="d4_3_necklace_meaning",
+        item_type="chunk",
+        text=(
+            "D4:3 Caroline: This necklace is super special to me and stands "
+            "for love, faith, strength, and family roots."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="locomo:conv-26:session_4:D4:3:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "score_signals": {
+                "query_expansion_reason": "symbol_importance_bridge",
+                "query_expansion_reason_priority": 4,
+                "symbol_importance_visual_evidence": 1.0,
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 11,
+            },
+        },
+    )
+    visual = ContextItem(
+        item_id="d4_1_visual_symbol",
+        item_type="chunk",
+        text=(
+            "D4:1 Caroline shared an image. image caption: a person holding "
+            "a necklace with a cross and a heart. visual query: pendant "
+            "transgender symbol."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="document",
+                source_id="locomo:conv-26:session_4:D4:1:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "score_signals": {
+                "query_expansion_reason": "symbol_importance_bridge",
+                "query_expansion_reason_priority": 4,
+                "symbol_importance_visual_evidence": 3.0,
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+
+    family = _answer_support_diversity_family(meaning)
+    candidates = _answer_support_diversity_candidates([meaning, visual])
+
+    assert _answer_support_diversity_family(visual) == family
+    assert candidates[family].item_id == "d4_1_visual_symbol"
+
+
 def test_answer_support_family_prefers_meteor_feeling_turn_over_general_meteor_turn() -> None:
     general = ContextItem(
         item_id="d10_14_turn",

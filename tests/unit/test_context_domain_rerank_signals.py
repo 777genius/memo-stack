@@ -17,6 +17,7 @@ from infinity_context_core.application.context_domain_rerank_signals import (
     relationship_status_rerank_signal,
     state_transition_rerank_signal,
     support_network_rerank_signal,
+    symbol_importance_rerank_signal,
     temporal_camping_detail_rerank_signal,
 )
 from infinity_context_core.application.context_relevance import QueryRelevance
@@ -202,6 +203,41 @@ def test_recommendation_followup_signal_boosts_reading_recommendation_evidence()
     assert followup_signal.reason == "recommendation_followup_evidence"
     assert topical_signal.boost == 0.0
     assert topical_signal.reason == ""
+
+
+def test_symbol_importance_signal_ranks_visual_symbol_over_necklace_meaning() -> None:
+    visual = _item(
+        "visual_symbol",
+        text=(
+            "D4:1 Caroline image caption: a person holding a necklace with a cross "
+            "and a heart. visual query: pendant transgender symbol"
+        ),
+        query_expansion_reason="symbol_importance_bridge",
+    )
+    meaning = _item(
+        "necklace_meaning",
+        text=(
+            "D4:3 Caroline: This necklace is special and stands for love, "
+            "faith, strength, and family roots."
+        ),
+        query_expansion_reason="symbol_importance_bridge",
+    )
+
+    visual_signal = symbol_importance_rerank_signal(
+        query_reason="symbol_importance_bridge",
+        item=visual,
+        relevance=_relevance(distinctive_term_hits=8, unique_term_hits=8),
+    )
+    meaning_signal = symbol_importance_rerank_signal(
+        query_reason="symbol_importance_bridge",
+        item=meaning,
+        relevance=_relevance(distinctive_term_hits=8, unique_term_hits=8),
+    )
+
+    assert visual_signal.reason == "symbol_importance_visual_object"
+    assert visual_signal.rank_signal_key == "symbol_importance_visual_evidence"
+    assert visual_signal.rank_signal > meaning_signal.rank_signal
+    assert meaning_signal.reason == "symbol_importance_exact_evidence"
 
 
 def test_current_goal_signal_prefers_goal_evidence_over_weak_decoy() -> None:
@@ -564,7 +600,7 @@ def test_aggregation_signal_prefers_multi_evidence_list_context() -> None:
     )
 
     assert exact_signal.boost > 0
-    assert exact_signal.reason == "aggregation_list_multi_evidence"
+    assert exact_signal.reason == "aggregation_list_slot_diverse_evidence"
     assert incomplete_signal.penalty > 0
     assert incomplete_signal.reason == "aggregation_list_single_evidence_incomplete"
     assert unopposed_signal == type(unopposed_signal)()
@@ -585,7 +621,8 @@ def test_aggregation_signal_keeps_single_multi_value_list_evidence() -> None:
         has_multi_evidence_competitor=True,
     )
 
-    assert signal == type(signal)()
+    assert signal.boost > 0
+    assert signal.reason == "aggregation_list_slot_diverse_evidence"
 
 
 def test_aggregation_signal_keeps_direct_numeric_count_answer() -> None:

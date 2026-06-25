@@ -4346,6 +4346,50 @@ def test_deterministic_rerank_boosts_visual_symbol_object_evidence() -> None:
             "deterministic_rerank_reasons"
         ]
     )
+    assert (
+        by_id["visual_symbol_object"].diagnostics["score_signals"][
+            "symbol_importance_visual_evidence"
+        ]
+        == 3.0
+    )
+
+
+def test_context_rank_key_prefers_visual_symbol_evidence_over_necklace_meaning() -> None:
+    query = "What symbols are important to Caroline?"
+    plan = build_query_expansion_plan(query)
+    query_anchor_intent = build_query_anchor_intent(query)
+    visual_object = _item(
+        "visual_symbol_object",
+        score=0.99,
+        retrieval_source="keyword_chunks",
+        text=(
+            "D4:1 Caroline shared an image. image caption: a person holding "
+            "a necklace with a cross and a heart. visual query: pendant "
+            "transgender symbol."
+        ),
+    )
+    necklace_meaning = _item(
+        "necklace_meaning",
+        score=0.99,
+        retrieval_source="keyword_source_sibling_chunks",
+        text=(
+            "D4:3 Caroline: This necklace is special and stands for love, "
+            "faith, strength, and family roots."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (necklace_meaning, visual_object),
+        query=query,
+        plan=plan,
+        query_anchor_intent=query_anchor_intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert (
+        context_rank_key(by_id["visual_symbol_object"])
+        < context_rank_key(by_id["necklace_meaning"])
+    )
 
 
 def test_deterministic_rerank_prefers_symbol_meaning_evidence() -> None:

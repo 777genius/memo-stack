@@ -1408,10 +1408,20 @@ def symbol_importance_rerank_signal(
     has_personal_object = _SYMBOL_IMPORTANCE_PERSONAL_OBJECT_RE.search(item.text) is not None
     if _SYMBOL_IMPORTANCE_TECHNICAL_NOISE_RE.search(item.text) is not None:
         return DomainRerankSignal(penalty=0.042, reason="symbol_importance_weak_evidence")
-    if has_symbol_object and _SYMBOL_IMPORTANCE_EXACT_RE.search(item.text) is not None:
-        return DomainRerankSignal(boost=0.028, reason="symbol_importance_exact_evidence")
     if has_personal_object and _SYMBOL_IMPORTANCE_VISUAL_OBJECT_RE.search(item.text):
-        return DomainRerankSignal(boost=0.036, reason="symbol_importance_visual_object")
+        return DomainRerankSignal(
+            boost=0.036,
+            reason="symbol_importance_visual_object",
+            rank_signal_key="symbol_importance_visual_evidence",
+            rank_signal=3.0,
+        )
+    if has_symbol_object and _SYMBOL_IMPORTANCE_EXACT_RE.search(item.text) is not None:
+        return DomainRerankSignal(
+            boost=0.028,
+            reason="symbol_importance_exact_evidence",
+            rank_signal_key="symbol_importance_visual_evidence",
+            rank_signal=1.0 if has_personal_object else 0.0,
+        )
     if has_personal_object:
         return DomainRerankSignal(boost=0.02, reason="symbol_importance_personal_object")
     if (

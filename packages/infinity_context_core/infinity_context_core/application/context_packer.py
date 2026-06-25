@@ -1212,11 +1212,13 @@ def _answer_support_family_item_key(item: ContextItem) -> tuple[float | int | st
     query_reason = _answer_support_query_reason(item)
     if _is_count_aggregation_coverage_item(item, query_reason=query_reason):
         signal_rank = (
+            -_numeric_signal(signals.get("symbol_importance_visual_evidence")),
             -_numeric_signal(signals.get("distinctive_term_hits")),
             -_numeric_signal(signals.get("phrase_bigram_hits")),
         )
     else:
         signal_rank = (
+            -_numeric_signal(signals.get("symbol_importance_visual_evidence")),
             -_numeric_signal(signals.get("phrase_bigram_hits")),
             -_numeric_signal(signals.get("distinctive_term_hits")),
         )
