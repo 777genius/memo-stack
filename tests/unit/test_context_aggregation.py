@@ -233,6 +233,34 @@ def test_aggregation_evidence_text_preserves_omitted_source_markers() -> None:
     assert "D12:14" in snippet
 
 
+def test_aggregation_evidence_text_reuses_precomputed_query_variants() -> None:
+    query = "What types of pottery have Melanie and her kids made?"
+    identity_terms = frozenset({"melanie"})
+    text = "\n".join(
+        [
+            "D5:1 Caroline: Did the kids make anything this week?",
+            "D5:2 Melanie: They made a clay bowl in the pottery class.",
+            "D5:3 Caroline: That is great.",
+            "D8:4 Melanie: Later we made a painted cup together at home.",
+        ]
+    )
+    query_variants = _weighted_aggregation_query_variant_sets(
+        query,
+        identity_terms=identity_terms,
+    )
+
+    assert _aggregation_evidence_text(
+        query=query,
+        text=text,
+        identity_terms=identity_terms,
+        query_variant_sets=query_variants,
+    ) == _aggregation_evidence_text(
+        query=query,
+        text=text,
+        identity_terms=identity_terms,
+    )
+
+
 def test_keyword_aggregation_chunks_preserve_multiple_distinct_list_windows() -> None:
     items, diagnostics = _keyword_aggregation_chunk_items(
         query=_build_query("What activities has Melanie done with her family?"),

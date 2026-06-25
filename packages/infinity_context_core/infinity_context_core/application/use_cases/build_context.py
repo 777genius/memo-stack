@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from time import perf_counter
 
@@ -240,6 +240,7 @@ _EXTRA_INVENTORY_PROMPT_REASONS = frozenset(
 )
 _ScoredKeywordPromptItem = tuple[int, int, int, float, float, int, str, ContextItem]
 _StrictQueryTermVariants = tuple[frozenset[str], ...]
+_WeightedAggregationQueryVariants = tuple[tuple[frozenset[str], float], ...]
 _SOURCE_GROUP_SUFFIXES = frozenset({"events", "observation", "summary"})
 _LOW_SIGNAL_COUNT_AGGREGATION_TERMS = frozenset(
     {"many", "time", "times", "gone", "go", "going", "went"}
@@ -257,6 +258,21 @@ _LOW_SIGNAL_INVENTORY_AGGREGATION_TERMS = frozenset(
         "options",
     }
 )
+
+
+@dataclass(frozen=True)
+class _KeywordAggregationCandidate:
+    rank_key: tuple[int, int, int, float, int]
+    group: str
+    chunk: MemoryChunk
+    chunk_text: str
+    relevance: QueryRelevance
+    strict_hits: int
+    aggregation_query: str
+    aggregation_reason: str
+    query_variant_sets: _WeightedAggregationQueryVariants
+
+
 _OBJECT_KIND_MISMATCH_RERANK_REASON = "object_kind_species_mismatch"
 _OBJECT_KIND_MATCH_RERANK_REASON = "object_kind_match"
 _RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS = frozenset(
@@ -1920,18 +1936,7 @@ def _keyword_aggregation_chunk_items(
         _MAX_AGGREGATION_KEYWORD_ITEMS,
         max(4, query.max_chunks // 2),
     )
-    candidates: list[
-        tuple[
-            tuple[int, int, int, float, int],
-            str,
-            MemoryChunk,
-            str,
-            QueryRelevance,
-            int,
-            str,
-            str,
-        ]
-    ] = []
+    candidates: list[_KeywordAggregationCandidate] = []
     skipped = 0
     for order, chunk in enumerate(seed_chunks):
         diagnostics["keyword_aggregation_chunks_considered"] = (
@@ -1979,59 +1984,49 @@ def _keyword_aggregation_chunk_items(
             order,
         )
         candidates.append(
-            (
-                rank_key,
-                group,
-                chunk,
-                chunk_text,
-                relevance,
-                strict_hits,
-                aggregation_query,
-                aggregation_reason,
+            _KeywordAggregationCandidate(
+                rank_key=rank_key,
+                group=group,
+                chunk=chunk,
+                chunk_text=chunk_text,
+                relevance=relevance,
+                strict_hits=strict_hits,
+                aggregation_query=aggregation_query,
+                aggregation_reason=aggregation_reason,
+                query_variant_sets=weighted_query_terms,
             )
         )
 
     items: list[ContextItem] = []
     group_counts: dict[str, int] = {}
-    for (
-        _,
-        group,
-        chunk,
-        chunk_text,
-        relevance,
-        strict_hits,
-        aggregation_query,
-        aggregation_reason,
-    ) in sorted(
-        candidates,
-        key=lambda item: item[0],
-    ):
+    for candidate in sorted(candidates, key=lambda item: item.rank_key):
         if len(items) >= max_items:
             break
-        if group_counts.get(group, 0) >= 3:
+        if group_counts.get(candidate.group, 0) >= 3:
             skipped += 1
             continue
-        group_counts[group] = group_counts.get(group, 0) + 1
+        group_counts[candidate.group] = group_counts.get(candidate.group, 0) + 1
         item = _chunk_context_item(
-            chunk=chunk,
+            chunk=candidate.chunk,
             text=_aggregation_evidence_text(
-                query=aggregation_query,
-                text=chunk_text,
+                query=candidate.aggregation_query,
+                text=candidate.chunk_text,
                 identity_terms=query_identity_terms,
+                query_variant_sets=candidate.query_variant_sets,
             ),
             retrieval_source="keyword_aggregation_chunks",
             base_score=0.78,
             score=0.985,
-            relevance=relevance,
-            query_text=aggregation_query,
-            query_expansion_reason=aggregation_reason,
+            relevance=candidate.relevance,
+            query_text=candidate.aggregation_query,
+            query_expansion_reason=candidate.aggregation_reason,
             use_query_snippet=False,
         )
         items.append(
             _with_keyword_aggregation_score_signals(
                 item,
-                strict_hits=strict_hits,
-                source_group=group,
+                strict_hits=candidate.strict_hits,
+                source_group=candidate.group,
             )
         )
 
@@ -2142,15 +2137,25 @@ def _aggregation_evidence_text(
     query: str,
     text: str,
     identity_terms: frozenset[str] = frozenset(),
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
 ) -> str:
     markers = tuple(_DIALOGUE_MARKER_RE.finditer(text))
     if not markers:
         return text
+    weighted_query_variants = (
+        query_variant_sets
+        if query_variant_sets is not None
+        else _weighted_aggregation_query_variant_sets(
+            query,
+            identity_terms=identity_terms,
+        )
+    )
     multi_window_text = _multi_window_aggregation_evidence_text(
         query=query,
         text=text,
         markers=markers,
         identity_terms=identity_terms,
+        query_variant_sets=weighted_query_variants,
     )
     if multi_window_text:
         return _with_aggregation_marker_coverage(rendered=multi_window_text, full_text=text)
@@ -2159,9 +2164,14 @@ def _aggregation_evidence_text(
         text=text,
         markers=markers,
         identity_terms=identity_terms,
+        query_variant_sets=weighted_query_variants,
     )
     if bounds is None:
-        match_start = _first_strict_query_match_start(query=query, text=text)
+        match_start = _first_strict_query_match_start(
+            query=query,
+            text=text,
+            query_variant_sets=weighted_query_variants,
+        )
         if match_start is None:
             return text
         marker_index = max(
@@ -2214,12 +2224,14 @@ def _multi_window_aggregation_evidence_text(
     text: str,
     markers: tuple[re.Match[str], ...],
     identity_terms: frozenset[str],
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
 ) -> str:
     bounds = _aggregation_dialogue_windows(
         query=query,
         text=text,
         markers=markers,
         identity_terms=identity_terms,
+        query_variant_sets=query_variant_sets,
     )
     if len(bounds) <= 1:
         return ""
@@ -2233,12 +2245,17 @@ def _aggregation_dialogue_windows(
     text: str,
     markers: tuple[re.Match[str], ...],
     identity_terms: frozenset[str],
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
 ) -> tuple[tuple[int, int], ...]:
-    query_variant_sets = _weighted_aggregation_query_variant_sets(
-        query,
-        identity_terms=identity_terms,
+    weighted_query_variants = (
+        query_variant_sets
+        if query_variant_sets is not None
+        else _weighted_aggregation_query_variant_sets(
+            query,
+            identity_terms=identity_terms,
+        )
     )
-    if not query_variant_sets:
+    if not weighted_query_variants:
         return ()
 
     candidates: list[tuple[tuple[float, float, int, int], int, int]] = []
@@ -2249,7 +2266,7 @@ def _aggregation_dialogue_windows(
         )
         segment_matched_terms, segment_total_hits = _strict_query_window_match_counts(
             text=text[segment_start:segment_end],
-            query_variant_sets=query_variant_sets,
+            query_variant_sets=weighted_query_variants,
         )
         if segment_matched_terms <= 0:
             continue
@@ -2259,7 +2276,7 @@ def _aggregation_dialogue_windows(
         end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
         window_matched_terms, window_total_hits = _strict_query_window_match_counts(
             text=text[start:end],
-            query_variant_sets=query_variant_sets,
+            query_variant_sets=weighted_query_variants,
         )
         key = (
             window_matched_terms,
@@ -2322,12 +2339,17 @@ def _best_aggregation_dialogue_window(
     text: str,
     markers: tuple[re.Match[str], ...],
     identity_terms: frozenset[str],
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
 ) -> tuple[int, int] | None:
-    query_variant_sets = _weighted_aggregation_query_variant_sets(
-        query,
-        identity_terms=identity_terms,
+    weighted_query_variants = (
+        query_variant_sets
+        if query_variant_sets is not None
+        else _weighted_aggregation_query_variant_sets(
+            query,
+            identity_terms=identity_terms,
+        )
     )
-    if not query_variant_sets:
+    if not weighted_query_variants:
         return None
 
     best_bounds: tuple[int, int] | None = None
@@ -2339,7 +2361,7 @@ def _best_aggregation_dialogue_window(
         end = markers[end_index + 1].start() if end_index + 1 < len(markers) else len(text)
         matched_terms, total_hits = _strict_query_window_match_counts(
             text=text[start:end],
-            query_variant_sets=query_variant_sets,
+            query_variant_sets=weighted_query_variants,
         )
         if matched_terms <= 0:
             continue
@@ -2348,7 +2370,7 @@ def _best_aggregation_dialogue_window(
             markers=markers,
             start_index=start_index,
             end_index=end_index,
-            query_variant_sets=query_variant_sets,
+            query_variant_sets=weighted_query_variants,
         )
         key = (matched_terms, total_hits, -(end - start), -start)
         if key > best_key:
@@ -2363,7 +2385,7 @@ def _first_positive_aggregation_marker_start(
     markers: tuple[re.Match[str], ...],
     start_index: int,
     end_index: int,
-    query_variant_sets: tuple[tuple[set[str], float], ...],
+    query_variant_sets: _WeightedAggregationQueryVariants,
 ) -> int:
     for index in range(start_index, end_index + 1):
         segment_start = markers[index].start()
@@ -2381,15 +2403,15 @@ def _weighted_aggregation_query_variant_sets(
     query: str,
     *,
     identity_terms: frozenset[str] = frozenset(),
-) -> tuple[tuple[set[str], float], ...]:
+) -> _WeightedAggregationQueryVariants:
     identity_terms = {
         match.group(0).casefold()
         for match in _STRICT_QUERY_TOKEN_RE.finditer(query)
         if match.group(0)[:1].isupper() and not match.group(0).isupper()
     }.union(identity_terms)
-    weighted: list[tuple[set[str], float]] = []
+    weighted: list[tuple[frozenset[str], float]] = []
     for term in query_terms(query):
-        variants = set(_strict_token_variants(term.raw))
+        variants = frozenset(_strict_token_variants(term.raw))
         if not variants:
             continue
         if (
@@ -2408,7 +2430,7 @@ def _weighted_aggregation_query_variant_sets(
 def _strict_query_window_match_counts(
     *,
     text: str,
-    query_variant_sets: tuple[tuple[set[str], float], ...],
+    query_variant_sets: _WeightedAggregationQueryVariants,
 ) -> tuple[float, float]:
     matched_indexes: set[int] = set()
     matched_score = 0.0
@@ -2427,21 +2449,45 @@ def _strict_query_window_match_counts(
     return matched_score, total_score
 
 
-def _first_strict_query_match_start(*, query: str, text: str) -> int | None:
-    query_variant_sets = tuple(
-        sorted(
-            (set(_strict_token_variants(term.raw)) for term in query_terms(query)),
-            key=lambda variants: (len(variants) <= 1, sorted(variants)),
-        )
+def _first_strict_query_match_start(
+    *,
+    query: str,
+    text: str,
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
+) -> int | None:
+    strict_query_variants = _strict_query_search_variant_sets(
+        query=query,
+        query_variant_sets=query_variant_sets,
     )
-    if not query_variant_sets:
+    if not strict_query_variants:
         return None
-    for variants in query_variant_sets:
+    for variants in strict_query_variants:
         for match in _STRICT_QUERY_TOKEN_RE.finditer(text):
             token_variants = set(_strict_token_variants(match.group(0)))
             if token_variants.intersection(variants):
                 return match.start()
     return None
+
+
+def _strict_query_search_variant_sets(
+    *,
+    query: str,
+    query_variant_sets: _WeightedAggregationQueryVariants | None = None,
+) -> _StrictQueryTermVariants:
+    if query_variant_sets is not None:
+        query_variants = tuple(variants for variants, _weight in query_variant_sets if variants)
+    else:
+        query_variants = tuple(
+            variants
+            for term in query_terms(query)
+            if (variants := frozenset(_strict_token_variants(term.raw)))
+        )
+    return tuple(
+        sorted(
+            query_variants,
+            key=lambda variants: (len(variants) <= 1, sorted(variants)),
+        )
+    )
 
 
 def _score_signals(diagnostics: dict[str, object]) -> dict[str, object]:
