@@ -2432,6 +2432,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     public_benchmark.add_argument("--benchmark", default=None)
     public_benchmark.add_argument("--min-accuracy", type=float, default=0.85)
     public_benchmark.add_argument("--max-cases", type=int, default=None)
+    public_benchmark.add_argument(
+        "--case-id",
+        action="append",
+        default=None,
+        help=(
+            "Run only the requested public benchmark case id. Repeat to run "
+            "multiple targeted cases."
+        ),
+    )
     public_benchmark.add_argument("--report-out", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -2530,6 +2539,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 benchmark=args.benchmark,
                 min_accuracy=args.min_accuracy,
                 max_cases=args.max_cases,
+                case_ids=tuple(args.case_id or ()),
                 report_out=args.report_out,
             )
         except ValueError as exc:
