@@ -228,6 +228,10 @@ _INVENTORY_SHELTER_SLOT_RE = re.compile(
     r"\b(?:homeless\s+shelter|dog\s+shelter|animal\s+shelter|shelter)\b",
     re.IGNORECASE,
 )
+_INVENTORY_ANIMAL_SHELTER_SLOT_RE = re.compile(
+    r"\b(?:dog|animal)\s+shelter\b",
+    re.IGNORECASE,
+)
 _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE = re.compile(
     r"\b(?:homeless\s+shelter|shelter)\b(?=.{0,80}\b"
     r"(?:i\s+volunteer\s+at|where\s+(?:she\s+)?volunteers?|"
@@ -1231,6 +1235,12 @@ def _inventory_answer_slot_for_text(text: str) -> str:
     pottery_slot = _pottery_type_inventory_slot_for_text(text)
     if pottery_slot:
         return pottery_slot
+    if _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE.search(text):
+        return "shelter_activity"
+    if _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE.search(text):
+        return "shelter_anchor"
+    if _INVENTORY_ANIMAL_SHELTER_SLOT_RE.search(text):
+        return "animal_shelter"
     if _INVENTORY_SHELTER_SLOT_RE.search(text):
         return "shelter"
     if _INVENTORY_GYM_SLOT_RE.search(text):
@@ -1262,8 +1272,11 @@ def _inventory_answer_slot_priority(slot: str) -> int:
     normalized_slot = slot.replace("-", "_")
     return {
         "direct_friend": 0,
+        "shelter_anchor": 0,
         "pottery_cup": 0,
         "pottery_pot": 0,
+        "animal_shelter": 1,
+        "shelter_activity": 1,
         "shelter": 1,
         "gym": 1,
         "church_joined": 1,

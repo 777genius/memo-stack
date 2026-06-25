@@ -2927,9 +2927,81 @@ def test_answer_support_family_splits_inventory_place_slots() -> None:
 
     assert len(families) == len(items)
     assert any(":direct-friend:" in family for family in families)
-    assert any(":shelter:" in family for family in families)
+    assert any(":shelter-anchor:" in family for family in families)
     assert any(":church-joined:" in family for family in families)
     assert any(":gym:" in family for family in families)
+
+
+def test_answer_support_family_splits_shelter_inventory_evidence_roles() -> None:
+    items = (
+        ContextItem(
+            item_id="d2_shelter_anchor",
+            item_type="chunk",
+            text="D2:1 Maria donated her old car to a homeless shelter she volunteers at.",
+            score=0.84,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_2:D2:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+            },
+        ),
+        ContextItem(
+            item_id="d11_shelter_talks",
+            item_type="chunk",
+            text=(
+                "D11:10 Maria gave a few talks at the homeless shelter she volunteers "
+                "at and received compliments."
+            ),
+            score=0.82,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_11:D11:10:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+            },
+        ),
+        ContextItem(
+            item_id="d17_dog_shelter",
+            item_type="chunk",
+            text="D17:12 Maria started volunteering at a local dog shelter once a month.",
+            score=0.8,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-41:session_17:D17:12:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+            },
+        ),
+    )
+
+    families = {_answer_support_diversity_family(item) for item in items}
+    result = ContextPacker().pack(
+        bundle_id="ctx_shelter_inventory_roles",
+        items=items,
+        token_budget=240,
+    )
+
+    assert len(families) == len(items)
+    assert any(":shelter-anchor:" in family for family in families)
+    assert any(":shelter-activity:" in family for family in families)
+    assert any(":animal-shelter:" in family for family in families)
+    rendered = result.bundle.rendered_text
+    assert "D2:1" in rendered
+    assert "D11:10" in rendered
+    assert "D17:12" in rendered
 
 
 def test_answer_support_family_splits_pottery_inventory_slots() -> None:
