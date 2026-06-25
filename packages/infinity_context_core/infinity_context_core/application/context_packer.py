@@ -1611,6 +1611,30 @@ def _exercise_activity_answer_slot(text: str) -> str:
         return "weight_training"
     if "aerial yoga" in padded:
         return "aerial_yoga"
+    if "yoga" in padded and any(
+        marker in padded
+        for marker in (
+            "trying out",
+            "try out",
+            "trying yoga",
+            "started yoga",
+            "starting yoga",
+        )
+    ):
+        return "yoga_trial"
+    if "yoga" in padded and any(
+        marker in padded
+        for marker in (
+            "strength",
+            "flexibility",
+            "balance",
+            "focus",
+            "workout",
+            "performance",
+            "improve",
+        )
+    ):
+        return "yoga_performance"
     if " yoga" in padded:
         return "yoga"
     if any(marker in padded for marker in ("workout", "exercise", "fitness")):
@@ -1622,7 +1646,9 @@ def _exercise_activity_answer_content_rank(text: str) -> int:
     slot = _exercise_activity_answer_slot(text)
     if slot in {"kickboxing", "taekwondo", "weight_training", "circuit_training"}:
         return 0
-    if slot in {"aerial_yoga", "yoga"}:
+    if slot in {"aerial_yoga", "yoga_trial", "yoga_performance"}:
+        return 0
+    if slot == "yoga":
         return 1
     if slot == "generic_exercise":
         return 2

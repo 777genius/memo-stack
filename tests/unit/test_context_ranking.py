@@ -4316,6 +4316,49 @@ def test_exercise_activity_source_boost_accepts_exact_single_activity_turn() -> 
     assert boosted > score
 
 
+def test_deterministic_rerank_prefers_exercise_performance_transfer_evidence() -> None:
+    query = "What other exercises can help John with his basketball performance?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    social_strength_noise = _item(
+        "john_family_strength",
+        score=0.74,
+        retrieval_source="keyword_chunks",
+        text="John's family supports him and gives him strength before big games.",
+    )
+    yoga_transfer = _item(
+        "john_yoga_transfer",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "John is trying out yoga to get a little extra strength and flexibility. "
+            "It is challenging but worth it."
+        ),
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (social_strength_noise, yoga_transfer),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["john_yoga_transfer"].score > by_id["john_family_strength"].score
+    assert (
+        "exercise_performance_transfer_evidence"
+        in by_id["john_yoga_transfer"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+    assert (
+        "exercise_performance_social_strength_noise"
+        in by_id["john_family_strength"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_state_residence_source_boost_prefers_precise_map_turn() -> None:
     plan = build_query_expansion_plan("Which US state do Audrey and Andrew potentially live in?")
     _, reason, relevance = best_query_relevance(

@@ -1146,19 +1146,57 @@ def test_answer_support_family_splits_exercise_activity_slots() -> None:
             },
         },
     )
+    yoga_trial = ContextItem(
+        item_id="exercise_yoga_trial",
+        item_type="chunk",
+        text="D20:2 John: I'm also trying out yoga to get strength and flexibility.",
+        score=0.95,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D20:2:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "exercise_activity_inventory_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+    yoga_performance = ContextItem(
+        item_id="exercise_yoga_performance",
+        item_type="chunk",
+        text="D20:4 John: Yoga helped improve strength, flexibility, focus and balance.",
+        score=0.98,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D20:4:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "exercise_activity_inventory_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 5,
+            },
+        },
+    )
 
     families = {
         _answer_support_diversity_family(kickboxing),
         _answer_support_diversity_family(taekwondo),
         _answer_support_diversity_family(generic),
+        _answer_support_diversity_family(yoga_trial),
+        _answer_support_diversity_family(yoga_performance),
     }
 
     assert any(family.endswith(":kickboxing") for family in families)
     assert any(family.endswith(":taekwondo") for family in families)
+    assert any(family.endswith(":yoga-trial") for family in families)
+    assert any(family.endswith(":yoga-performance") for family in families)
     assert _answer_support_family_item_key(kickboxing) < _answer_support_family_item_key(
         generic
     )
     assert _answer_support_family_item_key(taekwondo) < _answer_support_family_item_key(
+        generic
+    )
+    assert _answer_support_family_item_key(yoga_trial) < _answer_support_family_item_key(
+        generic
+    )
+    assert _answer_support_family_item_key(yoga_performance) < _answer_support_family_item_key(
         generic
     )
 

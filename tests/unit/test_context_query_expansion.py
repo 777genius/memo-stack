@@ -1276,6 +1276,13 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             "kickboxing taekwondo yoga weight",
         ),
         (
+            build_query_expansion_plan(
+                "What other exercises can help John with his basketball performance?"
+            ),
+            "exercise_activity_inventory_bridge",
+            "strength flexibility agility speed",
+        ),
+        (
             build_query_expansion_plan("What are Joanna's hobbies?"),
             "hobby_interest_bridge",
             "watching movies exploring nature",

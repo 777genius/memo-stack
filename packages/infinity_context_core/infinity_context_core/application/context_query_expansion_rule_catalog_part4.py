@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from infinity_context_core.application import context_query_expansion_rule_terms as _terms
 
+_EXERCISE_ACTIVITY_EXPANSION = (
+    "exercise exercises workout workouts kickboxing taekwondo yoga weight "
+    "training circuit training strength flexibility agility speed shooting "
+    "accuracy stamina endurance boxing sprinting running stay shape fitness energy "
+    "basketball performance game court"
+)
+
 EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"artist", "seen"}),
@@ -70,34 +77,22 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"exercise"}),
-            (
-                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
-                "training circuit training stay shape fitness energy"
-            ),
+            _EXERCISE_ACTIVITY_EXPANSION,
             "exercise_activity_inventory_bridge",
         ),
     (
             frozenset({"exercises"}),
-            (
-                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
-                "training circuit training stay shape fitness energy"
-            ),
+            _EXERCISE_ACTIVITY_EXPANSION,
             "exercise_activity_inventory_bridge",
         ),
     (
             frozenset({"workout"}),
-            (
-                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
-                "training circuit training stay shape fitness energy"
-            ),
+            _EXERCISE_ACTIVITY_EXPANSION,
             "exercise_activity_inventory_bridge",
         ),
     (
             frozenset({"workouts"}),
-            (
-                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
-                "training circuit training stay shape fitness energy"
-            ),
+            _EXERCISE_ACTIVITY_EXPANSION,
             "exercise_activity_inventory_bridge",
         ),
     (
