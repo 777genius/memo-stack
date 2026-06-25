@@ -2648,6 +2648,23 @@ def test_keyword_chunk_score_boosts_event_summary_bridge() -> None:
     assert score >= 0.89
 
 
+def test_keyword_chunk_score_boosts_artifact_inventory_bridge() -> None:
+    plan = build_query_expansion_plan("Which files are related to Project Atlas?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "Project Atlas artifact inventory: uploaded screenshot file, document, "
+            "OCR evidence, and original file metadata are linked to the launch review."
+        ),
+    )
+
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    assert reason == "artifact_inventory_bridge"
+    assert query_expansion_reason_priority(reason) == 4
+    assert score >= 0.9
+
+
 def test_keyword_chunk_score_boosts_stale_state_temporal_bridge() -> None:
     plan = build_query_expansion_plan("Which memory is stale for Project Atlas?")
     _, reason, relevance = best_query_relevance(

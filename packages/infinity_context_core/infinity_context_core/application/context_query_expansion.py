@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from infinity_context_core.application.context_query_artifact_inventory_expansions import (
+    artifact_inventory_query_variants,
+)
 from infinity_context_core.application.context_query_decomposition import (
     QueryDecompositionPlan,
     build_query_decomposition_plan,
@@ -100,6 +103,7 @@ def build_query_expansion_plan(
 ) -> QueryExpansionPlan:
     decomposition_plan = decomposition_plan or build_query_decomposition_plan(query)
     query_term_variants = set(_query_variant_set(query))
+    query_term_variants.update(artifact_inventory_query_variants(query))
     query_term_variants.update(gotcha_failure_query_variants(query))
     query_term_variants.update(state_transition_query_variants(query))
     query_term_variants.update(support_role_query_variants(query))

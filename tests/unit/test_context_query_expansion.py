@@ -192,6 +192,33 @@ def test_query_expansion_does_not_treat_event_scheduling_as_event_summary() -> N
     assert "event_summary_bridge" not in {expansion.reason for expansion in plan.expansions}
 
 
+def test_query_expansion_covers_artifact_inventory_questions() -> None:
+    files = build_query_expansion_plan("Which files are related to Project Atlas?")
+    screenshots = build_query_expansion_plan("Show screenshots for Alex")
+    documents = build_query_expansion_plan("List documents about Acme Labs")
+    russian = build_query_expansion_plan("Покажи файлы по Атласу")
+
+    for plan in (files, screenshots, documents, russian):
+        inventory = _expansion_query(plan, "artifact_inventory_bridge")
+
+        assert "files" in inventory.casefold() or "файлы" in inventory.casefold()
+        assert "evidence" in inventory.casefold()
+        assert "metadata" in inventory.casefold()
+
+    assert "Atlas" in _expansion_query(files, "artifact_inventory_bridge")
+    assert "Alex" in _expansion_query(screenshots, "artifact_inventory_bridge")
+    assert "Acme Labs" in _expansion_query(documents, "artifact_inventory_bridge")
+    assert "Атласу" in _expansion_query(russian, "artifact_inventory_bridge")
+
+
+def test_query_expansion_does_not_treat_ocr_question_as_artifact_inventory() -> None:
+    plan = build_query_expansion_plan("What OCR text was in the screenshot?")
+
+    assert "artifact_inventory_bridge" not in {
+        expansion.reason for expansion in plan.expansions
+    }
+
+
 def test_query_expansion_covers_patriotic_service_inference() -> None:
     plan = build_query_expansion_plan("Would John be considered a patriotic person?")
 
