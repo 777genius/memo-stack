@@ -665,8 +665,8 @@ def test_bounded_retrieval_queries_keep_transgender_event_bridges_for_real_query
         "decomposition_event_context",
         "event_participation_bridge",
         "transgender_poetry_event_bridge",
+        "transgender_conference_event_bridge",
         "transgender_youth_center_event_bridge",
-        "conversation_transcript_evidence_bridge",
     ]
 
 

@@ -180,6 +180,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "support_role_fit_bridge",
         "symbol_importance_bridge",
         "temporal_event_detail_bridge",
+        "transgender_conference_event_bridge",
         "transgender_poetry_event_bridge",
         "transgender_youth_center_event_bridge",
         "tournament_count_bridge",
