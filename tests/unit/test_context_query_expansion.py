@@ -121,6 +121,34 @@ def test_query_expansion_does_not_treat_project_role_query_as_project_summary() 
     assert "project_summary_bridge" not in {expansion.reason for expansion in plan.expansions}
 
 
+def test_query_expansion_covers_organization_summary_questions() -> None:
+    company = build_query_expansion_plan("What is company OpenAI?")
+    known = build_query_expansion_plan("What do we know about organization Acme Labs?")
+    team = build_query_expansion_plan("Tell me about team Platform")
+    russian = build_query_expansion_plan("Расскажи про компанию Инфинити")
+
+    for plan in (company, known, team, russian):
+        summary = _expansion_query(plan, "organization_summary_bridge")
+
+        assert "organization" in summary.casefold() or "организация" in summary.casefold()
+        assert "summary" in summary.casefold() or "обзор" in summary.casefold()
+
+    assert "OpenAI" in _expansion_query(company, "organization_summary_bridge")
+    assert "Acme" in _expansion_query(known, "organization_summary_bridge")
+    assert "Platform" in _expansion_query(team, "organization_summary_bridge")
+    assert "Инфинити" in _expansion_query(russian, "organization_summary_bridge")
+
+
+def test_query_expansion_does_not_treat_company_role_query_as_org_summary() -> None:
+    plan = build_query_expansion_plan(
+        "Which outdoor gear company likely signed John for an endorsement?"
+    )
+
+    assert "organization_summary_bridge" not in {
+        expansion.reason for expansion in plan.expansions
+    }
+
+
 def test_query_expansion_covers_patriotic_service_inference() -> None:
     plan = build_query_expansion_plan("Would John be considered a patriotic person?")
 

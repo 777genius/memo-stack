@@ -5091,6 +5091,41 @@ def test_deterministic_rerank_prefers_canonical_project_anchor_for_summary() -> 
     )
 
 
+def test_deterministic_rerank_prefers_canonical_organization_anchor_for_summary() -> None:
+    generic = _item(
+        "generic_openai_chunk",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text="OpenAI appeared in a vendor comparison note.",
+    )
+    anchor = _anchor_item(
+        "openai_anchor",
+        score=0.711,
+        kind="organization",
+        text=(
+            "organization: OpenAI. aliases: OpenAI Inc. description: AI vendor "
+            "used for transcription and vision. identity: OpenAI, vendor, AI."
+        ),
+    )
+    query = "What is company OpenAI?"
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (generic, anchor),
+        query=query,
+        plan=build_query_expansion_plan(query),
+        query_anchor_intent=build_query_anchor_intent(query),
+    )
+    by_id = {item.item_id: item for item in reranked}
+
+    assert by_id["openai_anchor"].score > by_id["generic_openai_chunk"].score
+    assert (
+        "canonical_anchor_summary_profile"
+        in by_id["openai_anchor"].diagnostics["provenance"][
+            "deterministic_rerank_reasons"
+        ]
+    )
+
+
 def test_deterministic_rerank_skips_canonical_summary_for_project_role_query() -> None:
     anchor = _anchor_item(
         "atlas_anchor",

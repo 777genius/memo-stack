@@ -232,6 +232,7 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "music_artist_band_bridge",
         "negative_experience_support_bridge",
         "negative_preference_bridge",
+        "organization_summary_bridge",
         "painting_inventory_bridge",
         "person_summary_bridge",
         "personality_authenticity_bridge",

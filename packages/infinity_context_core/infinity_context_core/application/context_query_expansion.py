@@ -32,6 +32,9 @@ from infinity_context_core.application.context_query_identity_terms import (
 from infinity_context_core.application.context_query_identity_terms import (
     with_identity_terms as _with_identity_terms,
 )
+from infinity_context_core.application.context_query_organization_summary_expansions import (
+    organization_summary_query_variants,
+)
 from infinity_context_core.application.context_query_personal_fact_expansions import (
     personal_fact_query_variants,
 )
@@ -97,6 +100,7 @@ def build_query_expansion_plan(
     query_term_variants.update(workflow_commitment_query_variants(query))
     query_term_variants.update(personal_fact_query_variants(query))
     query_term_variants.update(project_summary_query_variants(query))
+    query_term_variants.update(organization_summary_query_variants(query))
     raw_tokens = set(_raw_query_tokens(query))
     identity_terms = _capitalized_identity_terms(query)
     expansion_candidates: list[tuple[int, int, QueryExpansion]] = []
