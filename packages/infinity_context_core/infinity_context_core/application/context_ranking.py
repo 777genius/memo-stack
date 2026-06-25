@@ -183,6 +183,7 @@ _DETERMINISTIC_RERANK_MAX_BOOST = 0.055
 _DETERMINISTIC_RERANK_MAX_PENALTY = 0.11
 _CANONICAL_ANCHOR_SUMMARY_RERANK_MAX_BOOST = 0.018
 _CITATION_EVIDENCE_RERANK_MAX_BOOST = 0.024
+_ARTIFACT_INVENTORY_EVIDENCE_RERANK_MAX_BOOST = 0.028
 _DECOMPOSITION_COVERAGE_RERANK_MAX_BOOST = 0.022
 _LOCALIZED_EVIDENCE_RERANK_MAX_BOOST = 0.022
 _DUPLICATE_SOURCE_SCORE_TOLERANCE = 0.015
@@ -206,6 +207,20 @@ _STRONG_EVIDENCE_RERANK_SOURCES = frozenset(
         "canonical_anchor_relations",
         "canonical_anchors",
         "temporal_supersedes_relation",
+    }
+)
+_ARTIFACT_INVENTORY_RERANK_SOURCES = frozenset(
+    {
+        "approved_context_linked_asset_manifest_evidence",
+        "approved_context_linked_assets",
+        "approved_context_linked_extraction_artifacts",
+        "artifact_evidence",
+    }
+)
+_ARTIFACT_INVENTORY_SOURCE_REF_TYPES = frozenset(
+    {
+        "asset",
+        "extraction_artifact",
     }
 )
 _DERIVED_SUMMARY_SOURCE_BOOST = 0.06
@@ -1517,6 +1532,27 @@ def _deterministic_rerank_signals(
     if citation_evidence_boost > 0:
         boost += citation_evidence_boost
         reasons.append(citation_evidence_reason)
+    (
+        artifact_inventory_boost,
+        artifact_inventory_penalty,
+        artifact_inventory_reason,
+        artifact_inventory_signals,
+    ) = _artifact_inventory_evidence_support_signal(
+        item=item,
+        plan=plan,
+        query_reason=query_reason,
+        relevance=relevance,
+        coverage_ratio=coverage_ratio,
+        anchor_matched=anchor_match is not None,
+    )
+    if artifact_inventory_boost > 0:
+        boost += artifact_inventory_boost
+        reasons.append(artifact_inventory_reason)
+        rank_signals.update(artifact_inventory_signals)
+    if artifact_inventory_penalty > 0:
+        penalty += artifact_inventory_penalty
+        reasons.append(artifact_inventory_reason)
+        rank_signals.update(artifact_inventory_signals)
     owner_boost, owner_penalty, owner_reason = _activity_owner_signal(
         query_anchor_intent=query_anchor_intent,
         query_reason=query_reason,
@@ -1772,9 +1808,17 @@ def _deterministic_rerank_signals(
     rank_signals.update(domain_adjustment.rank_signals)
     slot_diverse_aggregation = aggregation_answer_slot_count(query=query, text=item.text) >= 2
     event_detail_requirement_support = "temporal_camping_detail_evidence" in reasons
+    artifact_inventory_requirement_support = (
+        "artifact_inventory_first_party_evidence" in reasons
+    )
     if requested_total > 0:
-        if coverage_ratio <= 0 and event_detail_requirement_support:
-            reasons.append("explicit_requirement_supported_by_event_detail")
+        if coverage_ratio <= 0 and (
+            event_detail_requirement_support or artifact_inventory_requirement_support
+        ):
+            if event_detail_requirement_support:
+                reasons.append("explicit_requirement_supported_by_event_detail")
+            if artifact_inventory_requirement_support:
+                reasons.append("explicit_requirement_supported_by_artifact_inventory")
         elif coverage_ratio <= 0:
             penalty += 0.025
             reasons.append("explicit_requirement_missing")
@@ -1788,14 +1832,18 @@ def _deterministic_rerank_signals(
         )
         reasons.append("explicit_requirement_missing")
         reasons.append("explicit_answer_shape_missing")
-    if coverage.missing_modalities:
+    if coverage.missing_modalities and not artifact_inventory_requirement_support:
         penalty += min(
             0.032,
             0.024 * len(coverage.missing_modalities),
         )
         reasons.append("explicit_requirement_missing")
         reasons.append("explicit_modality_missing")
-    if coverage.missing_evidence_features and not slot_diverse_aggregation:
+    if (
+        coverage.missing_evidence_features
+        and not slot_diverse_aggregation
+        and not artifact_inventory_requirement_support
+    ):
         penalty += min(
             0.028,
             0.02 * len(coverage.missing_evidence_features),
@@ -2053,6 +2101,82 @@ def _citation_evidence_support_signal(
     boost += min(0.006, localized_count * 0.003)
     reason = "citation_quote_evidence" if quote_count > 0 else "citation_localized_evidence"
     return round(min(_CITATION_EVIDENCE_RERANK_MAX_BOOST, boost), 4), reason
+
+
+def _artifact_inventory_evidence_support_signal(
+    *,
+    item: ContextItem,
+    plan: QueryExpansionPlan,
+    query_reason: str,
+    relevance: QueryRelevance,
+    coverage_ratio: float,
+    anchor_matched: bool,
+) -> tuple[float, float, str, dict[str, float]]:
+    has_artifact_inventory_query = any(
+        expansion.reason == "artifact_inventory_bridge"
+        for expansion in plan.retrieval_queries
+    )
+    if not has_artifact_inventory_query and not _matches_query_or_score_signal_reason(
+        query_reason=query_reason,
+        item=item,
+        target_reason="artifact_inventory_bridge",
+    ):
+        return 0.0, 0.0, "", {}
+    if not (
+        is_query_relevance_sufficient(relevance)
+        or coverage_ratio > 0
+        or anchor_matched
+    ):
+        return 0.0, 0.0, "", {}
+
+    sources = set(diagnostic_retrieval_sources(item.diagnostics))
+    source_ref_types = {ref.source_type for ref in item.source_refs}
+    has_document_evidence_ref = any(
+        ref.source_type == "document"
+        and (_source_ref_has_precise_location(ref) or (ref.quote_preview or "").strip())
+        for ref in item.source_refs
+    )
+    has_first_party_artifact = (
+        item.item_type == "extraction_artifact"
+        or bool(sources.intersection(_ARTIFACT_INVENTORY_RERANK_SOURCES))
+        or bool(source_ref_types.intersection(_ARTIFACT_INVENTORY_SOURCE_REF_TYPES))
+        or has_document_evidence_ref
+    )
+    if not has_first_party_artifact:
+        return (
+            0.0,
+            0.018,
+            "artifact_inventory_unbacked_reference",
+            {
+                "artifact_inventory_first_party_evidence": 0.0,
+                "artifact_inventory_unbacked_reference": 1.0,
+            },
+        )
+
+    diagnostics = safe_diagnostic_mapping(item.diagnostics)
+    evidence_signal_count = 1
+    if _safe_evidence_kind_or_modality(diagnostics):
+        evidence_signal_count += 1
+    if any(_source_ref_has_precise_location(ref) for ref in item.source_refs):
+        evidence_signal_count += 1
+    if any((ref.quote_preview or "").strip() for ref in item.source_refs):
+        evidence_signal_count += 1
+    if len(sources) >= 2:
+        evidence_signal_count += 1
+
+    boost = 0.016 + min(0.012, 0.003 * evidence_signal_count)
+    if "artifact_evidence" in sources:
+        boost += 0.003
+
+    return (
+        round(min(_ARTIFACT_INVENTORY_EVIDENCE_RERANK_MAX_BOOST, boost), 4),
+        0.0,
+        "artifact_inventory_first_party_evidence",
+        {
+            "artifact_inventory_first_party_evidence": 1.0,
+            "artifact_inventory_evidence_signal_count": float(evidence_signal_count),
+        },
+    )
 
 
 def _source_ref_location_features(ref: SourceRef) -> tuple[str, ...]:

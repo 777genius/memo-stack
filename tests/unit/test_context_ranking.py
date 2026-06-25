@@ -9532,6 +9532,79 @@ def test_deterministic_rerank_prefers_multisignal_artifact_evidence() -> None:
     )
 
 
+def test_deterministic_rerank_prefers_first_party_artifact_inventory_evidence() -> None:
+    query = "Which files are related to Project Atlas?"
+    plan = build_query_expansion_plan(query)
+    intent = build_query_anchor_intent(query)
+    note = _item(
+        "atlas_file_note",
+        score=0.72,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Project Atlas file note: someone mentioned a screenshot and document "
+            "might exist for the launch review."
+        ),
+    )
+    artifact = ContextItem(
+        item_id="atlas_screenshot_ocr",
+        item_type="extraction_artifact",
+        text=(
+            "Project Atlas artifact inventory: uploaded screenshot file metadata, "
+            "OCR evidence, original image asset, and linked launch review source refs."
+        ),
+        score=0.7,
+        source_refs=(
+            SourceRef(
+                source_type="extraction_artifact",
+                source_id="asset-image-1",
+                chunk_id="ocr-region-1",
+                bbox=(8.0, 12.0, 220.0, 88.0),
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "artifact_evidence",
+            "retrieval_sources": ["artifact_evidence", "vector_chunks"],
+            "evidence_kind": "ocr_region",
+            "evidence_modality": "image",
+            "score_signals": {"base_score": 0.7},
+            "provenance": {"retrieval_sources": ["artifact_evidence", "vector_chunks"]},
+        },
+    )
+
+    reranked = apply_deterministic_rerank_adjustments(
+        (note, artifact),
+        query=query,
+        plan=plan,
+        query_anchor_intent=intent,
+    )
+
+    assert reranked[1].score > reranked[0].score
+    assert (
+        reranked[1]
+        .diagnostics["score_signals"]
+        .get("artifact_inventory_first_party_evidence")
+        == 1.0
+    )
+    assert (
+        "artifact_inventory_first_party_evidence"
+        in reranked[1].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        "artifact_inventory_first_party_evidence"
+        not in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+    assert (
+        reranked[0]
+        .diagnostics["score_signals"]
+        .get("artifact_inventory_unbacked_reference")
+        == 1.0
+    )
+    assert (
+        "artifact_inventory_unbacked_reference"
+        in reranked[0].diagnostics["provenance"]["deterministic_rerank_reasons"]
+    )
+
+
 def test_deterministic_rerank_prefers_localized_transcript_evidence() -> None:
     query = "What did the transcript say at 02:15?"
     plan = build_query_expansion_plan(query)
