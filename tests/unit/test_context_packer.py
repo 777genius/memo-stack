@@ -938,6 +938,49 @@ def test_answer_support_family_splits_volunteer_career_evidence_slots() -> None:
     assert any(family.endswith(":volunteer-origin") for family in families)
 
 
+def test_answer_support_family_ranks_degree_policy_inference_turn() -> None:
+    precise = ContextItem(
+        item_id="degree_policy_precise",
+        item_type="chunk",
+        text=(
+            "D9:6 John: I'm considering going into policymaking because of my "
+            "degree and my passion for making a positive impact."
+        ),
+        score=0.94,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D9:6:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "degree_policy_inference_bridge",
+                "phrase_bigram_hits": 2,
+                "distinctive_term_hits": 7,
+            },
+        },
+    )
+    generic = ContextItem(
+        item_id="degree_completion_generic",
+        item_type="chunk",
+        text="D9:2 John shared a diploma image after finishing his university degree.",
+        score=0.99,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D9:2:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "degree_policy_inference_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+
+    precise_family = _answer_support_diversity_family(precise)
+    generic_family = _answer_support_diversity_family(generic)
+
+    assert precise_family.endswith(":degree-field-inference")
+    assert generic_family.endswith(":degree-completion-context")
+    assert _answer_support_family_item_key(precise) < _answer_support_family_item_key(
+        generic
+    )
+
+
 def test_answer_support_family_prefers_exact_turn_for_animal_care_instruction() -> None:
     exact = ContextItem(
         item_id="animal_care_exact",

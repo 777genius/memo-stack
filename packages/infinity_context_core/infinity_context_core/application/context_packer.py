@@ -51,6 +51,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "decomposition-frequency-recurrence",
         "decomposition-inventory-list",
         "decomposition-quantity-count",
+        "degree-policy-inference-bridge",
         "event-participation-bridge",
         "family-activity-bridge",
         "family-hike-detail-bridge",
@@ -974,6 +975,8 @@ def _aggregation_marker_coverage_slot(item: ContextItem, *, query_reason: str) -
 
 
 def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
+    if query_reason == "degree_policy_inference_bridge":
+        return _degree_policy_answer_slot(item.text)
     if query_reason != "volunteer_career_inference_bridge":
         return ""
     text = item.text.casefold()
@@ -999,6 +1002,30 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
     for slot, markers in slots:
         if any(marker in padded for marker in markers):
             return slot
+    return ""
+
+
+def _degree_policy_answer_slot(text: str) -> str:
+    text = text.casefold()
+    padded = f" {text} "
+    if any(
+        marker in padded
+        for marker in (
+            " because of my degree",
+            " because of his degree",
+            " because of her degree",
+            "policymaking because",
+            "public policy",
+            "public administration",
+            "public affairs",
+            "political science",
+        )
+    ):
+        return "degree_field_inference"
+    if any(marker in padded for marker in ("policymaking", "policy making", " policy ")):
+        return "policy_career_plan"
+    if any(marker in padded for marker in ("graduated", "degree", "diploma")):
+        return "degree_completion_context"
     return ""
 
 
@@ -1271,6 +1298,8 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
         return 3
     if query_reason == "painting_inventory_bridge":
         return _painting_inventory_answer_content_rank(item.text)
+    if query_reason == "degree_policy_inference_bridge":
+        return _degree_policy_answer_content_rank(item.text)
     if query_reason == "animal_care_instruction_bridge":
         return _animal_care_instruction_content_rank(item.text)
     if query_reason != "meteor_shower_feeling_bridge":
@@ -1281,6 +1310,17 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
     if "felt" in text or "feel" in text or "universe" in text:
         return 1
     return 2
+
+
+def _degree_policy_answer_content_rank(text: str) -> int:
+    slot = _degree_policy_answer_slot(text)
+    if slot == "degree_field_inference":
+        return 0
+    if slot == "policy_career_plan":
+        return 1
+    if slot == "degree_completion_context":
+        return 2
+    return 3
 
 
 def _animal_care_instruction_content_rank(text: str) -> int:

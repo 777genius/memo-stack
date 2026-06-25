@@ -3840,6 +3840,37 @@ def test_volunteer_career_source_boost_prefers_precise_evidence_over_session_sum
     assert summary_boosted == score
 
 
+def test_degree_policy_source_boost_prefers_precise_evidence_over_summary() -> None:
+    plan = build_query_expansion_plan("What might John's degree be in?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D9:6 John: I'm considering going into policymaking because of my "
+            "degree and my passion for making a positive impact."
+        ),
+    )
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    precise_boosted, precise_boost = apply_keyword_chunk_source_score_boost(
+        score,
+        relevance,
+        query_expansion_reason=reason,
+        source_external_id="locomo:conv-41:session_9:D9:6:turn",
+    )
+    summary_boosted, summary_boost = apply_keyword_chunk_source_score_boost(
+        score,
+        relevance,
+        query_expansion_reason=reason,
+        source_external_id="locomo:conv-41:session_9:summary",
+    )
+
+    assert reason == "degree_policy_inference_bridge"
+    assert precise_boost > 0
+    assert precise_boosted > score
+    assert summary_boost == 0.0
+    assert summary_boosted == score
+
+
 def test_state_residence_source_boost_prefers_precise_map_turn() -> None:
     plan = build_query_expansion_plan("Which US state do Audrey and Andrew potentially live in?")
     _, reason, relevance = best_query_relevance(

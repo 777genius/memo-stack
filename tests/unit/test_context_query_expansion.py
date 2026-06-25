@@ -234,6 +234,14 @@ def test_query_expansion_covers_support_role_fit_bridge() -> None:
     )
 
 
+def test_query_expansion_covers_degree_policy_inference_bridge() -> None:
+    plan = build_query_expansion_plan("What might John's degree be in?")
+
+    expansion = _expansion_query(plan, "degree_policy_inference_bridge")
+    assert expansion.startswith("John ")
+    assert "political science public administration" in expansion
+
+
 def test_query_expansion_covers_trust_support_role_bridge() -> None:
     plan = build_query_expansion_plan("Would Alex trust Caroline with sensitive issues?")
 
