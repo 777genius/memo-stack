@@ -338,6 +338,30 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "personality_drive_bridge",
         ),
     (
+            frozenset({"reliable"}),
+            (
+                "behavior evidence reliable dependable responsible trustworthy kept "
+                "promises followed through prepared consistently"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"organized"}),
+            (
+                "behavior evidence organized planned prepared scheduled coordinated "
+                "managed followed through"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
+            frozenset({"creative"}),
+            (
+                "behavior evidence creative artistic designed created painted wrote "
+                "made art project"
+            ),
+            "generic_behavior_inference_bridge",
+        ),
+    (
             frozenset({"roadtrip"}),
             "roadtrip accident scary scared bad start freaked lucky okay family",
             "adverse_trip_bridge",

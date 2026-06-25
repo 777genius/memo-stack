@@ -514,6 +514,23 @@ def test_bounded_retrieval_queries_keep_specific_considered_attribute_bridges() 
     ]
 
 
+def test_bounded_retrieval_queries_keep_generic_behavior_inference_bridge() -> None:
+    plan = build_query_expansion_plan("Would Alex be considered reliable?")
+
+    assert [
+        query.reason
+        for query in _bounded_derived_retrieval_queries(
+            plan,
+            fallback="fallback",
+            limit=3,
+        )
+    ] == [
+        "original_query",
+        "generic_behavior_inference_bridge",
+        "decomposition_inference_support",
+    ]
+
+
 def test_bounded_retrieval_queries_keep_russian_relationship_bridges() -> None:
     duration = build_query_expansion_plan("Как давно Алекс знает Марию?")
     status = build_query_expansion_plan("Алекс и Мария друзья?")

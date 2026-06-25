@@ -1603,6 +1603,28 @@ def test_query_expansion_covers_generic_ally_inference_bridge() -> None:
     )
 
 
+def test_query_expansion_covers_generic_behavior_inference_bridge() -> None:
+    reliable = build_query_expansion_plan("Would Alex be considered reliable?")
+    organized = build_query_expansion_plan("Would Alex be considered organized?")
+    creative = build_query_expansion_plan("Would Alex be considered creative?")
+
+    assert _expansion_query(reliable, "generic_behavior_inference_bridge").startswith(
+        "Alex "
+    )
+    assert "kept promises followed through" in _expansion_query(
+        reliable,
+        "generic_behavior_inference_bridge",
+    )
+    assert "organized planned prepared scheduled" in _expansion_query(
+        organized,
+        "generic_behavior_inference_bridge",
+    )
+    assert "creative artistic designed created" in _expansion_query(
+        creative,
+        "generic_behavior_inference_bridge",
+    )
+
+
 def test_query_expansion_covers_temporal_change_bridges() -> None:
     latest = build_query_expansion_plan("What is the latest current Atlas decision?")
     final_decision = build_query_expansion_plan("What is the final Atlas decision?")
@@ -2073,6 +2095,18 @@ def test_best_query_relevance_uses_trait_and_adverse_trip_bridges() -> None:
     assert trait_relevance.distinctive_term_hits >= 5
     assert trip_reason == "adverse_trip_bridge"
     assert trip_relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_generic_behavior_inference_bridge() -> None:
+    plan = build_query_expansion_plan("Would Alex be considered reliable?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="Alex kept his promises, followed through, and prepared the launch notes early.",
+    )
+
+    assert reason == "generic_behavior_inference_bridge"
+    assert relevance.distinctive_term_hits >= 4
 
 
 def test_trait_query_decomposition_targets_single_trait_turns() -> None:

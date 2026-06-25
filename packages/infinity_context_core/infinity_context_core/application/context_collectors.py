@@ -128,6 +128,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "friend_place_shelter_inventory_bridge",
         "friend_place_gym_inventory_bridge",
         "friend_place_church_inventory_bridge",
+        "generic_behavior_inference_bridge",
         "gaming_medium_bridge",
         "hiking_trail_count_bridge",
         "hobby_interest_bridge",
