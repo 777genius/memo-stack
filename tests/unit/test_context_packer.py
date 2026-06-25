@@ -617,6 +617,68 @@ def test_answer_support_family_prefers_exact_turn_for_personality_trait() -> Non
     assert candidates[family].item_id == exact.item_id
 
 
+def test_answer_support_family_prefers_exact_turn_for_support_career_motivation() -> None:
+    exact = ContextItem(
+        item_id="chunk_exact_support_career_turn",
+        item_type="chunk",
+        text=(
+            "D4:15 Caroline: My own journey and the support I got made a huge "
+            "difference. Counseling and support groups improved my life, so I "
+            "want to help people feel safe."
+        ),
+        score=0.985,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_4:D4:15:turn",
+                chunk_id="chunk_exact_support_career_turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "support_career_motivation_bridge",
+                "distinctive_term_hits": 17,
+            },
+            "provenance": {"keyword_aggregation_source_group": "locomo:conv-26:session_4"},
+        },
+    )
+    broader = ContextItem(
+        item_id="chunk_broad_support_career_session",
+        item_type="chunk",
+        text=(
+            "D4:11 Caroline explored counseling as a career. D4:15 Caroline "
+            "mentioned support among many other session details."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_session",
+                source_id="locomo:conv-26:session_4",
+                chunk_id="chunk_broad_support_career_session",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_4:D4:15:turn",
+                chunk_id="chunk_broad_support_career_session",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "support_career_motivation_bridge",
+                "distinctive_term_hits": 13,
+            },
+            "provenance": {"keyword_aggregation_source_group": "locomo:conv-26:session_4"},
+        },
+    )
+
+    family = _answer_support_diversity_family(exact)
+    candidates = _answer_support_diversity_candidates([broader, exact])
+
+    assert candidates[family].item_id == exact.item_id
+
+
 def test_answer_support_family_prefers_exact_turn_for_attribute_family_support() -> None:
     broad = ContextItem(
         item_id="d2_broad_family_support",

@@ -302,6 +302,33 @@ def test_bounded_retrieval_queries_prioritize_high_signal_evidence_bridges() -> 
     ]
 
 
+def test_bounded_retrieval_queries_prioritize_support_causality_bridges() -> None:
+    plan = QueryExpansionPlan(
+        original_query="original",
+        decompositions=(
+            QueryExpansion(query="generic clause", reason="decomposition_clause"),
+        ),
+        expansions=(
+            QueryExpansion(query="career", reason="career_intent_bridge"),
+            QueryExpansion(
+                query="support made counseling matter",
+                reason="support_career_motivation_bridge",
+            ),
+            QueryExpansion(query="blessed support journey", reason="support_origin_bridge"),
+            QueryExpansion(query="safe mentor support", reason="support_role_fit_bridge"),
+        ),
+    )
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "support_career_motivation_bridge",
+        "support_origin_bridge",
+        "support_role_fit_bridge",
+    ]
+
+
 def test_bounded_retrieval_queries_prioritize_animal_career_bridge() -> None:
     plan = QueryExpansionPlan(
         original_query="original",
