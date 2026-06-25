@@ -294,6 +294,20 @@ def test_query_expansion_covers_negative_experience_support_bridge() -> None:
     )
 
 
+def test_query_expansion_covers_direct_negative_preference_questions() -> None:
+    dislike = build_query_expansion_plan("What does Morgan dislike?")
+    hate = build_query_expansion_plan("What does Morgan hate?")
+
+    assert "dislike dislikes disliked hate hates hated" in _expansion_query(
+        dislike,
+        "negative_preference_bridge",
+    )
+    assert "dislike dislikes disliked hate hates hated" in _expansion_query(
+        hate,
+        "negative_preference_bridge",
+    )
+
+
 def test_query_expansion_covers_social_support_network_questions() -> None:
     support = build_query_expansion_plan("Who supports Caroline?")
     there_for = build_query_expansion_plan("Who is there for Caroline when things get hard?")
@@ -973,6 +987,16 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             build_query_expansion_plan(
                 "Whose recommendation did Melanie follow when she read Becoming Nicole?"
             ),
+            "recommendation_source_bridge",
+            "recommendation suggestion advice recommended suggested advised follow",
+        ),
+        (
+            build_query_expansion_plan("What recommendation did Alex make recently?"),
+            "recommendation_source_bridge",
+            "recommendation suggestion advice recommended suggested advised follow",
+        ),
+        (
+            build_query_expansion_plan("What did Alex recommend?"),
             "recommendation_source_bridge",
             "recommendation suggestion advice recommended suggested advised follow",
         ),

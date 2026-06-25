@@ -281,6 +281,29 @@ def test_bounded_retrieval_queries_prioritize_specific_bridges_over_decompositio
     ]
 
 
+def test_bounded_retrieval_queries_select_direct_negative_preference_bridge() -> None:
+    plan = build_query_expansion_plan("What does Morgan dislike?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "negative_preference_bridge",
+    ]
+
+
+def test_bounded_retrieval_queries_select_recommendation_source_bridge() -> None:
+    plan = build_query_expansion_plan("What recommendation did Alex make recently?")
+
+    selected = _bounded_derived_retrieval_queries(plan, fallback="fallback", limit=4)
+
+    assert [query.reason for query in selected] == [
+        "original_query",
+        "recommendation_source_bridge",
+        "decomposition_action_role",
+    ]
+
+
 def test_bounded_retrieval_queries_keep_high_signal_decomposition() -> None:
     plan = QueryExpansionPlan(
         original_query="original",

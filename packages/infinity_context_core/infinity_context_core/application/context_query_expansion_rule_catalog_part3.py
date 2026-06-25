@@ -447,11 +447,17 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"not", "like"}),
-            (
-                "does not like doesn't like dislike dislikes disliked hate hates hated "
-                "avoid avoids avoided not enjoy never enjoy preference discomfort "
-                "overwhelming too loud unsafe unpleasant"
-            ),
+            _terms._NEGATIVE_PREFERENCE_EXPANSION,
+            "negative_preference_bridge",
+        ),
+    (
+            frozenset({"dislike"}),
+            _terms._NEGATIVE_PREFERENCE_EXPANSION,
+            "negative_preference_bridge",
+        ),
+    (
+            frozenset({"hate"}),
+            _terms._NEGATIVE_PREFERENCE_EXPANSION,
             "negative_preference_bridge",
         ),
     (

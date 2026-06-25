@@ -250,6 +250,26 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "recommendation_source_bridge",
         ),
     (
+            frozenset({"recommendation", "make"}),
+            _terms._RECOMMENDATION_SOURCE_EXPANSION,
+            "recommendation_source_bridge",
+        ),
+    (
+            frozenset({"suggestion", "make"}),
+            _terms._RECOMMENDATION_SOURCE_EXPANSION,
+            "recommendation_source_bridge",
+        ),
+    (
+            frozenset({"what", "recommend"}),
+            _terms._RECOMMENDATION_SOURCE_EXPANSION,
+            "recommendation_source_bridge",
+        ),
+    (
+            frozenset({"what", "suggest"}),
+            _terms._RECOMMENDATION_SOURCE_EXPANSION,
+            "recommendation_source_bridge",
+        ),
+    (
             frozenset({"recommendation", "read"}),
             _terms._RECOMMENDATION_SOURCE_EXPANSION,
             "recommendation_source_bridge",

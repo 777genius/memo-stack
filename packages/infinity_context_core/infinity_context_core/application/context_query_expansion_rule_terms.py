@@ -75,6 +75,11 @@ _COMMONALITY_INTEREST_EXPANSION = (
     "enjoy like love prefer painting camping hiking music books games food art "
     "watching movies desserts recipes baking evidence"
 )
+_NEGATIVE_PREFERENCE_EXPANSION = (
+    "does not like doesn't like dislike dislikes disliked hate hates hated "
+    "avoid avoids avoided not enjoy never enjoy preference discomfort "
+    "overwhelming too loud unsafe unpleasant"
+)
 _FRIEND_PLACE_INVENTORY_EXPANSION = (
     "friends made friends places where homeless shelter fellow volunteer joined gym "
     "church awesome people welcoming atmosphere positive environment community faith "
