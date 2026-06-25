@@ -53,6 +53,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "decomposition-quantity-count",
         "degree-policy-inference-bridge",
         "event-participation-bridge",
+        "exercise-activity-inventory-bridge",
         "family-activity-bridge",
         "family-hike-detail-bridge",
         "family-hike-activity-bridge",
@@ -899,6 +900,7 @@ def _activity_answer_slot(item: ContextItem, *, query_reason: str) -> str:
         "activity_aggregation_bridge",
         "activity_visual_selfcare_bridge",
         "decomposition_activity_participation",
+        "exercise_activity_inventory_bridge",
         "family_activity_bridge",
         "family_hike_detail_bridge",
         "family_hike_activity_bridge",
@@ -917,6 +919,8 @@ def _activity_answer_slot(item: ContextItem, *, query_reason: str) -> str:
         return ""
     if query_reason == "painting_inventory_bridge":
         return _painting_inventory_answer_slot(text)
+    if query_reason == "exercise_activity_inventory_bridge":
+        return _exercise_activity_answer_slot(text)
     slots = (
         ("swimming", ("swimming", " swim ", "self care", "taking care")),
         ("hiking", ("hiking", " hike ", "trail", "waterfall", "mountain")),
@@ -1300,6 +1304,8 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
         return _painting_inventory_answer_content_rank(item.text)
     if query_reason == "degree_policy_inference_bridge":
         return _degree_policy_answer_content_rank(item.text)
+    if query_reason == "exercise_activity_inventory_bridge":
+        return _exercise_activity_answer_content_rank(item.text)
     if query_reason == "animal_care_instruction_bridge":
         return _animal_care_instruction_content_rank(item.text)
     if query_reason != "meteor_shower_feeling_bridge":
@@ -1319,6 +1325,37 @@ def _degree_policy_answer_content_rank(text: str) -> int:
     if slot == "policy_career_plan":
         return 1
     if slot == "degree_completion_context":
+        return 2
+    return 3
+
+
+def _exercise_activity_answer_slot(text: str) -> str:
+    text = text.casefold()
+    padded = f" {text} "
+    if "taekwondo" in padded or "tae kwon do" in padded:
+        return "taekwondo"
+    if "kickboxing" in padded or "kick boxing" in padded:
+        return "kickboxing"
+    if "circuit training" in padded:
+        return "circuit_training"
+    if "weight training" in padded or "weights" in padded:
+        return "weight_training"
+    if "aerial yoga" in padded:
+        return "aerial_yoga"
+    if " yoga" in padded:
+        return "yoga"
+    if any(marker in padded for marker in ("workout", "exercise", "fitness")):
+        return "generic_exercise"
+    return ""
+
+
+def _exercise_activity_answer_content_rank(text: str) -> int:
+    slot = _exercise_activity_answer_slot(text)
+    if slot in {"kickboxing", "taekwondo", "weight_training", "circuit_training"}:
+        return 0
+    if slot in {"aerial_yoga", "yoga"}:
+        return 1
+    if slot == "generic_exercise":
         return 2
     return 3
 

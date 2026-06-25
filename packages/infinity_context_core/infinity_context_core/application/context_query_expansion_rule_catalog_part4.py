@@ -42,6 +42,47 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "shoe_usage_bridge",
         ),
     (
+            frozenset({"martial"}),
+            (
+                "martial arts kickboxing taekwondo boxing karate workout class "
+                "exercise exercises fitness energy stay shape de-stress "
+                "doing kickboxing giving energy off to do some taekwondo"
+            ),
+            "exercise_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"exercise"}),
+            (
+                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
+                "training circuit training stay shape fitness energy"
+            ),
+            "exercise_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"exercises"}),
+            (
+                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
+                "training circuit training stay shape fitness energy"
+            ),
+            "exercise_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"workout"}),
+            (
+                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
+                "training circuit training stay shape fitness energy"
+            ),
+            "exercise_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"workouts"}),
+            (
+                "exercise exercises workout workouts kickboxing taekwondo yoga weight "
+                "training circuit training stay shape fitness energy"
+            ),
+            "exercise_activity_inventory_bridge",
+        ),
+    (
             frozenset({"reason", "running"}),
             (
                 "running run farther longer de-stress destress clear mind headspace "

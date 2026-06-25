@@ -212,6 +212,7 @@ _PRECISE_EVIDENCE_SOURCE_REASONS = frozenset(
         "charity_tournament_count_bridge",
         "children_count_event_bridge",
         "degree_policy_inference_bridge",
+        "exercise_activity_inventory_bridge",
         "endorsement_gear_brand_bridge",
         "gaming_medium_bridge",
         "hiking_trail_count_bridge",

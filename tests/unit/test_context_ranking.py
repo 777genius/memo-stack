@@ -2043,6 +2043,11 @@ def test_keyword_chunk_score_boosts_locomo_personal_list_fact_bridges() -> None:
             "instrument_play_bridge",
         ),
         (
+            build_query_expansion_plan("What martial arts has John done?"),
+            "John has done kickboxing for energy and taekwondo with loved ones.",
+            "exercise_activity_inventory_bridge",
+        ),
+        (
             build_query_expansion_plan("What are Joanna's hobbies?"),
             "Joanna enjoys writing, reading, watching movies, exploring nature, and friends.",
             "hobby_interest_bridge",
@@ -3869,6 +3874,27 @@ def test_degree_policy_source_boost_prefers_precise_evidence_over_summary() -> N
     assert precise_boosted > score
     assert summary_boost == 0.0
     assert summary_boosted == score
+
+
+def test_exercise_activity_source_boost_accepts_exact_single_activity_turn() -> None:
+    plan = build_query_expansion_plan("What martial arts has John done?")
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text="D2:28 John: I'm off to do some taekwondo!",
+    )
+    score = keyword_chunk_score(relevance, query_expansion_reason=reason)
+
+    boosted, boost = apply_keyword_chunk_source_score_boost(
+        score,
+        relevance,
+        query_expansion_reason=reason,
+        source_external_id="locomo:conv-41:session_2:D2:28:turn",
+    )
+
+    assert reason == "exercise_activity_inventory_bridge"
+    assert relevance.distinctive_term_hits >= 2
+    assert boost > 0
+    assert boosted > score
 
 
 def test_state_residence_source_boost_prefers_precise_map_turn() -> None:

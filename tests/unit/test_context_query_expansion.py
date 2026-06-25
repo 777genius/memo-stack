@@ -1047,6 +1047,16 @@ def test_query_expansion_covers_locomo_reliable_failure_bridges() -> None:
             "clarinet violin",
         ),
         (
+            build_query_expansion_plan("What martial arts has John done?"),
+            "exercise_activity_inventory_bridge",
+            "kickboxing taekwondo",
+        ),
+        (
+            build_query_expansion_plan("What exercises has John done?"),
+            "exercise_activity_inventory_bridge",
+            "kickboxing taekwondo yoga weight",
+        ),
+        (
             build_query_expansion_plan("What are Joanna's hobbies?"),
             "hobby_interest_bridge",
             "watching movies exploring nature",

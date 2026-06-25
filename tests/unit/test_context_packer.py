@@ -981,6 +981,66 @@ def test_answer_support_family_ranks_degree_policy_inference_turn() -> None:
     )
 
 
+def test_answer_support_family_splits_exercise_activity_slots() -> None:
+    kickboxing = ContextItem(
+        item_id="exercise_kickboxing",
+        item_type="chunk",
+        text="D1:4 John: I'm doing kickboxing and it's giving me so much energy.",
+        score=0.97,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D1:4:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "exercise_activity_inventory_bridge",
+                "phrase_bigram_hits": 2,
+                "distinctive_term_hits": 5,
+            },
+        },
+    )
+    taekwondo = ContextItem(
+        item_id="exercise_taekwondo",
+        item_type="chunk",
+        text="D2:28 John: I'm off to do some taekwondo!",
+        score=0.95,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D2:28:turn"),),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "exercise_activity_inventory_bridge",
+                "phrase_bigram_hits": 2,
+                "distinctive_term_hits": 5,
+            },
+        },
+    )
+    generic = ContextItem(
+        item_id="exercise_generic",
+        item_type="chunk",
+        text="John likes fitness and workout classes.",
+        score=0.99,
+        source_refs=(),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "exercise_activity_inventory_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 2,
+            },
+        },
+    )
+
+    families = {
+        _answer_support_diversity_family(kickboxing),
+        _answer_support_diversity_family(taekwondo),
+        _answer_support_diversity_family(generic),
+    }
+
+    assert any(family.endswith(":kickboxing") for family in families)
+    assert any(family.endswith(":taekwondo") for family in families)
+    assert _answer_support_family_item_key(kickboxing) < _answer_support_family_item_key(
+        generic
+    )
+    assert _answer_support_family_item_key(taekwondo) < _answer_support_family_item_key(
+        generic
+    )
+
+
 def test_answer_support_family_prefers_exact_turn_for_animal_care_instruction() -> None:
     exact = ContextItem(
         item_id="animal_care_exact",
