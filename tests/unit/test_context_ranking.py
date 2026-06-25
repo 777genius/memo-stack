@@ -7507,7 +7507,7 @@ def test_deterministic_rerank_keeps_inventory_slots_query_specific() -> None:
         "pottery_bowl",
         score=0.72,
         retrieval_source="keyword_chunks",
-        text="D8:4 Melanie and the kids made clay bowls and a small cup.",
+        text="D8:4 Melanie: The kids made clay bowls and a small cup.",
         score_signals={"query_expansion_reason": "decomposition_inventory_list"},
     )
     country_noise = _item(

@@ -2350,6 +2350,81 @@ def test_answer_support_family_splits_inventory_place_slots() -> None:
     assert any(":gym:" in family for family in families)
 
 
+def test_answer_support_family_splits_pottery_inventory_slots() -> None:
+    bowl = ContextItem(
+        item_id="d5_bowl",
+        item_type="chunk",
+        text=(
+            "D5:6 Melanie: I'm a big fan of pottery. "
+            "image caption: a photo of a bowl with a black and white flower design."
+        ),
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_5:D5:6:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+    duplicate_bowl = ContextItem(
+        item_id="d5_bowl_duplicate",
+        item_type="chunk",
+        text="D5:8 Melanie: I made this bowl in my pottery class.",
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_5:D5:8:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+    cup = ContextItem(
+        item_id="d8_cup",
+        item_type="chunk",
+        text=(
+            "D8:4 Melanie: The kids made something with clay. "
+            "image caption: a photo of a cup with a dog face on it."
+        ),
+        score=0.94,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_8:D8:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
+
+    families = {
+        _answer_support_diversity_family(item) for item in (bowl, duplicate_bowl, cup)
+    }
+    result = ContextPacker().pack(
+        bundle_id="ctx_pottery_inventory_slots",
+        items=(bowl, duplicate_bowl, cup),
+        token_budget=120,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert any(":pottery-bowl:" in family for family in families)
+    assert any(":pottery-cup:" in family for family in families)
+    assert "D5:6" in rendered
+    assert "D8:4" in rendered
+
+
 def test_answer_support_family_splits_travel_country_inventory_slot() -> None:
     england = ContextItem(
         item_id="d8_england",

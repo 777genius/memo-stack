@@ -143,6 +143,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "patriotic_service_inference_bridge",
         "pet_count_bridge",
         "pet_inventory_bridge",
+        "pottery_type_bridge",
         "public_office_service_bridge",
         "relocation_willingness_inference_bridge",
         "relationship_duration_bridge",

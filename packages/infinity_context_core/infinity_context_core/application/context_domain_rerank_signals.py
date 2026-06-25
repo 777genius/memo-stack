@@ -50,6 +50,7 @@ _INVENTORY_LIST_RERANK_REASONS = frozenset(
         "friend_place_shelter_inventory_bridge",
         "friend_place_gym_inventory_bridge",
         "friend_place_church_inventory_bridge",
+        "pottery_type_bridge",
         "travel_country_inventory_bridge",
         "cause_education_infrastructure_inventory_bridge",
         "cause_veterans_inventory_bridge",
@@ -144,6 +145,13 @@ _INVENTORY_POTTERY_QUERY_RE = re.compile(
 _INVENTORY_POTTERY_EVIDENCE_RE = re.compile(
     r"\b(?:pottery|ceramic|clay|pots?|bowls?|cups?|mugs?|plates?)\b",
     re.IGNORECASE,
+)
+_INVENTORY_POTTERY_OWNER_EVIDENCE_RE = re.compile(
+    r"\bD\d+:\d+\s+Melanie:"
+    r"(?=.{0,260}\b(?:pottery|ceramic|clay|pots?|bowls?|cups?|mugs?|plates?|dog\s+face)\b)"
+    r"(?=.{0,260}\b(?:made|make|making|class|workshop|kids?|children|finished|project|"
+    r"hands\s+dirty|creativity|imagination|proud)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _INVENTORY_COUNTRY_QUERY_RE = re.compile(
     r"\b(?:countries|country|abroad|europe(?:an)?)\b",
@@ -708,7 +716,9 @@ def inventory_list_rerank_signal(
     relevance: QueryRelevance,
 ) -> DomainRerankSignal:
     if _inventory_list_exact_evidence(query=query, query_reason=query_reason, item=item):
-        return DomainRerankSignal(boost=0.024, reason="inventory_list_exact_evidence")
+        return DomainRerankSignal(boost=0.058, reason="inventory_list_exact_evidence")
+    if _inventory_list_wrong_owner_evidence(query=query, query_reason=query_reason, item=item):
+        return DomainRerankSignal(penalty=0.16, reason="inventory_list_wrong_owner_evidence")
     if _inventory_list_weak_evidence(
         query=query,
         query_reason=query_reason,
@@ -1344,7 +1354,7 @@ def _inventory_list_exact_evidence(
         return False
     text = item.text
     if _INVENTORY_POTTERY_QUERY_RE.search(query):
-        return _INVENTORY_POTTERY_EVIDENCE_RE.search(text) is not None
+        return _INVENTORY_POTTERY_OWNER_EVIDENCE_RE.search(text) is not None
     if _INVENTORY_COUNTRY_QUERY_RE.search(query):
         return _INVENTORY_COUNTRY_EVIDENCE_RE.search(text) is not None
     if _INVENTORY_CAUSE_QUERY_RE.search(query):
@@ -1367,11 +1377,28 @@ def _inventory_list_weak_evidence(
         return False
     if _inventory_list_exact_evidence(query=query, query_reason=query_reason, item=item):
         return False
+    if _INVENTORY_POTTERY_QUERY_RE.search(query) and _INVENTORY_POTTERY_EVIDENCE_RE.search(
+        item.text
+    ):
+        return True
     if _INVENTORY_GENERIC_WEAK_RE.search(item.text):
         return True
     if _inventory_query_has_specific_expected_slot(query):
         return relevance.distinctive_term_hits < 4 or relevance.unique_term_hits < 4
     return False
+
+
+def _inventory_list_wrong_owner_evidence(
+    *,
+    query: str,
+    query_reason: str,
+    item: ContextItem,
+) -> bool:
+    if not _is_inventory_list_candidate(query_reason=query_reason, item=item):
+        return False
+    if not _INVENTORY_POTTERY_QUERY_RE.search(query):
+        return False
+    return _INVENTORY_POTTERY_EVIDENCE_RE.search(item.text) is not None
 
 
 def _inventory_query_has_specific_expected_slot(query: str) -> bool:

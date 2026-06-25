@@ -93,23 +93,65 @@ from infinity_context_core.application.context_snippets import (
 )
 from infinity_context_core.application.context_source_siblings import (
     _SourceSiblingRank,
+)
+from infinity_context_core.application.context_source_siblings import (
     is_dialogue_visual_reference_source_sibling as _is_dialogue_visual_reference_source_sibling,
+)
+from infinity_context_core.application.context_source_siblings import (
+    is_pottery_type_evidence_text as _is_pottery_type_evidence_text,
+)
+from infinity_context_core.application.context_source_siblings import (
     is_pottery_type_observation_companion as _is_pottery_type_observation_companion,
+)
+from infinity_context_core.application.context_source_siblings import (
+    is_pottery_type_retrieval_scope as _is_pottery_type_retrieval_scope,
+)
+from infinity_context_core.application.context_source_siblings import (
     is_precise_source_sibling_turn as _is_precise_source_sibling_turn,
+)
+from infinity_context_core.application.context_source_siblings import (
     is_same_document_answer_companion as _is_same_document_answer_companion,
+)
+from infinity_context_core.application.context_source_siblings import (
     is_visual_continuation_source_sibling as _is_visual_continuation_source_sibling,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_group_seed_turns as _source_group_seed_turns,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_candidate_rank_key as _source_sibling_candidate_rank_key,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_companion_extra_item_limit as _source_sibling_companion_extra_item_limit,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_companion_extra_slot as _source_sibling_companion_extra_slot,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_group_limit as _source_sibling_group_limit,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_item_limit as _source_sibling_item_limit,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_marker_coverage_count as _source_sibling_marker_coverage_count,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_rank as _source_sibling_rank,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_relevance_allowed as _source_sibling_relevance_allowed,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_score as _source_sibling_score,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_score_cap as _source_sibling_score_cap,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_turn_marker as _source_turn_marker,
+)
+from infinity_context_core.application.context_source_siblings import (
     with_source_sibling_score_signals as _with_source_sibling_score_signals,
 )
 from infinity_context_core.application.context_temporal_query import (
@@ -219,6 +261,11 @@ _RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS = frozenset(
     }
 )
 _RELATION_REQUIREMENT_MATCH_RERANK_REASON = "relation_requirement_match"
+_RELATION_REQUIREMENT_SUPPORT_RERANK_REASONS = frozenset(
+    {
+        "inventory_list_exact_evidence",
+    }
+)
 _ANSWER_SHAPE_MISSING_RERANK_REASON = "explicit_answer_shape_missing"
 
 
@@ -888,6 +935,12 @@ class BuildContextUseCase:
                                 cache=query_relevance_cache,
                             )
                         )
+                        if _is_pottery_type_retrieval_scope(
+                            expansion_reason=expansion_reason,
+                            expansion_query=expansion_query,
+                        ) and not _is_pottery_type_evidence_text(chunk_text):
+                            skipped += 1
+                            continue
                         answer_companion_slot = ""
                         if _is_same_document_answer_companion(
                             chunk=neighbor,
@@ -2432,6 +2485,7 @@ def _has_relation_requirement_mismatch(item: ContextItem) -> bool:
     return (
         bool(_RELATION_REQUIREMENT_MISMATCH_RERANK_REASONS.intersection(reasons))
         and _RELATION_REQUIREMENT_MATCH_RERANK_REASON not in reasons
+        and not _RELATION_REQUIREMENT_SUPPORT_RERANK_REASONS.intersection(reasons)
     )
 
 

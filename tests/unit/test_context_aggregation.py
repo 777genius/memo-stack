@@ -1201,6 +1201,44 @@ def test_source_sibling_caps_generic_volunteer_career_noise() -> None:
     assert strong_score > weak_score
 
 
+def test_source_sibling_filters_visual_noise_for_pottery_inventory_query() -> None:
+    query = (
+        "melanie types pottery kids made type kind finished created project "
+        "piece visual image caption cup bowl pot plate inventory list"
+    )
+    visual_noise = (
+        "D14:11 Caroline: Wow, Mel, you're amazing! "
+        "image caption: a photo of a crowd walking with a rainbow flag. "
+        "visual query: volunteering pride event."
+    )
+    pottery_evidence = (
+        "D8:4 Melanie: The kids loved the pottery workshop, made something "
+        "with clay, and the image shows a cup with a dog face."
+    )
+    rank = _SourceSiblingRank(
+        score=0.968,
+        group_priority=1,
+        turn_distance=0,
+        turn_delta=0,
+        group_level_seed=True,
+    )
+
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=score_query_relevance(query=query, text=visual_noise),
+        expansion_query=query,
+        expansion_reason="decomposition_inventory_list",
+        text=visual_noise,
+    )
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=score_query_relevance(query=query, text=pottery_evidence),
+        expansion_query=query,
+        expansion_reason="decomposition_inventory_list",
+        text=pottery_evidence,
+    )
+
+
 def test_source_sibling_filters_post_event_activity_timing_noise() -> None:
     weak_text = (
         "D2:5 Melanie: I carve out me-time each day with running, reading, "

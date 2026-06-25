@@ -130,6 +130,13 @@ _POTTERY_TYPE_INVENTORY_CONTEXT_RE = re.compile(
     r"\b(?:pottery|ceramic|clay|bowl|bowls|cup|cups|mug|mugs|plate|plates)\b",
     re.IGNORECASE,
 )
+_POTTERY_TYPE_CUP_SLOT_RE = re.compile(r"\b(?:cup|cups|mug|mugs|dog\s+face)\b", re.IGNORECASE)
+_POTTERY_TYPE_BOWL_SLOT_RE = re.compile(r"\b(?:bowl|bowls)\b", re.IGNORECASE)
+_POTTERY_TYPE_POT_SLOT_RE = re.compile(r"\b(?:pot|pots)\b", re.IGNORECASE)
+_POTTERY_TYPE_PROJECT_SLOT_RE = re.compile(
+    r"\b(?:clay|ceramic|project|projects|piece|pieces|finished)\b",
+    re.IGNORECASE,
+)
 _FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE = re.compile(
     r"\b(?:husband|motivated|motivate|motivation)\b(?=.{0,180}\b"
     r"(?:family|kids?|children|hiking|hike|nature|waterfall|trail))|"
@@ -944,12 +951,15 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
 
 
 def _inventory_answer_slot(item: ContextItem, *, query_reason: str) -> str:
-    if not _is_inventory_list_reason(query_reason):
+    if not _is_inventory_list_reason(query_reason) and not _is_pottery_type_reason(query_reason):
         return ""
     return _inventory_answer_slot_for_text(item.text)
 
 
 def _inventory_answer_slot_for_text(text: str) -> str:
+    pottery_slot = _pottery_type_inventory_slot_for_text(text)
+    if pottery_slot:
+        return pottery_slot
     if _INVENTORY_SHELTER_SLOT_RE.search(text):
         return "shelter"
     if _INVENTORY_GYM_SLOT_RE.search(text):
@@ -981,15 +991,20 @@ def _inventory_answer_slot_priority(slot: str) -> int:
     normalized_slot = slot.replace("-", "_")
     return {
         "direct_friend": 0,
+        "pottery_cup": 0,
+        "pottery_pot": 0,
         "shelter": 1,
         "gym": 1,
         "church_joined": 1,
         "country": 1,
         "education_infrastructure": 1,
         "veterans": 1,
+        "pottery_bowl": 1,
+        "pottery_project": 2,
         "church": 2,
         "volunteer": 2,
         "community": 3,
+        "pottery_generic": 3,
         "place": 4,
         "support_group": 5,
     }.get(normalized_slot, 6)
@@ -1110,6 +1125,14 @@ def _family_activity_answer_object_rank(text: str) -> int:
 
 def _inventory_list_answer_object_rank(text: str) -> int:
     slot = _inventory_answer_slot_for_text(text)
+    if slot in {"pottery_cup", "pottery_pot"}:
+        return 0
+    if slot == "pottery_bowl":
+        return 1
+    if slot == "pottery_project":
+        return 2
+    if slot == "pottery_generic":
+        return 3
     if slot == "direct_friend":
         return 0
     if slot in {
@@ -1128,6 +1151,20 @@ def _inventory_list_answer_object_rank(text: str) -> int:
     if slot == "support_group":
         return 5
     return 6
+
+
+def _pottery_type_inventory_slot_for_text(text: str) -> str:
+    if _POTTERY_TYPE_INVENTORY_CONTEXT_RE.search(text) is None:
+        return ""
+    if _POTTERY_TYPE_CUP_SLOT_RE.search(text):
+        return "pottery_cup"
+    if _POTTERY_TYPE_POT_SLOT_RE.search(text):
+        return "pottery_pot"
+    if _POTTERY_TYPE_BOWL_SLOT_RE.search(text):
+        return "pottery_bowl"
+    if _POTTERY_TYPE_PROJECT_SLOT_RE.search(text):
+        return "pottery_project"
+    return "pottery_generic"
 
 
 def _precise_turn_answer_support_rank(item: ContextItem, *, query_reason: str) -> int:

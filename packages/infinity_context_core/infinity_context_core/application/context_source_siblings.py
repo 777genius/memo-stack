@@ -312,10 +312,10 @@ def source_sibling_score_cap(
         and relevance.distinctive_term_hits < _PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS
     ):
         return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
-    if (
-        expansion_reason == "pottery_type_bridge"
-        and not _is_pottery_type_source_sibling_strong(text)
-    ):
+    if _is_pottery_type_source_sibling_scope(
+        expansion_reason=expansion_reason,
+        expansion_query="",
+    ) and not _is_pottery_type_source_sibling_strong(text):
         return _POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP
     if (
         expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
@@ -381,6 +381,17 @@ def is_same_document_answer_companion(
     )
 
 
+def is_pottery_type_retrieval_scope(*, expansion_reason: str, expansion_query: str) -> bool:
+    return _is_pottery_type_source_sibling_scope(
+        expansion_reason=expansion_reason,
+        expansion_query=expansion_query,
+    )
+
+
+def is_pottery_type_evidence_text(text: str) -> bool:
+    return _is_pottery_type_source_sibling_strong(text)
+
+
 def source_sibling_companion_extra_slot(*, chunk: MemoryChunk, text: str) -> str:
     if not str(chunk.source_external_id).endswith(":observation"):
         return ""
@@ -398,9 +409,10 @@ def source_sibling_relevance_allowed(
     expansion_reason: str,
     text: str,
 ) -> bool:
-    if expansion_reason == "pottery_type_bridge" and not _is_pottery_type_source_sibling_strong(
-        text
-    ):
+    if _is_pottery_type_source_sibling_scope(
+        expansion_reason=expansion_reason,
+        expansion_query=expansion_query,
+    ) and not _is_pottery_type_source_sibling_strong(text):
         return False
     if (
         expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
@@ -667,6 +679,14 @@ def _is_pottery_type_source_sibling_reason(expansion_reason: str) -> bool:
         "pottery-type-bridge",
         "decomposition-inventory-list",
     }
+
+
+def _is_pottery_type_source_sibling_scope(*, expansion_reason: str, expansion_query: str) -> bool:
+    if expansion_reason == "pottery_type_bridge":
+        return True
+    if expansion_reason != "decomposition_inventory_list":
+        return False
+    return _POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE.search(expansion_query) is not None
 
 
 def _is_pottery_type_observation_companion_text(

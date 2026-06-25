@@ -106,6 +106,28 @@ def test_requirement_guard_keeps_relation_requirement_match_evidence() -> None:
     assert diagnostics["requirement_guard_items_dropped"] == 0
 
 
+def test_requirement_guard_keeps_domain_exact_evidence_for_relation_shape() -> None:
+    item = _item(
+        "melanie_pottery_cups",
+        "D8:4 Melanie: My kids and I made clay cups in pottery class.",
+        deterministic_reasons=(
+            "relation_requirement_missing_relation",
+            "inventory_list_exact_evidence",
+        ),
+    )
+    query = "What types of pottery have Melanie and her kids made?"
+
+    guarded_items, diagnostics = _apply_explicit_requirement_guard(
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        items=(item,),
+    )
+
+    assert guarded_items == (item,)
+    assert diagnostics["requirement_guard_status"] == "satisfied"
+    assert diagnostics["requirement_guard_items_dropped"] == 0
+
+
 def test_requirement_guard_drops_missing_count_answer_shape_evidence() -> None:
     item = _item(
         "generic_pet_note",

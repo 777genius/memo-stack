@@ -76,7 +76,7 @@ def test_support_network_signal_accepts_negative_experience_support_bridge() -> 
 def test_inventory_signal_requires_query_specific_exact_slot() -> None:
     pottery = _item(
         "pottery",
-        text="Melanie and the kids made clay bowls and a small cup.",
+        text="D8:4 Melanie: The kids made clay bowls and a small cup.",
         query_expansion_reason="decomposition_inventory_list",
     )
     country_noise = _item(
@@ -102,6 +102,45 @@ def test_inventory_signal_requires_query_specific_exact_slot() -> None:
     assert pottery_signal.reason == "inventory_list_exact_evidence"
     assert noise_signal.penalty > 0
     assert noise_signal.reason == "inventory_list_weak_evidence"
+
+
+def test_inventory_signal_penalizes_wrong_owner_pottery_evidence() -> None:
+    wrong_owner = _item(
+        "wrong_owner_bowl",
+        text=(
+            "D4:5 Caroline: Yep, Melanie! I've got a hand-painted bowl "
+            "a friend made for my birthday."
+        ),
+        query_expansion_reason="decomposition_inventory_list",
+    )
+
+    signal = inventory_list_rerank_signal(
+        query="What types of pottery have Melanie and her kids made?",
+        query_reason="decomposition_inventory_list",
+        item=wrong_owner,
+        relevance=_relevance(distinctive_term_hits=7, unique_term_hits=7),
+    )
+
+    assert signal.penalty > 0
+    assert signal.reason == "inventory_list_wrong_owner_evidence"
+
+
+def test_inventory_signal_accepts_pottery_type_bridge_reason() -> None:
+    exact = _item(
+        "pottery_type_bridge",
+        text="D5:6 Melanie: I made a pottery bowl in class.",
+        query_expansion_reason="pottery_type_bridge",
+    )
+
+    signal = inventory_list_rerank_signal(
+        query="What types of pottery have Melanie and her kids made?",
+        query_reason="pottery_type_bridge",
+        item=exact,
+        relevance=_relevance(distinctive_term_hits=7, unique_term_hits=7),
+    )
+
+    assert signal.boost > 0
+    assert signal.reason == "inventory_list_exact_evidence"
 
 
 def test_event_sequence_signal_requires_exact_event_anchors_and_outcome() -> None:
