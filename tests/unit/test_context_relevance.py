@@ -1,4 +1,9 @@
-from infinity_context_core.application.context_lexical import query_terms
+from infinity_context_core.application.context_lexical import (
+    query_terms,
+    text_variant_counts,
+    text_variant_sequence,
+    text_variant_stats,
+)
 from infinity_context_core.application.context_relevance import (
     has_project_identity_mismatch,
     is_chunk_candidate_relevance_sufficient,
@@ -19,6 +24,17 @@ def test_query_relevance_matches_russian_case_variants() -> None:
     assert relevance.unique_term_hits >= 4
     assert relevance.hit_ratio >= 0.8
     assert relevance.score_boost > 0.08
+
+
+def test_text_variant_stats_matches_legacy_count_and_sequence_semantics() -> None:
+    text = "Atlas_launch moved on 2026-08-15. Алекс обсуждал Atlas launch."
+
+    counts, sequence_length = text_variant_stats(text)
+
+    assert counts == text_variant_counts(text)
+    assert sequence_length == len(text_variant_sequence(text))
+    assert counts["atlas"] >= 2
+    assert counts["date_2026_08_15"] == 1
 
 
 def test_query_relevance_matches_cross_language_relative_event_terms() -> None:

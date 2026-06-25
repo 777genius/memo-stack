@@ -408,13 +408,23 @@ def query_terms(
     return tuple(terms)
 
 
-def text_variant_counts(text: str, *, min_chars: int = 2) -> Counter[str]:
+def text_variant_stats(text: str, *, min_chars: int = 2) -> tuple[Counter[str], int]:
     counts: Counter[str] = Counter()
+    sequence_length = 0
     for token in _tokens(text, split_underscores=True):
         if len(token) < min_chars:
             continue
-        for variant in _text_token_variants(token):
+        variants = _text_token_variants(token)
+        if not variants:
+            continue
+        sequence_length += 1
+        for variant in variants:
             counts[variant] += 1
+    return counts, sequence_length
+
+
+def text_variant_counts(text: str, *, min_chars: int = 2) -> Counter[str]:
+    counts, _ = text_variant_stats(text, min_chars=min_chars)
     return counts
 
 

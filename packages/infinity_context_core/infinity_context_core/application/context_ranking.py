@@ -49,8 +49,7 @@ from infinity_context_core.application.context_lexical import (
     LexicalQueryTerm,
     query_term_frequency,
     query_terms,
-    text_variant_counts,
-    text_variant_sequence,
+    text_variant_stats,
 )
 from infinity_context_core.application.context_object_mismatch import (
     object_kind_mismatch_signal,
@@ -1173,8 +1172,8 @@ def _bm25_prepared_item(
         if cached is not None:
             counts, length = cached
             return _Bm25PreparedItem(item=item, text_counts=counts, length=length)
-    counts = text_variant_counts(item.text)
-    length = max(1, len(text_variant_sequence(item.text)))
+    counts, sequence_length = text_variant_stats(item.text)
+    length = max(1, sequence_length)
     if text_stats_cache is not None:
         text_stats_cache[item.text] = (counts, length)
     return _Bm25PreparedItem(
