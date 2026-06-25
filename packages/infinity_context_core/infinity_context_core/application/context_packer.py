@@ -114,6 +114,19 @@ _SENSITIVE_QUOTE_MARKERS = (
     "authorization",
 )
 _DIALOGUE_MARKER_RE = re.compile(r"\bD\d+:\d+\b")
+_ANIMAL_CARE_DIRECT_INSTRUCTION_RE = re.compile(
+    r"\b(?:keep(?:ing)?\s+(?:their|the)?\s*(?:area|tank|space|habitat)\s+clean|"
+    r"clean\s+(?:area|tank|space|habitat)|feed(?:ing)?\s+(?:them\s+)?properly|"
+    r"enough\s+light|make\s+sure\s+they\s+get\s+enough\s+light|"
+    r"care\s+instructions?|kind\s+of\s+fun)\b",
+    re.IGNORECASE,
+)
+_ANIMAL_CARE_GENERIC_HABITAT_RE = re.compile(
+    r"\b(?:relaxing\s+in\s+the\s+tank|basking|heat\s+lamp|new\s+tank|"
+    r"bigger\s+tank|room\s+to\s+swim|took\s+my\s+turtles\s+out\s+for\s+a\s+walk|"
+    r"cute\s+pet|little\s+dudes)\b",
+    re.IGNORECASE,
+)
 _POTTERY_TYPE_PRIMARY_ANSWER_OBJECT_RE = re.compile(
     r"\b(?:clay|cup|cups|mug|mugs|pot|pots|dog\s+face)\b",
     re.IGNORECASE,
@@ -1217,12 +1230,24 @@ def _precise_answer_content_rank(item: ContextItem, *, query_reason: str) -> int
         if "running" in text:
             return 2
         return 3
+    if query_reason == "animal_care_instruction_bridge":
+        return _animal_care_instruction_content_rank(item.text)
     if query_reason != "meteor_shower_feeling_bridge":
         return 0
     text = item.text.casefold()
     if "awe" in text or "tiny" in text:
         return 0
     if "felt" in text or "feel" in text or "universe" in text:
+        return 1
+    return 2
+
+
+def _animal_care_instruction_content_rank(text: str) -> int:
+    if _ANIMAL_CARE_DIRECT_INSTRUCTION_RE.search(text):
+        return 0
+    if _ANIMAL_CARE_GENERIC_HABITAT_RE.search(text):
+        return 3
+    if re.search(r"\b(?:care|clean|feed|light|habitat|routine)\b", text, re.IGNORECASE):
         return 1
     return 2
 

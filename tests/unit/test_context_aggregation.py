@@ -1003,6 +1003,58 @@ def test_source_sibling_score_caps_low_signal_pottery_type_noise() -> None:
     assert weak_score < strong_score
 
 
+def test_source_sibling_filters_animal_care_instruction_noise() -> None:
+    weak_text = (
+        "D10:8 Nate: It was super awesome! So much adrenaline went into that "
+        "last match. Enough about me though, how about you?"
+    )
+    strong_text = (
+        "D5:8 Nate: No, not really. Just keep their area clean, feed them "
+        "properly, and make sure they get enough light. It's actually kind of fun."
+    )
+    query = (
+        "Nate animal care instructions clean area clean tank feed properly "
+        "enough light habitat routine responsible pets reptiles turtles keeper zoo"
+    )
+    rank = _SourceSiblingRank(
+        score=0.968,
+        group_priority=1,
+        turn_distance=0,
+        turn_delta=0,
+        group_level_seed=True,
+    )
+    weak_relevance = score_query_relevance(query=query, text=weak_text)
+    strong_relevance = score_query_relevance(query=query, text=strong_text)
+
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="animal_care_instruction_bridge",
+        text=weak_text,
+    )
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="animal_care_instruction_bridge",
+        text=strong_text,
+    )
+    assert _source_sibling_score(
+        rank=rank,
+        relevance=strong_relevance,
+        expansion_query=query,
+        expansion_reason="animal_care_instruction_bridge",
+        text=strong_text,
+    ) > _source_sibling_score(
+        rank=rank,
+        relevance=weak_relevance,
+        expansion_query=query,
+        expansion_reason="animal_care_instruction_bridge",
+        text=weak_text,
+    )
+
+
 def test_source_sibling_promotes_pottery_observation_companion() -> None:
     chunk = SimpleNamespace(
         source_external_id="locomo:conv-26:session_12:observation",

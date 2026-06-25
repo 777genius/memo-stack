@@ -1020,6 +1020,57 @@ def test_answer_support_rank_prefers_precise_exact_turn_over_generic_broad_obser
     assert _answer_support_family_item_key(exact) < _answer_support_family_item_key(broad)
 
 
+def test_answer_support_rank_prefers_direct_animal_care_instructions_over_habitat_frame() -> None:
+    instruction = ContextItem(
+        item_id="animal_care_instruction",
+        item_type="chunk",
+        text=(
+            "D5:8 Nate: No, not really. Just keep their area clean, feed them "
+            "properly, and make sure they get enough light. It's actually kind of fun."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_5:D5:8:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "animal_care_instruction_bridge",
+                "distinctive_term_hits": 7,
+                "phrase_bigram_hits": 1,
+            },
+        },
+    )
+    habitat_frame = ContextItem(
+        item_id="animal_care_habitat_frame",
+        item_type="chunk",
+        text=(
+            "D25:17 Nate: They look tired from all the walking, so they're relaxing "
+            "in the tank right now. visual query: turtles basking heat lamp"
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_25:D25:17:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "animal_care_instruction_bridge",
+                "distinctive_term_hits": 12,
+                "phrase_bigram_hits": 4,
+            },
+        },
+    )
+
+    assert _answer_support_family_item_key(instruction) < _answer_support_family_item_key(
+        habitat_frame
+    )
+
+
 def test_answer_support_family_prefers_exact_turn_for_hike_count() -> None:
     exact = ContextItem(
         item_id="hike_exact",

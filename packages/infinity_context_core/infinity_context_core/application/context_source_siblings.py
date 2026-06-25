@@ -85,6 +85,13 @@ _POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_ANIMAL_CARE_INSTRUCTION_SOURCE_SIBLING_RE = re.compile(
+    r"\b(?:keep(?:ing)?\s+(?:their|the)?\s*(?:area|tank|space|habitat)\s+clean|"
+    r"clean\s+(?:area|tank|space|habitat)|feed(?:ing)?\s+(?:them\s+)?properly|"
+    r"enough\s+light|make\s+sure\s+they\s+get\s+enough\s+light|"
+    r"care\s+instructions?|kind\s+of\s+fun)\b",
+    re.IGNORECASE,
+)
 _VOLUNTEER_CAREER_SOURCE_SIBLING_CONTEXT_RE = re.compile(
     r"\b(volunteer(?:ed|ing|s)?|shelter|homeless)\b",
     re.IGNORECASE,
@@ -318,6 +325,11 @@ def source_sibling_score_cap(
     ) and not _is_pottery_type_source_sibling_strong(text):
         return _POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP
     if (
+        expansion_reason == "animal_care_instruction_bridge"
+        and not _is_animal_care_instruction_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
         expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
         and not _is_running_reason_source_sibling_strong(text)
     ):
@@ -414,6 +426,8 @@ def source_sibling_relevance_allowed(
         expansion_query=expansion_query,
     ) and not _is_pottery_type_source_sibling_strong(text):
         return False
+    if expansion_reason == "animal_care_instruction_bridge":
+        return _is_animal_care_instruction_source_sibling_strong(text)
     if (
         expansion_reason in {"running_reason_bridge", "running_reason_question_bridge"}
         and not _is_running_reason_source_sibling_strong(text)
@@ -672,6 +686,10 @@ def _is_pottery_type_source_sibling_strong(text: str) -> bool:
         _POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE.search(text) is not None
         and _POTTERY_TYPE_SOURCE_SIBLING_ACTION_RE.search(text) is not None
     )
+
+
+def _is_animal_care_instruction_source_sibling_strong(text: str) -> bool:
+    return _ANIMAL_CARE_INSTRUCTION_SOURCE_SIBLING_RE.search(text) is not None
 
 
 def _is_pottery_type_source_sibling_reason(expansion_reason: str) -> bool:
