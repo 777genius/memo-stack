@@ -147,6 +147,22 @@ def test_protected_query_head_keys_keep_multiple_item_purchase_heads() -> None:
     )
 
 
+def test_protected_query_head_keys_keep_multiple_family_activity_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:family_activity_bridge": (
+            "family_swimming",
+            "family_hiking_visual",
+            "generic_b",
+        ),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "family_swimming",
+        "family_hiking_visual",
+    )
+
+
 def test_protected_query_head_keys_keep_multiple_animal_evidence_facets() -> None:
     rankings = {
         "0:original_query": ("generic_a",),

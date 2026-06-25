@@ -203,6 +203,7 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_care_instruction_bridge",
         "animal_diet_evidence_bridge",
         "animal_habitat_setup_bridge",
+        "family_activity_bridge",
         "item_purchase_bridge",
         "symbol_importance_bridge",
     }
