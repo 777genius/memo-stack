@@ -636,6 +636,16 @@ _RELIGIOUS_TOPIC_NOISE_TERMS = frozenset(
         "unwelcoming",
     }
 )
+_RELIGIOUS_CONTRAST_CONTEXT_TERMS = frozenset(
+    {
+        "conservative",
+        "conservatives",
+        "unwelcoming",
+        "upset",
+        "lgbtq",
+        "rights",
+    }
+)
 _CAUSAL_TEXT_RE = re.compile(
     r"\b(?:because|so|since|therefore|reason|caused|led\s+to|inspired|"
     r"motivated|made\s+(?:me|her|him|them)\s+feel|gave\s+(?:me|her|him|them)|"
@@ -900,6 +910,11 @@ def _religious_inference_signal(*, query: str, text: str) -> AnswerEvidenceSigna
             boost=0.026,
             reason="inference_religious_fit_evidence",
         )
+    if _is_religious_contrast_evidence(text_tokens):
+        return AnswerEvidenceSignal(
+            penalty=0.014,
+            reason="inference_religious_contrast_evidence",
+        )
     if text_tokens & _RELIGIOUS_TOPIC_NOISE_TERMS:
         return AnswerEvidenceSignal(
             penalty=0.032,
@@ -911,6 +926,12 @@ def _religious_inference_signal(*, query: str, text: str) -> AnswerEvidenceSigna
             reason="inference_religious_weak_evidence",
         )
     return AnswerEvidenceSignal()
+
+
+def _is_religious_contrast_evidence(text_tokens: frozenset[str]) -> bool:
+    if "religious" not in text_tokens:
+        return False
+    return bool(text_tokens & _RELIGIOUS_CONTRAST_CONTEXT_TERMS)
 
 
 def _patriotic_service_inference_signal(*, query: str, text: str) -> AnswerEvidenceSignal:

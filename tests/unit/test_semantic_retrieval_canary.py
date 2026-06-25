@@ -24,13 +24,13 @@ def test_semantic_retrieval_canary_reports_false_positive_guards() -> None:
 
     cases = {case["case_id"]: case for case in result["cases"]}
     ally = cases["ally_support_does_not_use_subject_identity_noise"]
-    religious_noise = cases["religious_political_topic_penalized"]
+    religious_contrast = cases["religious_contrast_context_bounded"]
     relative = cases["relative_time_message_query_keeps_conversation_recency"]
 
     assert "identity_bridge" not in ally["bounded_reasons"]
     assert "decomposition_ally_support_evidence" in ally["bounded_reasons"]
-    assert religious_noise["signal_reason"] == "inference_religious_topic_only_noise"
-    assert religious_noise["penalty"] > 0
+    assert religious_contrast["signal_reason"] == "inference_religious_contrast_evidence"
+    assert 0 < religious_contrast["penalty"] < 0.032
     assert "decomposition_conversation_recency" in relative["bounded_reasons"]
 
 

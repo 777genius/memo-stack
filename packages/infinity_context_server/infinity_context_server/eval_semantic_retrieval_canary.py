@@ -211,14 +211,14 @@ def _signal_cases() -> tuple[_SignalCanaryCase, ...]:
             expect_boost=True,
         ),
         _SignalCanaryCase(
-            case_id="religious_political_topic_penalized",
+            case_id="religious_contrast_context_bounded",
             category="religious_inference",
             query="Would Caroline be considered religious?",
             text=(
                 "Caroline said religious conservatives made her feel unwelcoming "
                 "during her transgender journey."
             ),
-            expected_reason="inference_religious_topic_only_noise",
+            expected_reason="inference_religious_contrast_evidence",
             expect_penalty=True,
         ),
         _SignalCanaryCase(

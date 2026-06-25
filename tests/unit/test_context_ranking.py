@@ -3640,7 +3640,7 @@ def test_deterministic_rerank_prefers_religious_inference_evidence() -> None:
     )
 
 
-def test_deterministic_rerank_penalizes_religious_political_noise() -> None:
+def test_deterministic_rerank_keeps_religious_contrast_evidence_below_direct_fit() -> None:
     query = "Would Caroline be considered religious?"
     plan = build_query_expansion_plan(query)
     intent = build_query_anchor_intent(query)
@@ -3670,7 +3670,7 @@ def test_deterministic_rerank_penalizes_religious_political_noise() -> None:
 
     assert by_id["church_evidence"].score > by_id["political_noise"].score
     assert (
-        "inference_religious_topic_only_noise"
+        "inference_religious_contrast_evidence"
         in by_id["political_noise"].diagnostics["provenance"][
             "deterministic_rerank_reasons"
         ]

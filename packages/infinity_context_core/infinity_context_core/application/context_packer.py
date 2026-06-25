@@ -72,6 +72,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "painting-inventory-bridge",
         "pottery-type-bridge",
         "recommendation-source-bridge",
+        "religious-inference-bridge",
         "running-reason-bridge",
         "running-reason-question-bridge",
         "symbol-importance-bridge",
@@ -246,6 +247,16 @@ _INVENTORY_COUNTRY_SLOT_RE = re.compile(
 _INVENTORY_PLACE_MARKER_RE = re.compile(
     r"\b(?:homeless\s+shelter|dog\s+shelter|shelter|volunteers?|church|gym)\b",
     re.IGNORECASE,
+)
+_RELIGIOUS_DIRECT_EVIDENCE_RE = re.compile(
+    r"\b(?:church|faith|stained\s+glass|pray|prayer|spiritual|worship)\b",
+    re.IGNORECASE,
+)
+_RELIGIOUS_CONTRAST_EVIDENCE_RE = re.compile(
+    r"\breligious\b(?=.{0,160}\b(?:conservatives?|unwelcoming|upset|lgbtq|rights)\b)|"
+    r"\b(?:conservatives?|unwelcoming|upset|lgbtq|rights)\b"
+    r"(?=.{0,160}\breligious\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -761,6 +772,7 @@ def _answer_support_source_group_reason_key(family: str) -> str:
         "query_reason_broad_turn_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
+        "query_reason_inference_slot_source_group",
         "query_reason_inventory_slot_source_group",
         "query_reason_marker_coverage_source_group",
         "query_reason_source_group",
@@ -789,6 +801,7 @@ def _answer_support_source_group_limit(
         "query_reason_broad_turn_source_group",
         "query_reason_career_slot_source_group",
         "query_reason_count_coverage_source_group",
+        "query_reason_inference_slot_source_group",
         "query_reason_inventory_slot_source_group",
         "query_reason_marker_coverage_source_group",
     }
@@ -824,6 +837,7 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
         source_group = _answer_support_source_group(item)
         career_slot = _career_answer_slot(item, query_reason=query_reason)
         activity_slot = _activity_answer_slot(item, query_reason=query_reason)
+        inference_slot = _inference_answer_slot(item, query_reason=query_reason)
         inventory_slot = _inventory_answer_slot(item, query_reason=query_reason)
         if source_group:
             if broad_turn_slot := _broad_evidence_turn_slot(item, query_reason=query_reason):
@@ -870,6 +884,13 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                     career_slot,
                     source_group,
                 )
+            if inference_slot:
+                return _compound_diversity_family(
+                    "query_reason_inference_slot_source_group",
+                    query_reason,
+                    inference_slot,
+                    source_group,
+                )
             if _diagnostic_signal_truthy(item, "source_sibling_dialogue_visual_reference"):
                 return _compound_diversity_family(
                     "query_reason_source_group_visual_reference",
@@ -898,6 +919,12 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                 "query_reason_career_slot",
                 query_reason,
                 career_slot,
+            )
+        if inference_slot:
+            return _compound_diversity_family(
+                "query_reason_inference_slot",
+                query_reason,
+                inference_slot,
             )
         return _typed_diversity_family("query_reason", query_reason)
 
@@ -1083,6 +1110,16 @@ def _career_answer_slot(item: ContextItem, *, query_reason: str) -> str:
     for slot, markers in slots:
         if any(marker in padded for marker in markers):
             return slot
+    return ""
+
+
+def _inference_answer_slot(item: ContextItem, *, query_reason: str) -> str:
+    if query_reason.replace("_", "-") != "religious-inference-bridge":
+        return ""
+    if _RELIGIOUS_CONTRAST_EVIDENCE_RE.search(item.text):
+        return "religious_contrast"
+    if _RELIGIOUS_DIRECT_EVIDENCE_RE.search(item.text):
+        return "religious_direct"
     return ""
 
 

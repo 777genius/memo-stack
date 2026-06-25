@@ -3102,6 +3102,56 @@ def test_answer_support_inventory_slot_takes_precedence_over_marker_coverage() -
     assert ":church-joined:" in family
 
 
+def test_answer_support_family_splits_religious_direct_and_contrast_evidence() -> None:
+    direct = ContextItem(
+        item_id="d14_church",
+        item_type="chunk",
+        text=(
+            "D14:19 Caroline: It was made for a local church and shows time "
+            "changing our lives."
+        ),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_14:D14:19:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "religious_inference_bridge"},
+        },
+    )
+    contrast = ContextItem(
+        item_id="d12_contrast",
+        item_type="chunk",
+        text=(
+            "D12:1 Caroline: I ran into a group of religious conservatives "
+            "who said something upsetting about LGBTQ rights."
+        ),
+        score=0.88,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "religious_inference_bridge"},
+        },
+    )
+
+    direct_family = _answer_support_diversity_family(direct)
+    contrast_family = _answer_support_diversity_family(contrast)
+    candidates = _answer_support_diversity_candidates([direct, contrast])
+
+    assert direct_family != contrast_family
+    assert ":religious-direct:" in direct_family
+    assert ":religious-contrast:" in contrast_family
+    assert {item.item_id for item in candidates.values()} == {"d14_church", "d12_contrast"}
+
+
 def test_answer_support_family_splits_cause_inventory_slots() -> None:
     education = ContextItem(
         item_id="d9_education",
