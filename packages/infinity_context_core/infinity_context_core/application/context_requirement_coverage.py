@@ -189,7 +189,9 @@ _LIST_ANSWER_QUERY_RE = re.compile(
     r"(?=.{0,96}\b("
     r"books?|items?|instruments?|pets?|mediums?|hobbies|activities|events?|"
     r"artists?|bands?|types?|kinds?|interests?|musicians?|songs?|fields?|"
-    r"ways|symbols?|attributes?|things?"
+    r"ways|symbols?|attributes?|things?|people|persons|stakeholders?|contacts?|"
+    r"owners?|participants?|collaborators?|люди|участники|контакты|"
+    r"стейкхолдеры|ответственные"
     r")\b)",
     re.IGNORECASE | re.DOTALL,
 )
@@ -422,6 +424,13 @@ _PREFERENCE_ANSWER_QUERY_RE = re.compile(
 )
 _RELATIONSHIP_ANSWER_QUERY_RE = re.compile(
     r"\brelationship\s+status\b|"
+    r"\bwho\s+(?:is|are|was|were)\s+(?:connected|related|linked|associated|"
+    r"involved)\b|"
+    r"\b(?:which|what)\s+(?:people|persons|stakeholders?|contacts?|owners?|"
+    r"participants?|collaborators?)\b"
+    r"(?=.{0,120}\b(?:connected|related|linked|associated|involved|for|with|to|in|on)\b)|"
+    r"\b(?:кто|какие\s+(?:люди|участники|контакты|стейкхолдеры|ответственные))\b"
+    r"(?=.{0,120}\b(?:связан|связаны|относятся|участвуют|вовлечены|по|для|с|в)\b)|"
     rf"\bwho\s+(?:is|was|'s)\s+{_QUERY_ANSWER_LABEL_RE}(?:'s|s')?\s+"
     r"(?:husband|wife|spouse|partner|boyfriend|girlfriend|fianc(?:e|ee)|"
     r"friend|best\s+friend|old\s+friend|sibling|brother|sister|mother|father|"
@@ -764,9 +773,13 @@ _PREFERENCE_ANSWER_TEXT_RE = re.compile(
 _RELATIONSHIP_ANSWER_TEXT_RE = re.compile(
     r"\b(?:relationship\s+status|married\s+to|been\s+married|got\s+married|"
     r"single|dating|breakup|broke\s+up|divorced|engaged|partnered)\b|"
+    r"\b(?:connected|related|linked|associated|involved|stakeholders?|contacts?|"
+    r"participants?|collaborators?)\b|"
     r"\b(?:husband|wife|spouse|partner|boyfriend|girlfriend|fianc(?:e|ee)|"
     r"friend|best\s+friend|old\s+friend|sibling|brother|sister|mother|father|"
     r"parent|child|daughter|son|family|mentor|roommate|colleague|coworker)\b|"
+    r"\b(?:связан\w*|относятся|участвуют|вовлечен\w*|вовлечён\w*|"
+    r"стейкхолдер\w*|контакт\w*|участник\w*)\b|"
     r"\b(?:статус\s+отношен\w*|женат|замужем|встречается|одинок\w*|развел\w*|"
     r"помолвлен\w*|муж|жена|партнер|партнёр|друг|подруга|брат|сестра|мать|"
     r"отец|родител\w*|сын|дочь|семь\w*|наставник|коллега|сосед\w*)\b",

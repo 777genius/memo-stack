@@ -149,6 +149,24 @@ def test_query_expansion_does_not_treat_company_role_query_as_org_summary() -> N
     }
 
 
+def test_query_expansion_covers_entity_relation_inventory_questions() -> None:
+    connected = build_query_expansion_plan("Who is connected to Project Atlas?")
+    people = build_query_expansion_plan("Which people are involved in Project Atlas?")
+    stakeholders = build_query_expansion_plan("Who are the stakeholders for Project Atlas?")
+    russian = build_query_expansion_plan("Кто связан с проектом Атлас?")
+
+    for plan in (connected, people, stakeholders, russian):
+        relation = _expansion_query(plan, "entity_relation_inventory_bridge")
+
+        assert "stakeholders" in relation.casefold() or "стейкхолдеры" in relation.casefold()
+        assert "connected" in relation.casefold() or "связаны" in relation.casefold()
+
+    assert "Atlas" in _expansion_query(connected, "entity_relation_inventory_bridge")
+    assert "Atlas" in _expansion_query(people, "entity_relation_inventory_bridge")
+    assert "Atlas" in _expansion_query(stakeholders, "entity_relation_inventory_bridge")
+    assert "Атлас" in _expansion_query(russian, "entity_relation_inventory_bridge")
+
+
 def test_query_expansion_covers_patriotic_service_inference() -> None:
     plan = build_query_expansion_plan("Would John be considered a patriotic person?")
 

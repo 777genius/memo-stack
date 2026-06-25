@@ -224,6 +224,7 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "current_recommendation_bridge",
         "current_residence_bridge",
         "deadline_commitment_bridge",
+        "entity_relation_inventory_bridge",
         "family_origin_bridge",
         "followup_task_bridge",
         "gotcha_failure_bridge",

@@ -4977,6 +4977,42 @@ def test_context_requirement_boost_prefers_project_summary_shape() -> None:
     )
 
 
+def test_context_requirement_boost_prefers_entity_relation_inventory_shape() -> None:
+    single = _item(
+        "single_relation_fact",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text="Project Atlas has a note mentioning Alex.",
+    )
+    inventory = _item(
+        "relation_inventory",
+        score=0.7,
+        retrieval_source="keyword_chunks",
+        text=(
+            "Project Atlas connected people list: stakeholders Alex, Maria, "
+            "and Sam are involved as owner, reviewer, and launch contact."
+        ),
+    )
+    query = "Which people are involved in Project Atlas?"
+
+    boosted = apply_context_requirement_boosts(
+        (single, inventory),
+        query=query,
+        query_anchor_intent=build_query_anchor_intent(query),
+        max_boost=0.04,
+    )
+
+    assert boosted[1].score > boosted[0].score
+    assert (
+        "list"
+        in boosted[1].diagnostics["provenance"]["context_requirement_matched_answer_shapes"]
+    )
+    assert (
+        "relationship"
+        in boosted[1].diagnostics["provenance"]["context_requirement_matched_answer_shapes"]
+    )
+
+
 def test_context_requirement_boost_does_not_treat_responsibility_as_summary() -> None:
     item = _item(
         "responsible",
