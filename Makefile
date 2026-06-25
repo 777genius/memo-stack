@@ -272,8 +272,17 @@ infinity-context-official-public-benchmark-canary:
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_API_URL:-}" ]; then set -- "$$@" --api-url "$${MEMORY_PUBLIC_BENCHMARK_API_URL}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN:-}" ]; then set -- "$$@" --auth-token "$${MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN}"; fi; \
 	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_CASE_IDS:-}" ]; then set -- "$$@" --case-id "$${MEMORY_PUBLIC_BENCHMARK_CASE_IDS}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_CAPABILITIES:-}" ]; then set -- "$$@" --capability "$${MEMORY_PUBLIC_BENCHMARK_CAPABILITIES}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_PARALLELISM:-}" ]; then set -- "$$@" --parallelism "$${MEMORY_PUBLIC_BENCHMARK_PARALLELISM}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_REQUEST_TIMEOUT_SECONDS:-}" ]; then set -- "$$@" --request-timeout-seconds "$${MEMORY_PUBLIC_BENCHMARK_REQUEST_TIMEOUT_SECONDS}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT:-}" ]; then set -- "$$@" --progress-out "$${MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT:-}" ]; then set -- "$$@" --checkpoint-out "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES:-}" ]; then set -- "$$@" --checkpoint-every-cases "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_MIN_INTERVAL_SECONDS:-}" ]; then set -- "$$@" --checkpoint-min-interval-seconds "$${MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_MIN_INTERVAL_SECONDS}"; fi; \
+	if [ -n "$${MEMORY_PUBLIC_BENCHMARK_LOCAL_STATE_DIR:-}" ]; then set -- "$$@" --local-state-dir "$${MEMORY_PUBLIC_BENCHMARK_LOCAL_STATE_DIR}"; fi; \
 	set -- "$$@" --report-out "$${MEMORY_PUBLIC_BENCHMARK_REPORT_OUT:-.e2e-artifacts/public-benchmark-canary.json}"; \
 	case "$${MEMORY_PUBLIC_BENCHMARK_COMPETITIVE_FLOOR:-}" in 1|true|yes|on) set -- "$$@" --competitive-floor;; esac; \
+	case "$${MEMORY_PUBLIC_BENCHMARK_RESUME_FROM_CHECKPOINT:-}" in 1|true|yes|on) set -- "$$@" --resume-from-checkpoint;; esac; \
 	$(PYTHON) scripts/official_public_benchmark_canary.py "$$@"
 
 .PHONY: infinity-context-test-quality

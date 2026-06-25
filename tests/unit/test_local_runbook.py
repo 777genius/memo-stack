@@ -1049,7 +1049,21 @@ def test_makefile_has_official_public_benchmark_canary() -> None:
     assert "MEMORY_PUBLIC_BENCHMARK_API_URL" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_AUTH_TOKEN" in recipe
     assert "MEMORY_PUBLIC_BENCHMARK_CASE_IDS" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_CAPABILITIES" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_PARALLELISM" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_REQUEST_TIMEOUT_SECONDS" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_PROGRESS_OUT" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_OUT" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_EVERY_CASES" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_CHECKPOINT_MIN_INTERVAL_SECONDS" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_RESUME_FROM_CHECKPOINT" in recipe
+    assert "MEMORY_PUBLIC_BENCHMARK_LOCAL_STATE_DIR" in recipe
     assert "--case-id" in recipe
+    assert "--capability" in recipe
+    assert "--parallelism" in recipe
+    assert "--progress-out" in recipe
+    assert "--checkpoint-out" in recipe
+    assert "--resume-from-checkpoint" in recipe
     assert "--competitive-floor" in recipe
     assert "infinity_context_server.official_public_benchmark import main" in script
     assert "snap-research/locomo" in module
