@@ -27,6 +27,7 @@ from infinity_context_core.application.use_cases.build_context import (
     _source_sibling_rank,
     _source_sibling_relevance_allowed,
     _source_sibling_score,
+    _source_sibling_score_cap,
     _SourceSiblingRank,
     _strict_query_window_match_counts,
     _weighted_aggregation_query_variant_sets,
@@ -1621,6 +1622,59 @@ def test_source_sibling_rank_allows_session_observation_pages_as_group_siblings(
     assert rank.turn_distance == 0
     assert rank.turn_delta == 0
     assert rank.score >= 0.955
+
+
+def test_source_sibling_allows_generic_behavior_inference_turn() -> None:
+    query = "Would Alex be considered reliable?"
+    text = "D4:9 Alex kept his promises, followed through, and prepared the launch notes early."
+    rank = _SourceSiblingRank(score=0.935, group_priority=1, turn_distance=1, turn_delta=1)
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=query,
+        expansion_reason="generic_behavior_inference_bridge",
+        text=text,
+    )
+    assert (
+        _source_sibling_score_cap(
+            expansion_reason="generic_behavior_inference_bridge",
+            relevance=relevance,
+            text=text,
+        )
+        is None
+    )
+    assert (
+        _source_sibling_score(
+            rank=rank,
+            relevance=relevance,
+            expansion_query=query,
+            expansion_reason="generic_behavior_inference_bridge",
+            text=text,
+        )
+        >= 0.974
+    )
+
+
+def test_source_sibling_rejects_generic_behavior_topic_only_turn() -> None:
+    query = "Would Alex be considered reliable?"
+    text = "D4:8 Alex discussed reliability as a product metric in the backend review."
+    rank = _SourceSiblingRank(score=0.935, group_priority=1, turn_distance=1, turn_delta=1)
+    relevance = score_query_relevance(query=query, text=text)
+
+    assert not _source_sibling_relevance_allowed(
+        rank=rank,
+        relevance=relevance,
+        expansion_query=query,
+        expansion_reason="generic_behavior_inference_bridge",
+        text=text,
+    )
+    assert _source_sibling_score_cap(
+        expansion_reason="generic_behavior_inference_bridge",
+        relevance=relevance,
+        text=text,
+    ) == 0.976
 
 
 def test_source_sibling_rank_does_not_treat_plain_summary_as_source_group_seed() -> None:

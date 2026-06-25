@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 
+from infinity_context_core.application.context_generic_behavior_inference import (
+    generic_behavior_inference_signal,
+)
 from infinity_context_core.application.context_ranking_reason_policy import (
     PRECISE_TURN_SOURCE_SIBLING_REASONS,
 )
@@ -71,6 +74,7 @@ _EVENT_VISUAL_SOURCE_SIBLING_REASONS = frozenset(
 _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.976
 _PRECISE_SOURCE_SIBLING_MIN_STRONG_DISTINCTIVE_HITS = 6
 _POTTERY_TYPE_SOURCE_SIBLING_LOW_SIGNAL_CAP = 0.965
+_GENERIC_BEHAVIOR_SOURCE_SIBLING_REASON = "generic_behavior_inference_bridge"
 _POTTERY_TYPE_SOURCE_SIBLING_OBJECT_RE = re.compile(
     r"\b("
     r"pottery|clay|ceramic|bowl|bowls|cup|cups|mug|mugs|pot|pots|"
@@ -232,6 +236,11 @@ def source_sibling_score(
         expansion_reason=expansion_reason,
         text=text,
     )
+    generic_behavior_companion = _is_generic_behavior_source_sibling_strong(
+        expansion_query=expansion_query,
+        expansion_reason=expansion_reason,
+        text=text,
+    )
     count_activity_followup = _is_count_activity_followup_source_sibling(
         rank=rank,
         expansion_reason=expansion_reason,
@@ -242,6 +251,7 @@ def source_sibling_score(
         not relevance_specific
         and not visual_referent
         and not temporal_state_companion
+        and not generic_behavior_companion
         and not count_activity_followup
     ):
         return rank.score
@@ -251,8 +261,11 @@ def source_sibling_score(
     )
     visual_boost = 0.018 if visual_referent else 0.0
     temporal_state_boost = 0.014 if temporal_state_companion else 0.0
+    generic_behavior_boost = 0.014 if generic_behavior_companion else 0.0
     score_floor = 0.966 if relevance_specific else 0.958
     if temporal_state_companion:
+        score_floor = max(score_floor, 0.974)
+    if generic_behavior_companion:
         score_floor = max(score_floor, 0.974)
     if _is_pottery_type_observation_companion_text(
         expansion_reason=expansion_reason,
@@ -265,7 +278,8 @@ def source_sibling_score(
             max(rank.score, score_floor)
             + relevance_boost
             + visual_boost
-            + temporal_state_boost,
+            + temporal_state_boost
+            + generic_behavior_boost,
             4,
         ),
     )
@@ -342,6 +356,15 @@ def source_sibling_score_cap(
     if (
         expansion_reason == "post_event_activity_timing_bridge"
         and not _is_post_event_activity_source_sibling_strong(text)
+    ):
+        return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
+    if (
+        expansion_reason == _GENERIC_BEHAVIOR_SOURCE_SIBLING_REASON
+        and not _is_generic_behavior_source_sibling_strong(
+            expansion_query="",
+            expansion_reason=expansion_reason,
+            text=text,
+        )
     ):
         return _PRECISE_SOURCE_SIBLING_LOW_SIGNAL_CAP
     if (
@@ -438,6 +461,12 @@ def source_sibling_relevance_allowed(
         and not _is_post_event_activity_source_sibling_strong(text)
     ):
         return False
+    if expansion_reason == _GENERIC_BEHAVIOR_SOURCE_SIBLING_REASON:
+        return _is_generic_behavior_source_sibling_strong(
+            expansion_query=expansion_query,
+            expansion_reason=expansion_reason,
+            text=text,
+        )
     if expansion_reason in _ACTIVITY_DURATION_SOURCE_SIBLING_REASONS:
         return _is_activity_duration_source_sibling_strong(text)
     if expansion_reason in _FREQUENCY_RECURRENCE_SOURCE_SIBLING_REASONS:
@@ -751,6 +780,27 @@ def _is_frequency_recurrence_source_sibling_strong(text: str) -> bool:
     return (
         _STATE_ACTIVITY_SOURCE_SIBLING_CONTEXT_RE.search(text) is not None
         and _FREQUENCY_RECURRENCE_SOURCE_SIBLING_SIGNAL_RE.search(text) is not None
+    )
+
+
+def _is_generic_behavior_source_sibling_strong(
+    *,
+    expansion_query: str,
+    expansion_reason: str,
+    text: str,
+) -> bool:
+    if expansion_reason != _GENERIC_BEHAVIOR_SOURCE_SIBLING_REASON:
+        return False
+    if (
+        generic_behavior_inference_signal(query=expansion_query, text=text).reason
+        == "inference_behavior_evidence"
+    ):
+        return True
+    # Score caps do not receive the winning expansion query. This strict fallback
+    # keeps concrete behavior turns uncapped while still rejecting topic-only text.
+    return (
+        generic_behavior_inference_signal(query=text, text=text).reason
+        == "inference_behavior_evidence"
     )
 
 
