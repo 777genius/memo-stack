@@ -468,6 +468,8 @@ def test_makefile_has_clean_full_mcp_smoke_target() -> None:
 def test_makefile_has_local_visual_mcp_smoke_target() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
+    assert "COMPOSE_PROJECT_NAME ?= infinity_context" in makefile
+    assert "export COMPOSE_PROJECT_NAME" in makefile
     assert ".PHONY: infinity-context-local-visual-smoke" in makefile
     assert "infinity-context-local-visual-smoke:" in makefile
     assert "$(MAKE) infinity-context-up-lite" in makefile

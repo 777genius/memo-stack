@@ -1,6 +1,8 @@
 PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 COMPOSE ?= docker compose
+COMPOSE_PROJECT_NAME ?= infinity_context
+export COMPOSE_PROJECT_NAME
 SELFHOST_ENV ?= .env.selfhost
 SELFHOST_COMPOSE ?= $(COMPOSE) --env-file $(SELFHOST_ENV) -f docker-compose.selfhost.yml
 INFINITY_CONTEXT_PYTHONPATH ?= packages/infinity_context_core:packages/infinity_context_server:packages/infinity_context_adapters:packages/infinity_context_sdk:packages/infinity_context_obsidian:packages/infinity_context_mcp:packages/infinity_context_cli
