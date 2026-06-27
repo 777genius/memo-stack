@@ -247,6 +247,8 @@ _MAX_EXTRA_INVENTORY_PROMPT_KEYWORD_ITEMS = 16
 _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS = 8
 _MIN_CHUNK_LIMIT_FOR_EXTRA_INVENTORY_PROMPT_ITEMS = 8
 _MIN_EXTRA_INVENTORY_PROMPT_DISTINCTIVE_HITS = 4
+_LIST_SOURCE_SIBLING_GROUP_LIMIT = 32
+_LIST_SOURCE_SIBLING_ITEM_LIMIT = 48
 _EXTRA_INVENTORY_PROMPT_REASONS = frozenset(
     {
         "decomposition_inventory_list",
@@ -259,6 +261,19 @@ _EXTRA_INVENTORY_PROMPT_REASONS = frozenset(
         "cause_veterans_inventory_bridge",
         "volunteering_people_inventory_bridge",
         "volunteering_inventory_bridge",
+    }
+)
+_LIST_SOURCE_SIBLING_DEEP_REASONS = _EXTRA_INVENTORY_PROMPT_REASONS | frozenset(
+    {
+        "activity_aggregation_bridge",
+        "book_reading_list_bridge",
+        "church_friend_activity_inventory_bridge",
+        "decomposition_activity_participation",
+        "event_participation_bridge",
+        "exercise_activity_inventory_bridge",
+        "music_artist_answer_bridge",
+        "music_artist_band_bridge",
+        "outdoor_activity_inventory_bridge",
     }
 )
 _ScoredKeywordPromptItem = tuple[int, int, int, float, float, int, str, ContextItem]
@@ -1085,16 +1100,32 @@ class BuildContextUseCase:
         if not source_groups:
             return (), empty_diagnostics
         seed_groups_sample = list(source_groups.keys())[:40]
+        deep_list_coverage = _query_plan_requests_list_source_sibling_depth(
+            query_text=query.query,
+            query_plan=query_plan,
+        )
+        source_group_limit = _source_sibling_group_limit()
+        if deep_list_coverage:
+            source_group_limit = max(
+                source_group_limit,
+                min(len(source_groups), _LIST_SOURCE_SIBLING_GROUP_LIMIT),
+            )
         source_groups = _prioritized_source_sibling_seed_groups(
             source_groups=source_groups,
             seed_chunks=seed_chunks,
             query_plan=query_plan,
             query_relevance_cache=query_relevance_cache,
-            limit=_source_sibling_group_limit(),
+            limit=source_group_limit,
         )
+        source_sibling_item_limit = _source_sibling_item_limit()
+        if deep_list_coverage:
+            source_sibling_item_limit = max(
+                source_sibling_item_limit,
+                _LIST_SOURCE_SIBLING_ITEM_LIMIT,
+            )
         max_items = min(
-            _source_sibling_item_limit(),
-            max(8, query.max_chunks * 2),
+            source_sibling_item_limit,
+            max(8, query.max_chunks * (3 if deep_list_coverage else 2)),
         )
         candidate_limit = _source_sibling_candidate_limit(
             max_items=max_items,
@@ -1358,6 +1389,7 @@ class BuildContextUseCase:
             "keyword_source_sibling_chunks_skipped": skipped,
             "keyword_source_sibling_group_count": len(source_groups),
             "keyword_source_sibling_candidate_limit": candidate_limit,
+            "keyword_source_sibling_deep_list_coverage": deep_list_coverage,
             "keyword_source_sibling_companion_extra_used": companion_extra_used,
             "keyword_source_sibling_answer_evidence_extra_used": answer_evidence_extra_used,
             "keyword_source_sibling_precise_support_extra_used": precise_support_extra_used,
@@ -1980,6 +2012,21 @@ def _prioritize_source_sibling_answer_evidence_seed_chunks(
     )
     remaining = tuple(chunk for _, chunk in remaining_chunks)
     return (*prioritized, *remaining)
+
+
+def _query_plan_requests_list_source_sibling_depth(
+    *,
+    query_text: str,
+    query_plan: QueryExpansionPlan,
+) -> bool:
+    if _LIST_AGGREGATION_QUERY_RE.search(query_text) is not None:
+        return True
+    if _WHERE_LIST_AGGREGATION_QUERY_RE.search(query_text) is not None:
+        return True
+    return any(
+        expansion.reason in _LIST_SOURCE_SIBLING_DEEP_REASONS
+        for expansion in query_plan.retrieval_queries
+    )
 
 
 def _dedupe_chunks_by_id(chunks: tuple[MemoryChunk, ...]) -> tuple[MemoryChunk, ...]:
