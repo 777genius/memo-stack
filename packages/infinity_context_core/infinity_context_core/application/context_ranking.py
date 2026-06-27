@@ -238,6 +238,7 @@ _PRECISE_EVIDENCE_SOURCE_REASONS = frozenset(
     {
         "adoption_current_goal_bridge",
         "adoption_current_milestone_bridge",
+        "activity_competition_evidence_bridge",
         "allergy_condition_inference_bridge",
         "allergy_inventory_bridge",
         "business_networking_event_bridge",
@@ -246,6 +247,7 @@ _PRECISE_EVIDENCE_SOURCE_REASONS = frozenset(
         "business_store_promotion_event_bridge",
         "business_start_reason_bridge",
         "book_reading_list_bridge",
+        "church_friend_activity_inventory_bridge",
         "charity_brand_sponsorship_bridge",
         "charity_tournament_count_bridge",
         "children_count_event_bridge",
@@ -280,6 +282,7 @@ _PRECISE_EVIDENCE_SOURCE_REASONS = frozenset(
         "future_plan_timing_bridge",
         "tournament_count_bridge",
         "volunteer_career_inference_bridge",
+        "volunteering_people_inventory_bridge",
         "yoga_delay_gaming_bridge",
     }
 )
@@ -843,6 +846,10 @@ def _merge_context_items(*, primary: ContextItem, secondary: ContextItem) -> Con
 def _preferred_merge_body_item(*, primary: ContextItem, secondary: ContextItem) -> ContextItem:
     if (primary.item_type, primary.item_id) != (secondary.item_type, secondary.item_id):
         return primary
+    primary_exact_answer_rank = _exact_source_sibling_answer_body_rank(primary)
+    secondary_exact_answer_rank = _exact_source_sibling_answer_body_rank(secondary)
+    if primary_exact_answer_rank != secondary_exact_answer_rank:
+        return primary if primary_exact_answer_rank < secondary_exact_answer_rank else secondary
     primary_exact_source_sibling = _is_strong_exact_source_sibling_turn(primary)
     secondary_exact_source_sibling = _is_strong_exact_source_sibling_turn(secondary)
     if primary_exact_source_sibling and not secondary_exact_source_sibling:
@@ -864,6 +871,21 @@ def _preferred_merge_body_item(*, primary: ContextItem, secondary: ContextItem) 
     return primary
 
 
+def _exact_source_sibling_answer_body_rank(item: ContextItem) -> int:
+    if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
+        return 3
+    diagnostics = safe_diagnostic_mapping(item.diagnostics)
+    signals = safe_score_signals(diagnostics.get("score_signals"))
+    if _numeric_signal(signals.get("source_sibling_answer_evidence")) <= 0:
+        return 3
+    turn_ref_count = sum(1 for ref in item.source_refs if _source_ref_is_turn(ref))
+    if turn_ref_count <= 0:
+        return 3
+    if len(item.source_refs) == 1:
+        return 0
+    return 1
+
+
 def _is_strong_exact_source_sibling_turn(item: ContextItem) -> bool:
     if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
         return False
@@ -871,6 +893,8 @@ def _is_strong_exact_source_sibling_turn(item: ContextItem) -> bool:
         return False
     diagnostics = safe_diagnostic_mapping(item.diagnostics)
     signals = safe_score_signals(diagnostics.get("score_signals"))
+    if _numeric_signal(signals.get("source_sibling_answer_evidence")) > 0:
+        return True
     if _numeric_signal(signals.get("query_expansion_reason_priority")) < 3:
         return False
     return _numeric_signal(signals.get("distinctive_term_hits")) >= 4

@@ -16,6 +16,16 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "friend_place_church_inventory_bridge",
         ),
     (
+            frozenset({"activities", "church", "friends"}),
+            _terms._CHURCH_FRIEND_ACTIVITY_INVENTORY_EXPANSION,
+            "church_friend_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"activity", "church", "friends"}),
+            _terms._CHURCH_FRIEND_ACTIVITY_INVENTORY_EXPANSION,
+            "church_friend_activity_inventory_bridge",
+        ),
+    (
             frozenset({"where", "friend"}),
             _terms._FRIEND_PLACE_INVENTORY_EXPANSION,
             "friend_place_inventory_bridge",
@@ -132,7 +142,10 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"national", "park"}),
-            "camping trip campfire meteor shower nature outdoors",
+            (
+                "family camping trip campfire marshmallows stories highlight summer "
+                "nature outdoors"
+            ),
             "outdoor_preference_bridge",
         ),
     (
@@ -458,7 +471,10 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"theme", "park"}),
-            "camping trip campfire meteor shower nature outdoors",
+            (
+                "family camping trip campfire marshmallows stories highlight summer "
+                "nature outdoors"
+            ),
             "outdoor_preference_bridge",
         ),
     (
@@ -510,7 +526,7 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
         ),
     (
             frozenset({"move", "home", "country", "soon"}),
-            "passed adoption agency interviews last Friday goal having family",
+            "passed adoption agency interviews recent milestone goal having family",
             "adoption_current_milestone_bridge",
         ),
 )

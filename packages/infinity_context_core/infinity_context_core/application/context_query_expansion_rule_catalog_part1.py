@@ -48,6 +48,14 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "relationship_status_bridge",
         ),
     (
+            frozenset({"nickname"}),
+            (
+                "nickname nick name called call address addressed greeting hey hi "
+                "shortened name pet name"
+            ),
+            "nickname_bridge",
+        ),
+    (
             frozenset({"друзья"}),
             (
                 "отношения статус друзья дружба пара партнер супруг семья вместе "
@@ -312,6 +320,22 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"career", "option"}),
             _terms._CAREER_INTENT_EXPANSION,
             "career_intent_bridge",
+        ),
+    (
+            frozenset({"writing", "career"}),
+            (
+                "creative writing author books reading literature stories novels "
+                "guide motivate discover journey passion career option interest"
+            ),
+            "creative_writing_career_bridge",
+        ),
+    (
+            frozenset({"write", "career"}),
+            (
+                "creative writing author books reading literature stories novels "
+                "guide motivate discover journey passion career option interest"
+            ),
+            "creative_writing_career_bridge",
         ),
     (
             frozenset({"career", "want"}),
@@ -610,24 +634,107 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"when", "adoption", "meeting"}),
             (
-                "last Friday council meeting for adoption inspiring emotional loving "
-                "homes children need determined adopt"
+                "when date adoption council meeting inspiring emotional loving homes "
+                "children need determined adopt relative date weekday recent meeting"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "apply", "adoption", "agency"}),
+            (
+                "when date applied to adoption agencies application first step "
+                "becoming a parent ready family children kids loving home decision"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "applied", "adoption", "agency"}),
+            (
+                "when date applied to adoption agencies application first step "
+                "becoming a parent ready family children kids loving home decision"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "application", "adoption", "agency"}),
+            (
+                "when date submitted adoption application agencies first step "
+                "becoming a parent ready family children kids loving home decision"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "birthday"}),
+            (
+                "birthday date daughter's birthday son's birthday child birthday "
+                "celebrated birthday celebration party kids children daughter son "
+                "relative date day weekday special family moments"
+            ),
+            "age_birthday_bridge",
+        ),
+    (
+            frozenset({"when", "lgbtq", "conference"}),
+            (
+                "when date LGBTQ conference went attended attend connected people "
+                "similar journeys relative date recently days ago special"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "collaborate", "dance"}),
+            (
+                "when date decide decided collaborate collaboration create dance content "
+                "creative plan agreed together schedule project performance video "
+                "dance routine moves"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "collaboration", "dance"}),
+            (
+                "when date decide decided collaborate collaboration create dance content "
+                "creative plan agreed together schedule project performance video "
+                "dance routine moves"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "park"}),
+            (
+                "when date park visit went took trip outing exploring playing "
+                "outdoors playground relative date day weekday"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "store", "open"}),
+            (
+                "when date online clothing store open opened is open clothes store "
+                "dreaming can't wait website computer screen"
+            ),
+            "temporal_event_detail_bridge",
+        ),
+    (
+            frozenset({"when", "store", "opened"}),
+            (
+                "when date online clothing store open opened is open clothes store "
+                "dreaming can't wait website computer screen"
             ),
             "temporal_event_detail_bridge",
         ),
     (
             frozenset({"when", "pride", "parade"}),
             (
-                "last week LGBTQ pride parade happy belonged community grown summer "
-                "went attended"
+                "when date relative day week weekday LGBTQ pride parade happy "
+                "belonged community grown summer went attended attend"
             ),
             "temporal_event_detail_bridge",
         ),
     (
             frozenset({"when", "pride", "festival"}),
             (
-                "last year Pride fest festival blast supportive friends together "
-                "worth it went attended"
+                "when date relative year Pride fest festival supportive friends "
+                "together went attended"
             ),
             "temporal_event_detail_bridge",
         ),

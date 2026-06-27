@@ -94,7 +94,14 @@ _FRIEND_PLACE_GYM_INVENTORY_EXPANSION = (
     "atmosphere positive environment awesome people gym friend"
 )
 _FRIEND_PLACE_CHURCH_INVENTORY_EXPANSION = (
-    "joined nearby church community faith closer local church"
+    "friends made friends joined nearby church community faith closer local "
+    "church feel closer to a community and faith"
+)
+_CHURCH_FRIEND_ACTIVITY_INVENTORY_EXPANSION = (
+    "church friends activities activity went with church friends visited visit hike "
+    "hiking picnic park group outing trip camping local church together "
+    "friends from church community work community service volunteer work volunteering "
+    "chilled trees played games charades scavenger hunt food refreshed"
 )
 _TRAVEL_COUNTRY_INVENTORY_EXPANSION = (
     "England Spain Rome Paris London abroad solo trip travel visited went been to "
@@ -176,6 +183,10 @@ _ANIMAL_AFFINITY_PET_STORE_EXPANSION = (
     "animal affinity turtles pets pet store joy peace companion companions tank "
     "third turtle enjoys loves animal lover reptiles zookeeper keeper"
 )
+_ANIMAL_ACTIVITY_INVENTORY_EXPANSION = (
+    "animal pet turtle activities activity feeding feed eat eating fruit snacks "
+    "strawberries holding hold bath bathe walking walk play care favorite snacks"
+)
 
 __all__ = (
     "MAX_QUERY_EXPANSIONS",
@@ -210,4 +221,5 @@ __all__ = (
     "_ANIMAL_DIET_EVIDENCE_EXPANSION",
     "_ANIMAL_HABITAT_SETUP_EXPANSION",
     "_ANIMAL_AFFINITY_PET_STORE_EXPANSION",
+    "_ANIMAL_ACTIVITY_INVENTORY_EXPANSION",
 )

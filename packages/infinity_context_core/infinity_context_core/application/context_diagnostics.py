@@ -100,6 +100,20 @@ _DETERMINISTIC_RERANK_SCORE_SIGNAL_KEYS = (
     "deterministic_rerank_requirement_coverage",
     "deterministic_rerank_query_reason",
 )
+_SOURCE_SIBLING_SCORE_SIGNAL_KEYS = (
+    "exact_source_repair",
+    "exact_source_repair_date_anchor",
+    "source_sibling_answer_evidence",
+    "source_sibling_dialogue_visual_reference",
+    "source_sibling_group_level_seed",
+    "source_sibling_visual_continuation",
+    "source_sibling_score_cap_applied",
+    "source_sibling_group_boost",
+    "source_sibling_after_seed",
+    "source_sibling_closeness",
+    "source_sibling_turn_distance",
+    "source_sibling_group_priority",
+)
 _CONTEXT_REQUIREMENT_PROVENANCE_LIST_KEYS = (
     "context_requirement_matched_anchor_kinds",
     "context_requirement_matched_modalities",
@@ -107,6 +121,18 @@ _CONTEXT_REQUIREMENT_PROVENANCE_LIST_KEYS = (
 )
 _DETERMINISTIC_RERANK_PROVENANCE_LIST_KEYS = (
     "deterministic_rerank_reasons",
+)
+_SOURCE_SIBLING_PROVENANCE_BOOL_KEYS = (
+    "source_sibling_answer_evidence",
+    "source_sibling_dialogue_visual_reference",
+    "source_sibling_group_level_seed",
+    "source_sibling_visual_continuation",
+    "source_sibling_score_cap_applied",
+)
+_SOURCE_SIBLING_PROVENANCE_NUMBER_KEYS = (
+    "source_sibling_turn_delta",
+    "source_sibling_turn_distance",
+    "source_sibling_group_priority",
 )
 _BUNDLE_COUNTER_KEYS = (
     "facts_considered",
@@ -136,6 +162,12 @@ _BUNDLE_COUNTER_KEYS = (
     "keyword_source_sibling_chunks_skipped",
     "keyword_source_sibling_group_count",
     "keyword_source_sibling_candidate_limit",
+    "keyword_source_sibling_companion_extra_used",
+    "keyword_source_sibling_answer_evidence_extra_used",
+    "keyword_source_sibling_precise_support_extra_used",
+    "exact_source_sibling_answer_evidence_repair_candidates",
+    "exact_source_sibling_answer_evidence_repair_existing",
+    "exact_source_sibling_answer_evidence_repair_added",
     "keyword_aggregation_chunks_considered",
     "keyword_aggregation_chunks_used",
     "keyword_aggregation_chunks_skipped",
@@ -235,6 +267,7 @@ _BUNDLE_COUNTER_KEYS = (
     "answer_support_families_considered",
     "answer_support_families_used",
     "answer_support_items_used",
+    "exact_query_object_turn_items_used",
     "chunk_sources_considered",
     "chunk_sources_used",
     "max_chunks_used_per_source",
@@ -296,6 +329,9 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "keyword_source_sibling_chunks_skipped": 0,
     "keyword_source_sibling_group_count": 0,
     "keyword_source_sibling_candidate_limit": 0,
+    "keyword_source_sibling_companion_extra_used": 0,
+    "keyword_source_sibling_answer_evidence_extra_used": 0,
+    "keyword_source_sibling_precise_support_extra_used": 0,
     "keyword_aggregation_chunks_considered": 0,
     "keyword_aggregation_chunks_used": 0,
     "keyword_aggregation_chunks_skipped": 0,
@@ -393,6 +429,7 @@ _BUNDLE_COUNTER_DEFAULTS = {
     "answer_support_families_considered": 0,
     "answer_support_families_used": 0,
     "answer_support_items_used": 0,
+    "exact_query_object_turn_items_used": 0,
     "chunk_sources_considered": 0,
     "chunk_sources_used": 0,
     "max_chunks_used_per_source": 0,
@@ -521,6 +558,7 @@ def context_rank_key(
         -_score_signal_float(item, "deterministic_rerank_requirement_coverage"),
         -_score_signal_float(item, "deterministic_rerank_boost"),
         -_score_signal_float(item, "query_expansion_reason_priority"),
+        -_score_signal_float(item, "source_sibling_answer_evidence"),
         -_score_signal_float(item, "source_sibling_group_level_seed"),
         -_score_signal_float(item, "source_sibling_dialogue_visual_reference"),
         -_score_signal_float(item, "source_sibling_visual_continuation"),
@@ -607,6 +645,7 @@ def normalize_context_diagnostics(diagnostics: object) -> dict[str, object]:
     provenance = safe_diagnostic_mapping(raw.get("provenance"))
     provenance.update(_safe_context_requirement_provenance(raw.get("provenance")))
     provenance.update(_safe_deterministic_rerank_provenance(raw.get("provenance")))
+    provenance.update(_safe_source_sibling_provenance(raw.get("provenance")))
     if retrieval_sources:
         provenance["retrieval_sources"] = list(retrieval_sources)
     normalized["provenance"] = provenance
@@ -662,6 +701,85 @@ def normalize_context_bundle_diagnostics(
                 raw.get(key),
                 default=_BUNDLE_COUNTER_DEFAULTS.get(key, 0),
             )
+    normalized["keyword_source_sibling_groups_sample"] = _safe_text_list(
+        raw.get("keyword_source_sibling_groups_sample"),
+        limit=40,
+    )
+    normalized["keyword_source_sibling_selected_sources_sample"] = _safe_text_list(
+        raw.get("keyword_source_sibling_selected_sources_sample"),
+        limit=80,
+    )
+    normalized["keyword_source_sibling_answer_evidence_selected_sources_sample"] = (
+        _safe_text_list(
+            raw.get("keyword_source_sibling_answer_evidence_selected_sources_sample"),
+            limit=40,
+        )
+    )
+    normalized["answer_support_candidate_source_ref_ids_sample"] = _safe_text_list(
+        raw.get("answer_support_candidate_source_ref_ids_sample"),
+        limit=40,
+    )
+    normalized["answer_support_candidate_families_sample"] = _safe_text_list(
+        raw.get("answer_support_candidate_families_sample"),
+        limit=40,
+    )
+    normalized["answer_support_selected_families_sample"] = _safe_text_list(
+        raw.get("answer_support_selected_families_sample"),
+        limit=40,
+    )
+    normalized["answer_support_selected_source_ref_ids_sample"] = _safe_text_list(
+        raw.get("answer_support_selected_source_ref_ids_sample"),
+        limit=40,
+    )
+    normalized["pre_pack_source_ref_ids_sample"] = _safe_text_list(
+        raw.get("pre_pack_source_ref_ids_sample"),
+        limit=200,
+    )
+    normalized["pre_pack_dialogue_markers_sample"] = _safe_text_list(
+        raw.get("pre_pack_dialogue_markers_sample"),
+        limit=200,
+    )
+    normalized["pre_pack_source_sibling_answer_evidence_source_ref_ids_sample"] = (
+        _safe_text_list(
+            raw.get("pre_pack_source_sibling_answer_evidence_source_ref_ids_sample"),
+            limit=40,
+        )
+    )
+    normalized["pre_pack_source_sibling_answer_evidence_dialogue_markers_sample"] = (
+        _safe_text_list(
+            raw.get("pre_pack_source_sibling_answer_evidence_dialogue_markers_sample"),
+            limit=40,
+        )
+    )
+    for stage in ("post_dedupe_hydrate", "final_source", "final_candidate", "guarded"):
+        normalized[f"{stage}_source_sibling_item_count"] = _non_negative_int(
+            raw.get(f"{stage}_source_sibling_item_count"),
+            default=0,
+        )
+        normalized[f"{stage}_source_sibling_source_ref_ids_sample"] = _safe_text_list(
+            raw.get(f"{stage}_source_sibling_source_ref_ids_sample"),
+            limit=200,
+        )
+        normalized[f"{stage}_source_sibling_dialogue_markers_sample"] = _safe_text_list(
+            raw.get(f"{stage}_source_sibling_dialogue_markers_sample"),
+            limit=200,
+        )
+        normalized[f"{stage}_source_sibling_answer_evidence_item_count"] = _non_negative_int(
+            raw.get(f"{stage}_source_sibling_answer_evidence_item_count"),
+            default=0,
+        )
+        normalized[f"{stage}_source_sibling_answer_evidence_source_ref_ids_sample"] = (
+            _safe_text_list(
+                raw.get(f"{stage}_source_sibling_answer_evidence_source_ref_ids_sample"),
+                limit=200,
+            )
+        )
+        normalized[f"{stage}_source_sibling_answer_evidence_dialogue_markers_sample"] = (
+            _safe_text_list(
+                raw.get(f"{stage}_source_sibling_answer_evidence_dialogue_markers_sample"),
+                limit=200,
+            )
+        )
     normalized["item_type_counts"] = _item_type_counts(items)
     normalized.update(_source_ref_counts(items))
     normalized.update(_multimodal_source_ref_counts(items))
@@ -753,6 +871,7 @@ def merge_context_diagnostics(
         secondary_score_signals,
         keys=(
             "source_sibling_dialogue_visual_reference",
+            "source_sibling_answer_evidence",
             "source_sibling_group_level_seed",
             "source_sibling_visual_continuation",
         ),
@@ -772,6 +891,7 @@ def merge_context_diagnostics(
         secondary_provenance,
         keys=(
             "source_sibling_dialogue_visual_reference",
+            "source_sibling_answer_evidence",
             "source_sibling_group_level_seed",
             "source_sibling_visual_continuation",
         ),
@@ -788,6 +908,7 @@ def safe_score_signals(value: object) -> dict[str, object]:
     }
     signals.update(_safe_context_requirement_score_signals(value))
     signals.update(_safe_deterministic_rerank_score_signals(value))
+    signals.update(_safe_source_sibling_score_signals(value))
     return signals
 
 
@@ -874,6 +995,20 @@ def _safe_deterministic_rerank_score_signals(value: object) -> dict[str, object]
     return signals
 
 
+def _safe_source_sibling_score_signals(value: object) -> dict[str, object]:
+    raw = _as_dict(value)
+    signals: dict[str, object] = {}
+    for key in _SOURCE_SIBLING_SCORE_SIGNAL_KEYS:
+        raw_value = raw.get(key)
+        if isinstance(raw_value, bool):
+            continue
+        if isinstance(raw_value, int):
+            signals[key] = max(0, raw_value)
+        elif isinstance(raw_value, float):
+            signals[key] = round(max(0.0, raw_value), 4)
+    return signals
+
+
 def _safe_context_requirement_provenance(value: object) -> dict[str, object]:
     raw = _as_dict(value)
     provenance: dict[str, object] = {}
@@ -908,10 +1043,40 @@ def _safe_deterministic_rerank_provenance(value: object) -> dict[str, object]:
     return provenance
 
 
+def _safe_source_sibling_provenance(value: object) -> dict[str, object]:
+    raw = _as_dict(value)
+    provenance: dict[str, object] = {}
+    for key in _SOURCE_SIBLING_PROVENANCE_BOOL_KEYS:
+        if raw.get(key) is True:
+            provenance[key] = True
+    for key in _SOURCE_SIBLING_PROVENANCE_NUMBER_KEYS:
+        raw_value = raw.get(key)
+        if isinstance(raw_value, bool):
+            continue
+        if isinstance(raw_value, int):
+            provenance[key] = raw_value
+        elif isinstance(raw_value, float):
+            provenance[key] = round(raw_value, 4)
+    return provenance
+
+
 def _safe_context_requirement_list(value: object) -> tuple[object, ...]:
     if isinstance(value, list | tuple):
         return tuple(value[:_MAX_DIAGNOSTIC_LIST_ITEMS])
     return ()
+
+
+def _safe_text_list(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    safe_items: list[str] = []
+    for item in value:
+        text = _safe_optional_text(item, limit=_MAX_DIAGNOSTIC_STRING_CHARS)
+        if text is not None:
+            safe_items.append(text)
+        if len(safe_items) >= limit:
+            break
+    return safe_items
 
 
 def _safe_query_snippet_diagnostics(raw: dict[str, Any]) -> dict[str, object]:

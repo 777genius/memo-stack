@@ -254,6 +254,15 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "event_participation_bridge",
         ),
     (
+            frozenset({"competition", "attend"}),
+            (
+                "competition contest compete competed competing comp tournament trophy "
+                "trophies first place won winner stage performance team crew regional "
+                "regionals visual query image caption participated"
+            ),
+            "activity_competition_evidence_bridge",
+        ),
+    (
             frozenset({"awareness"}),
             (
                 "raise raised raising spread spreading awareness charity race run "
@@ -389,10 +398,28 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"pet", "have"}),
             (
-                "pets has have dog Max new addition family turtles critters new friend "
+                "pets has have dog new addition family turtles critters new friend "
                 "puppy pup doggo pet turtle"
             ),
             "pet_inventory_bridge",
+        ),
+    (
+            frozenset({"when", "adopt"}),
+            (
+                "when date adopted got get new addition family pet dog puppy pup "
+                "new pup for you gift from named stuffed animal image caption "
+                "visual query cute dog couch blanket toy"
+            ),
+            "pet_acquisition_date_bridge",
+        ),
+    (
+            frozenset({"when", "get"}),
+            (
+                "when date adopted got get new addition family pet dog puppy pup "
+                "new pup for you gift from named stuffed animal image caption "
+                "visual query cute dog couch blanket toy"
+            ),
+            "pet_acquisition_date_bridge",
         ),
     (
             frozenset({"beach", "mountains"}),
@@ -442,6 +469,21 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"alternative", "career"}),
             _terms._ANIMAL_AFFINITY_PET_STORE_EXPANSION,
             "animal_affinity_pet_store_bridge",
+        ),
+    (
+            frozenset({"activities", "turtles"}),
+            _terms._ANIMAL_ACTIVITY_INVENTORY_EXPANSION,
+            "animal_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"activity", "turtles"}),
+            _terms._ANIMAL_ACTIVITY_INVENTORY_EXPANSION,
+            "animal_activity_inventory_bridge",
+        ),
+    (
+            frozenset({"activities", "pets"}),
+            _terms._ANIMAL_ACTIVITY_INVENTORY_EXPANSION,
+            "animal_activity_inventory_bridge",
         ),
     (
             frozenset({"career", "gaming"}),

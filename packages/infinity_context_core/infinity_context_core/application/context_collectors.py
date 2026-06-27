@@ -96,6 +96,7 @@ _HIGH_SIGNAL_DECOMPOSITION_REASONS = frozenset(
 _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
     {
         "activity_aggregation_bridge",
+        "activity_competition_evidence_bridge",
         "activity_visual_selfcare_bridge",
         "adoption_current_goal_bridge",
         "allergy_condition_inference_bridge",
@@ -200,6 +201,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "video_transcript_evidence_bridge",
         "visual_text_evidence_bridge",
         "volunteer_career_inference_bridge",
+        "volunteering_people_inventory_bridge",
         "yoga_delay_gaming_bridge",
     }
 )
@@ -225,6 +227,8 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "store_promotion_inventory_bridge",
         "symbol_importance_bridge",
         "food_recipe_recommendation_bridge",
+        "fundraiser_event_inventory_bridge",
+        "volunteering_people_inventory_bridge",
         "wellness_activity_effect_bridge",
     }
 )
@@ -241,26 +245,36 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "birthplace_origin_bridge",
         "book_suggestion_bridge",
         "career_intent_bridge",
+        "cause_awareness_event_bridge",
+        "childhood_possession_inventory_bridge",
         "children_books_inference_bridge",
         "children_count_event_bridge",
+        "children_name_inventory_bridge",
+        "choice_reason_bridge",
+        "church_friend_activity_inventory_bridge",
         "classical_music_preference_bridge",
+        "creative_writing_career_bridge",
         "current_occupation_bridge",
         "current_recommendation_bridge",
         "current_residence_bridge",
         "deadline_commitment_bridge",
         "entity_relation_inventory_bridge",
+        "family_hardship_support_bridge",
         "family_origin_bridge",
         "followup_task_bridge",
+        "future_plan_timing_bridge",
         "gotcha_failure_bridge",
         "hike_count_activity_bridge",
         "music_artist_answer_bridge",
         "music_artist_band_bridge",
         "negative_experience_support_bridge",
         "negative_preference_bridge",
+        "nickname_bridge",
         "organization_summary_bridge",
         "painting_inventory_bridge",
         "person_summary_bridge",
         "event_summary_bridge",
+        "pet_acquisition_date_bridge",
         "personality_authenticity_bridge",
         "personality_drive_bridge",
         "personality_thoughtfulness_bridge",
@@ -271,10 +285,12 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "recommendation_source_bridge",
         "relocation_destination_bridge",
         "relocation_origin_bridge",
+        "repeated_test_attempt_bridge",
         "running_reason_bridge",
         "running_reason_question_bridge",
         "shared_painted_subject_bridge",
         "shoe_usage_bridge",
+        "study_time_management_bridge",
         "trip_destination_bridge",
     }
 )
@@ -1065,9 +1081,18 @@ def _bounded_derived_retrieval_queries(
         else (QueryExpansion(query=fallback, reason="original_query"),)
     )
     raw_queries = _drop_ally_support_identity_noise(raw_queries)
+    family_activity_mode = any(
+        query.reason == "family_activity_bridge" for query in raw_queries
+    )
     ranked_queries = sorted(
         enumerate(raw_queries),
-        key=lambda item: (_retrieval_query_selection_priority(item[1]), item[0]),
+        key=lambda item: (
+            _retrieval_query_selection_priority(
+                item[1],
+                family_activity_mode=family_activity_mode,
+            ),
+            item[0],
+        ),
     )
     raw_queries = tuple(query for _, query in ranked_queries)
     selected: list[QueryExpansion] = []
@@ -1099,9 +1124,24 @@ def _drop_ally_support_identity_noise(
     return tuple(query for query in queries if query.reason != "identity_bridge")
 
 
-def _retrieval_query_selection_priority(query: QueryExpansion) -> int:
+def _retrieval_query_selection_priority(
+    query: QueryExpansion,
+    *,
+    family_activity_mode: bool = False,
+) -> int:
     if query.reason == "original_query":
         return 0
+    if family_activity_mode:
+        if query.reason in {
+            "activity_visual_selfcare_bridge",
+            "family_activity_bridge",
+            "family_museum_activity_bridge",
+            "family_painting_activity_bridge",
+            "family_swimming_activity_bridge",
+        }:
+            return 1
+        if query.reason in _HIGH_SIGNAL_DECOMPOSITION_REASONS:
+            return 2
     if query.reason in {
         "activity_visual_selfcare_bridge",
         "family_activity_bridge",

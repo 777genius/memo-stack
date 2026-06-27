@@ -6,7 +6,14 @@ from infinity_context_core.application.context_packer import (
     _answer_support_diversity_candidates,
     _answer_support_diversity_family,
     _answer_support_family_item_key,
+    _book_reading_answer_content_rank,
+    _is_exact_precise_content_answer_support_item,
+    _is_exact_inventory_answer_family,
+    _is_exact_temporal_query_object_family,
     _ordered_answer_support_families,
+    _ordered_answer_support_families_for_query,
+    _precise_answer_content_rank,
+    _precise_turn_answer_support_rank,
 )
 from infinity_context_core.application.context_policy import thread_is_visible
 from infinity_context_core.application.context_ranking import dedupe_rank_items
@@ -66,6 +73,770 @@ def test_context_packer_keeps_memory_scope_sections_and_caps_chunks_per_source()
     assert result.bundle.diagnostics["chunk_sources_considered"] == 2
     assert result.bundle.diagnostics["chunk_sources_used"] == 2
     assert result.bundle.diagnostics["max_chunks_used_per_source"] == 4
+
+
+def test_book_reading_list_answer_support_prefers_direct_reading_evidence() -> None:
+    direct = ContextItem(
+        item_id="direct_book_turn",
+        item_type="chunk",
+        text='Maya: I loved reading "Charlotte\'s Web" as a kid.',
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_2:D2:10:turn",
+                chunk_id="direct_book_turn",
+            ),
+        ),
+        diagnostics={"query_expansion_reason": "book_reading_list_bridge"},
+    )
+    contextual = ContextItem(
+        item_id="contextual_book_turn",
+        item_type="chunk",
+        text="Maya: Books guide me and help me discover who I am.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_3:D3:8:turn",
+                chunk_id="contextual_book_turn",
+            ),
+        ),
+        diagnostics={"query_expansion_reason": "book_reading_list_bridge"},
+    )
+    story_noise = ContextItem(
+        item_id="story_noise",
+        item_type="chunk",
+        text="Maya: We roasted marshmallows and shared stories around the campfire.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:12:turn",
+                chunk_id="story_noise",
+            ),
+        ),
+        diagnostics={"query_expansion_reason": "book_reading_list_bridge"},
+    )
+
+    assert _book_reading_answer_content_rank(direct.text) == 0
+    assert _book_reading_answer_content_rank(contextual.text) == 3
+    assert _book_reading_answer_content_rank(story_noise.text) == 5
+    assert (
+        _precise_turn_answer_support_rank(
+            direct,
+            query_reason="book_reading_list_bridge",
+        )
+        == 0
+    )
+    assert (
+        _precise_turn_answer_support_rank(
+            direct,
+            query_reason="decomposition_inventory_list",
+        )
+        == 0
+    )
+    assert _answer_support_family_item_key(direct) < _answer_support_family_item_key(
+        contextual
+    )
+    assert _answer_support_family_item_key(direct) < _answer_support_family_item_key(
+        story_noise
+    )
+    result = ContextPacker().pack(
+        bundle_id="ctx_book_reading_direct",
+        items=(story_noise, contextual, direct),
+        token_budget=120,
+        max_rendered_chars=500,
+    )
+
+    assert 'Charlotte' in result.bundle.rendered_text
+    assert "shared stories around the campfire" not in result.bundle.rendered_text
+
+
+def test_inventory_answer_support_families_distinguish_list_event_slots() -> None:
+    live_music = _answer_support_diversity_family(
+        _answer_support_item(
+            "live_music",
+            "D20:4 John attended a live music event with his family.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_20:D20:4:turn",
+        )
+    )
+    violin = _answer_support_diversity_family(
+        _answer_support_item(
+            "violin",
+            "D8:12 John found a violin concert that everyone enjoyed.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_8:D8:12:turn",
+        )
+    )
+    hospital = _answer_support_diversity_family(
+        _answer_support_item(
+            "hospital",
+            "D24:1 John visited a veteran's hospital and met amazing people.",
+            query_reason="veterans_event_inventory_bridge",
+            source_id="locomo:conv-41:session_24:D24:1:turn",
+        )
+    )
+    tournament = _answer_support_diversity_family(
+        _answer_support_item(
+            "tournament",
+            "D3:8 Taylor planned a beanbag tournament for the fundraiser.",
+            query_reason="event_participation_bridge",
+            source_id="locomo:fixture:session_3:D3:8:turn",
+        )
+    )
+    setup = _answer_support_diversity_family(
+        _answer_support_item(
+            "setup",
+            (
+                "D16:2 Maria is busy at the shelter getting ready for a fundraiser "
+                "to cover basic needs for the homeless."
+            ),
+            query_reason="event_participation_bridge",
+            source_id="locomo:conv-41:session_16:D16:2:turn",
+        )
+    )
+
+    assert "music-live-event" in live_music
+    assert "music-violin-concert" in violin
+    assert live_music != violin
+    assert "veterans-hospital" in hospital
+    assert "fundraiser-tournament" in tournament
+    assert "fundraiser-shelter-setup" in setup
+    assert tournament != setup
+
+
+def test_inventory_answer_support_families_distinguish_animal_activity_slots() -> None:
+    feeding = _answer_support_diversity_family(
+        _answer_support_item(
+            "feeding",
+            "D25:21 Nate loves seeing his turtles eat fruit and strawberries.",
+            query_reason="animal_activity_inventory_bridge",
+            source_id="locomo:conv-fixture:session_25:D25:21:turn",
+        )
+    )
+    holding = _answer_support_diversity_family(
+        _answer_support_item(
+            "holding",
+            "D25:23 Nate also likes holding the turtles after their snacks.",
+            query_reason="animal_activity_inventory_bridge",
+            source_id="locomo:conv-fixture:session_25:D25:23:turn",
+        )
+    )
+    bath = _answer_support_diversity_family(
+        _answer_support_item(
+            "bath",
+            "D28:31 Nate gives the turtles a bath before visitors arrive.",
+            query_reason="animal_activity_inventory_bridge",
+            source_id="locomo:conv-fixture:session_28:D28:31:turn",
+        )
+    )
+
+    assert "animal-activity-feeding" in feeding
+    assert "animal-activity-holding" in holding
+    assert "animal-activity-bath" in bath
+    assert len({feeding, holding, bath}) == 3
+
+
+def test_support_origin_answer_support_prefers_journey_support_evidence() -> None:
+    direct = _answer_support_item(
+        "journey_support",
+        (
+            "D3:5 Riley: I have been blessed with love and support throughout "
+            "this journey, and I want to pass it on to others."
+        ),
+        query_reason="support_origin_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:5:turn",
+    )
+    generic = _answer_support_item(
+        "generic_support_system",
+        (
+            "D3:11 Riley: My friends, family, and mentors are my rocks. "
+            "They motivate me and give me the strength to push on."
+        ),
+        query_reason="support_origin_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:11:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, direct])
+
+    assert _precise_answer_content_rank(direct, query_reason="support_origin_bridge") == 0
+    assert _precise_answer_content_rank(generic, query_reason="support_origin_bridge") == 3
+    assert direct in candidates.values()
+    assert generic not in candidates.values()
+
+
+def test_support_origin_answer_support_orders_direct_evidence_before_career_context() -> None:
+    direct = _answer_support_item(
+        "journey_support",
+        (
+            "D3:5 Riley: I have been blessed with love and support throughout "
+            "this journey, and I want to pass it on to others."
+        ),
+        query_reason="support_origin_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:5:turn",
+    )
+    career_context = _answer_support_item(
+        "career_context",
+        (
+            "D7:5 Riley: I'm still looking into counseling and mental health jobs. "
+            "I want people to have someone to talk to."
+        ),
+        query_reason="career_intent_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:5:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates([career_context, direct])
+    ordered = _ordered_answer_support_families(candidates)
+    direct_family = _answer_support_diversity_family(direct)
+    career_family = _answer_support_diversity_family(career_context)
+
+    assert ordered.index(direct_family) < ordered.index(career_family)
+
+
+def test_context_packer_preserves_support_origin_before_diversity_pressure() -> None:
+    direct = _answer_support_item(
+        "journey_support",
+        (
+            "D3:5 Riley: I have been blessed with love and support throughout "
+            "this journey, and I want to help promote understanding and acceptance."
+        ),
+        query_reason="support_origin_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:5:turn",
+    )
+    distractors = tuple(
+        _answer_support_item(
+            f"career_context_{index}",
+            (
+                f"D{index}:1 Riley: I am exploring counseling and mental health "
+                "work because helping people matters. "
+                + ("context " * 12)
+            ),
+            query_reason="career_intent_bridge",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+        )
+        for index in range(4, 14)
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_support_origin_pressure",
+        items=(*distractors, direct),
+        token_budget=600,
+        max_rendered_chars=900,
+    )
+
+    assert "D3:5" in result.bundle.rendered_text
+
+
+def test_context_packer_allows_extra_answer_support_for_many_inventory_slots() -> None:
+    items = (
+        _answer_support_item(
+            "live_music",
+            "D20:4 John attended a live music event with his family.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_20:D20:4:turn",
+        ),
+        _answer_support_item(
+            "violin",
+            "D8:12 John found a violin concert that everyone enjoyed.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_8:D8:12:turn",
+        ),
+        _answer_support_item(
+            "chili",
+            "D16:4 Maria planned a chili cook-off for the fundraiser.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_16:D16:4:turn",
+        ),
+        _answer_support_item(
+            "tournament",
+            "D3:8 Taylor planned a beanbag tournament for the fundraiser.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:fixture:session_3:D3:8:turn",
+        ),
+        _answer_support_item(
+            "hiking",
+            "D25:2 Maria went hiking with church friends.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_25:D25:2:turn",
+        ),
+        _answer_support_item(
+            "mountaineering",
+            "D18:2 John went mountaineering with workmates.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_18:D18:2:turn",
+        ),
+        _answer_support_item(
+            "picnic",
+            "D24:6 Maria had a picnic with friends from church.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_24:D24:6:turn",
+        ),
+        _answer_support_item(
+            "florida",
+            "D7:9 John visited Florida with his family.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_7:D7:9:turn",
+        ),
+        _answer_support_item(
+            "oregon",
+            "D11:5 John explored Oregon and the Pacific Northwest.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_11:D11:5:turn",
+        ),
+        _answer_support_item(
+            "hospital",
+            "D24:1 John visited a veteran's hospital and met amazing people.",
+            query_reason="music_event_inventory_bridge",
+            source_id="locomo:conv-41:session_24:D24:1:turn",
+        ),
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_many_inventory_slots",
+        items=items,
+        token_budget=2000,
+        max_rendered_chars=4000,
+    )
+
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 9
+    assert "D8:12 John found a violin concert" in result.bundle.rendered_text
+
+
+def test_context_packer_splits_classical_music_events_into_inventory_slots() -> None:
+    live_music = _answer_support_item(
+        "live_music",
+        "D20:4 John had a blast at a live music event with his family.",
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_20:D20:4:turn",
+    )
+    violin = _answer_support_item(
+        "violin",
+        "D8:12 John found a violin concert that the whole family enjoyed.",
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_8:D8:12:turn",
+    )
+    unrelated = _answer_support_item(
+        "unrelated",
+        "D4:7 John discussed music as background noise while working.",
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:7:turn",
+    )
+
+    assert _answer_support_diversity_family(live_music) != _answer_support_diversity_family(
+        violin
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_music_events",
+        items=(unrelated, live_music, violin),
+        token_budget=300,
+        max_rendered_chars=2000,
+    )
+
+    assert "D20:4 John had a blast at a live music event" in result.bundle.rendered_text
+    assert "D8:12 John found a violin concert" in result.bundle.rendered_text
+
+
+def test_music_event_query_focus_prioritizes_concrete_event_observations() -> None:
+    live_music = _answer_support_observation_item(
+        "live_music_observation",
+        (
+            "D20:4 Alex attended a live music event with family. "
+            "Related turns: D20:6 D20:10."
+        ),
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_20:observation",
+    )
+    violin = _answer_support_observation_item(
+        "violin_observation",
+        (
+            "D8:8 Alex planned family activities. Related turns: D8:10 D8:12. "
+            "D8:12 Alex found a violin concert that everyone enjoyed. "
+            "Related turns: D8:8 D8:14."
+        ),
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_8:observation",
+    )
+    distractors = (
+        _answer_support_observation_item(
+            "education_observation",
+            (
+                "D12:15 Alex discussed education reform and infrastructure. "
+                "Related turns: D12:11 D12:17."
+            ),
+            query_reason="classical_music_preference_bridge",
+            source_id="locomo:conv-fixture:session_12:observation",
+        ),
+        _answer_support_observation_item(
+            "volunteer_observation",
+            (
+                "D21:20 Alex admired volunteering and community service. "
+                "Related turns: D21:21 D21:22."
+            ),
+            query_reason="classical_music_preference_bridge",
+            source_id="locomo:conv-fixture:session_21:observation",
+        ),
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [*distractors, live_music, violin]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What music events has Alex attended?",
+    )
+    first_items = {candidates[family].item_id for family in ordered[:2]}
+
+    assert first_items == {"live_music_observation", "violin_observation"}
+
+
+def test_classical_music_preference_answer_support_prefers_direct_preference() -> None:
+    direct = _answer_support_item(
+        "classical_preference",
+        (
+            "D5:9 Morgan: I'm a fan of classical music like Bach and Mozart, "
+            "and I also enjoy modern songs."
+        ),
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_5:D5:9:turn",
+    )
+    generic = _answer_support_item(
+        "generic_music",
+        "D7:2 Morgan saw a concert downtown with friends.",
+        query_reason="classical_music_preference_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:2:turn",
+    )
+
+    assert (
+        _precise_answer_content_rank(
+            direct,
+            query_reason="classical_music_preference_bridge",
+        )
+        == 0
+    )
+    assert _answer_support_family_item_key(direct) < _answer_support_family_item_key(generic)
+
+
+def test_sentimental_reminder_answer_support_prefers_direct_reminder() -> None:
+    direct = _answer_support_item(
+        "sentimental_bowl",
+        (
+            "D4:5 Riley: The handmade bowl has sentimental value. Its pattern "
+            "and colors remind me of art and self-expression."
+        ),
+        query_reason="sentimental_reminder_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:5:turn",
+    )
+    painting_noise = _answer_support_item(
+        "painting_noise",
+        "D9:8 Riley painted a lake scene during a weekend class.",
+        query_reason="painting_inventory_bridge",
+        source_id="locomo:conv-fixture:session_9:D9:8:turn",
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_sentimental_reminder",
+        items=(painting_noise, direct),
+        token_budget=120,
+        max_rendered_chars=1000,
+    )
+
+    assert (
+        _precise_answer_content_rank(
+            direct,
+            query_reason="sentimental_reminder_bridge",
+        )
+        == 0
+    )
+    assert "D4:5 Riley: The handmade bowl" in result.bundle.rendered_text
+
+
+def test_children_preference_answer_support_prefers_direct_preferences() -> None:
+    dinosaur = _answer_support_item(
+        "children_dinosaur",
+        (
+            "D6:6 Avery: They were stoked for the dinosaur exhibit. "
+            "They love learning about animals and the bones were cool."
+        ),
+        query_reason="children_preference_bridge",
+        source_id="locomo:conv-fixture:session_6:D6:6:turn",
+    )
+    nature = _answer_support_item(
+        "children_nature",
+        "D4:8 Avery: The younger kids love nature, campfires, and hiking outdoors.",
+        query_reason="children_preference_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:8:turn",
+    )
+    generic = _answer_support_item(
+        "children_context",
+        "D8:2 Avery: I organized a family calendar around the kids' schedules.",
+        query_reason="children_preference_bridge",
+        source_id="locomo:conv-fixture:session_8:D8:2:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates((generic, nature, dinosaur))
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert (
+        _precise_answer_content_rank(
+            dinosaur,
+            query_reason="children_preference_bridge",
+        )
+        == 0
+    )
+    assert _answer_support_family_item_key(dinosaur) < _answer_support_family_item_key(
+        generic
+    )
+    assert _answer_support_diversity_family(dinosaur) != _answer_support_diversity_family(
+        nature
+    )
+    assert ordered.index(_answer_support_diversity_family(dinosaur)) < ordered.index(
+        _answer_support_diversity_family(generic)
+    )
+
+
+def test_children_preference_answer_support_prioritizes_direct_nature_preference() -> None:
+    direct_nature = _answer_support_item(
+        "children_nature_direct",
+        "D4:8 Avery: The younger kids love nature, campfires, and hiking outdoors.",
+        query_reason="children_preference_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:8:turn",
+    )
+    generic_nature = _answer_support_item(
+        "generic_nature",
+        "D16:2 Avery: The family enjoyed camping at the beach and hiking.",
+        query_reason="children_preference_bridge",
+        source_id="locomo:conv-fixture:session_16:D16:2:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates((generic_nature, direct_nature))
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert (
+        _precise_answer_content_rank(
+            direct_nature,
+            query_reason="children_preference_bridge",
+        )
+        == 0
+    )
+    assert _answer_support_diversity_family(direct_nature) != (
+        _answer_support_diversity_family(generic_nature)
+    )
+    assert ordered.index(_answer_support_diversity_family(direct_nature)) < (
+        ordered.index(_answer_support_diversity_family(generic_nature))
+    )
+
+
+def test_public_office_answer_support_preserves_direct_goal_evidence() -> None:
+    office = _answer_support_item(
+        "public_office_goal",
+        (
+            "D7:2 John: I wanted to let you know that I'm running for office "
+            "again. It's been a wild ride, but I'm more excited than ever."
+        ),
+        query_reason="public_office_service_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:2:turn",
+    )
+    relocation_scored_office = _answer_support_item(
+        "relocation_scored_public_office_goal",
+        (
+            "D7:2 John: I wanted to let you know that I'm running for office "
+            "again. It's been a wild ride, but I'm more excited than ever."
+        ),
+        query_reason="relocation_willingness_inference_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:2:turn",
+    )
+    broad_relocation_items = tuple(
+        _answer_support_item(
+            f"relocation_context_{index}",
+            f"D{index}:1 John discussed moving context and country plans. " + "context " * 30,
+            query_reason="relocation_willingness_inference_bridge",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+        )
+        for index in range(10, 16)
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_public_office_goal",
+        items=(*broad_relocation_items, relocation_scored_office, office),
+        token_budget=2000,
+        max_rendered_chars=880,
+    )
+
+    assert _is_exact_precise_content_answer_support_item(office)
+    assert _is_exact_precise_content_answer_support_item(relocation_scored_office)
+    assert "D7:2 John: I wanted to let you know" in result.bundle.rendered_text
+
+
+def test_activity_participation_answer_support_prefers_direct_activity_turn() -> None:
+    direct = _answer_support_item(
+        "pottery_class",
+        (
+            "D5:4 Avery: I just signed up for a pottery class yesterday. "
+            "It lets me express myself and get creative."
+        ),
+        query_reason="decomposition_activity_participation",
+        source_id="locomo:conv-fixture:session_5:D5:4:turn",
+    )
+    generic = _answer_support_item(
+        "pottery_fan",
+        "D5:6 Avery: I'm a big fan of pottery; the creativity is awesome.",
+        query_reason="decomposition_activity_participation",
+        source_id="locomo:conv-fixture:session_5:D5:6:turn",
+    )
+    camping = _answer_support_item(
+        "camping_trip",
+        (
+            "D9:1 Avery: I went camping with my family and enjoyed "
+            "unplugging with the kids."
+        ),
+        query_reason="decomposition_activity_participation",
+        source_id="locomo:conv-fixture:session_9:D9:1:turn",
+    )
+
+    assert (
+        _precise_turn_answer_support_rank(
+            direct,
+            query_reason="decomposition_activity_participation",
+        )
+        == 0
+    )
+    assert (
+        _precise_turn_answer_support_rank(
+            generic,
+            query_reason="decomposition_activity_participation",
+        )
+        > 0
+    )
+    assert _answer_support_family_item_key(direct) < _answer_support_family_item_key(
+        generic
+    )
+    assert _answer_support_diversity_family(direct) != _answer_support_diversity_family(
+        camping
+    )
+
+
+def test_context_packer_precise_inventory_pass_keeps_broad_item_with_exact_turn_ref() -> None:
+    broad_violin = ContextItem(
+        item_id="broad_violin",
+        item_type="chunk",
+        text=(
+            "D8:8 John takes his family to the park a few times a week. "
+            "D8:12 John found a violin concert last week that the whole family enjoyed."
+        ),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_session",
+                source_id="locomo:conv-fixture:session_8",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_8:D8:12:turn",
+                chunk_id="turn-d8-12",
+            ),
+        ),
+        diagnostics={"query_expansion_reason": "classical_music_preference_bridge"},
+    )
+    higher_scored_noise = tuple(
+        _answer_support_item(
+            f"noise_{index}",
+            f"D{index}:1 Maria discussed volunteering and community support.",
+            query_reason="classical_music_preference_bridge",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+        )
+        for index in range(1, 10)
+    )
+
+    assert (
+        _precise_turn_answer_support_rank(
+            broad_violin,
+            query_reason="classical_music_preference_bridge",
+        )
+        == 0
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_broad_violin",
+        items=(*higher_scored_noise, broad_violin),
+        token_budget=180,
+        max_rendered_chars=1200,
+    )
+
+    assert "D8:12 John found a violin concert" in result.bundle.rendered_text
+
+
+def test_context_packer_inventory_duplicate_family_allows_new_dialogue_marker_coverage() -> None:
+    first_event = _answer_support_item(
+        "veterans_petition",
+        "D15:11 John started a petition in support of military veterans' rights.",
+        query_reason="veterans_event_inventory_bridge",
+        source_id="locomo:conv-fixture:session_15:D15:11:turn",
+    )
+    second_event = _answer_support_item(
+        "veterans_hospital",
+        "D24:1 John visited a veteran's hospital and met amazing people.",
+        query_reason="veterans_event_inventory_bridge",
+        source_id="locomo:conv-fixture:session_24:D24:1:turn",
+    )
+    same_marker_duplicate = _answer_support_item(
+        "veterans_hospital_duplicate",
+        "D24:1 John went to a hospital for veterans.",
+        query_reason="veterans_event_inventory_bridge",
+        source_id="locomo:conv-fixture:session_24:D24:1:turn",
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_inventory_dialogue_marker_coverage",
+        items=(first_event, second_event, same_marker_duplicate),
+        token_budget=600,
+        max_rendered_chars=2000,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D15:11 John started a petition" in rendered
+    assert "D24:1 John visited a veteran's hospital" in rendered
+    assert "D24:1 John went to a hospital for veterans" not in rendered
+
+
+def test_context_packer_keeps_pottery_exact_support_turn_marker_coverage() -> None:
+    items = (
+        _pottery_support_item(
+            "pottery_bowl",
+            "D12:4 Melanie: Here is my pottery project. It is a ceramic bowl.",
+            source_id="locomo:conv-fixture:session_12:D12:4:turn",
+        ),
+        _pottery_support_item(
+            "pottery_cup",
+            "D8:4 Melanie: The kids made a cute cup at the clay workshop.",
+            source_id="locomo:conv-fixture:session_8:D8:4:turn",
+        ),
+        _pottery_support_item(
+            "pottery_support",
+            (
+                "D12:14 Melanie: I appreciate our friendship too. "
+                "You have always been there for me."
+            ),
+            source_id="locomo:conv-fixture:session_12:D12:14:turn",
+        ),
+    )
+    families = {_answer_support_diversity_family(item) for item in items}
+    assert len(families) == 3
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_pottery_exact_support",
+        items=items,
+        token_budget=600,
+        max_rendered_chars=2000,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert result.bundle.diagnostics["answer_support_items_used"] == 3
+    assert "D12:4 Melanie: Here is my pottery project" in rendered
+    assert "D8:4 Melanie: The kids made a cute cup" in rendered
+    assert "D12:14 Melanie: I appreciate our friendship" in rendered
 
 
 def test_context_packer_caps_art_style_chunks_per_source_group() -> None:
@@ -863,6 +1634,278 @@ def test_answer_support_family_prefers_exact_turn_for_attribute_family_support()
     assert candidates[family].item_id == exact.item_id
 
 
+def test_packer_preserves_exact_support_network_answer_under_budget_pressure() -> None:
+    distractors = tuple(
+        ContextItem(
+            item_id=f"distractor_{index}",
+            item_type="chunk",
+            text=(
+                f"D9:{index} Caroline discussed support logistics, project planning, "
+                "school events, hiking, and community updates without naming who "
+                "supports her through hard experiences. "
+                * 4
+            ),
+            score=0.999 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-26:session_9:D9:{index}:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_source": "keyword_source_sibling_chunks",
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "negative_experience_support_bridge",
+                    "source_sibling_answer_evidence": 0,
+                    "distinctive_term_hits": 2,
+                },
+            },
+        )
+        for index in range(1, 16)
+    )
+    exact = ContextItem(
+        item_id="d3_11_support_network",
+        item_type="chunk",
+        text=(
+            "D3:11 Caroline: My friends, family and mentors are my rocks - "
+            "they motivate me and give me the strength to push on."
+        ),
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_3:D3:11:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "negative_experience_support_bridge",
+                "source_sibling_answer_evidence": 3,
+                "phrase_bigram_hits": 3,
+                "distinctive_term_hits": 9,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_support_network",
+        items=(*distractors, exact),
+        token_budget=260,
+        max_rendered_chars=2200,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D3:11" in rendered
+    assert "friends, family and mentors are my rocks" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 1
+
+
+def test_packer_preserves_exact_temporal_source_sibling_answer_under_budget_pressure() -> None:
+    distractors = tuple(
+        ContextItem(
+            item_id=f"temporal_distractor_{index}",
+            item_type="chunk",
+            text=(
+                f"D8:{index} Melanie discussed recent plans, workshops, family, "
+                "community updates, and scheduling details without the museum date. "
+                * 4
+            ),
+            score=0.999 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-26:session_8:D8:{index}:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_source": "keyword_source_sibling_chunks",
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "original_query",
+                    "source_sibling_answer_evidence": 0,
+                },
+            },
+        )
+        for index in range(1, 16)
+    )
+    exact = ContextItem(
+        item_id="d6_4_temporal_museum",
+        item_type="chunk",
+        text=(
+            "D6:4 Melanie: Yesterday I took the kids to the museum - it was "
+            "so cool spending time with them."
+        ),
+        score=0.78,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:4:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "original_query",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_temporal_support",
+        items=(*distractors, exact),
+        token_budget=260,
+        max_rendered_chars=2200,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D6:4" in rendered
+    assert "Yesterday I took the kids to the museum" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 1
+
+
+def test_packer_preserves_temporal_source_sibling_answer_when_snippet_lost_time_phrase() -> None:
+    distractors = tuple(
+        ContextItem(
+            item_id=f"temporal_distractor_{index}",
+            item_type="chunk",
+            text=(
+                f"D8:{index} Caroline discussed support, family, community, "
+                "and scheduling details without the picnic answer. "
+                * 4
+            ),
+            score=0.999 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-26:session_8:D8:{index}:turn",
+                ),
+            ),
+            diagnostics={
+                "retrieval_source": "keyword_source_sibling_chunks",
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "decomposition_temporal_answer",
+                    "source_sibling_answer_evidence": 0,
+                },
+            },
+        )
+        for index in range(1, 16)
+    )
+    exact = ContextItem(
+        item_id="d6_11_temporal_picnic",
+        item_type="chunk",
+        text=(
+            "D6:11 Caroline: My friends and family helped with my transition. "
+            "They make all the difference. We even had a picnic."
+        ),
+        score=0.78,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:11:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_temporal_answer",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 1,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_temporal_snippet_answer_support",
+        items=(*distractors, exact),
+        token_budget=260,
+        max_rendered_chars=2200,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D6:11" in rendered
+    assert "We even had a picnic" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 1
+
+
+def test_temporal_answer_support_family_uses_exact_turn_ref_before_text_marker() -> None:
+    early_window = ContextItem(
+        item_id="session_6_window",
+        item_type="chunk",
+        text=(
+            "D6:5 D6:6 D6:7 ... D6:1 Caroline discussed counseling, friends, "
+            "family, transition support, and summer plans."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(source_type="locomo_session", source_id="locomo:conv-26:session_6"),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:5:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "original_query",
+                "source_sibling_answer_evidence": 0,
+            },
+        },
+    )
+    exact_answer_window = ContextItem(
+        item_id="session_6_picnic_answer",
+        item_type="chunk",
+        text=(
+            "D6:5 D6:6 D6:7 ... D6:11 Caroline: My friends and family helped "
+            "with my transition. We even had a picnic."
+        ),
+        score=0.78,
+        source_refs=(
+            SourceRef(source_type="locomo_session", source_id="locomo:conv-26:session_6"),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:11:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "decomposition_temporal_answer",
+                    "source_sibling_answer_evidence": 1,
+                },
+            },
+    )
+
+    assert _answer_support_diversity_family(exact_answer_window).startswith(
+        "temporal_source_sibling_marker_source_group:d6-11:"
+    )
+    assert _answer_support_diversity_family(early_window) != (
+        _answer_support_diversity_family(exact_answer_window)
+    )
+    assert _answer_support_family_item_key(exact_answer_window) < (
+        _answer_support_family_item_key(early_window)
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_temporal_exact_ref_marker",
+        items=(early_window, exact_answer_window),
+        token_budget=180,
+        max_rendered_chars=1200,
+    )
+
+    assert "D6:11" in result.bundle.rendered_text
+    assert "We even had a picnic" in result.bundle.rendered_text
+
+
 def test_answer_support_family_prefers_exact_turn_for_attribute_trait_inventory() -> None:
     broad = ContextItem(
         item_id="d15_broad_traits",
@@ -1047,6 +2090,19 @@ def test_answer_support_family_splits_volunteer_career_evidence_slots() -> None:
             "score_signals": {"query_expansion_reason": "volunteer_career_inference_bridge"},
         },
     )
+    generic_struggle = ContextItem(
+        item_id="career_generic_struggle",
+        item_type="chunk",
+        text=(
+            "D6:8 Maria: The shelter residents were struggling, so the team "
+            "organized supplies and checked the front desk schedule."
+        ),
+        score=0.99,
+        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D6:8:turn"),),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "volunteer_career_inference_bridge"},
+        },
+    )
 
     families = {
         _answer_support_diversity_family(motivation),
@@ -1058,6 +2114,15 @@ def test_answer_support_family_splits_volunteer_career_evidence_slots() -> None:
     assert len(families) == 4
     assert all("volunteer-career-inference-bridge" in family for family in families)
     assert any(family.endswith(":volunteer-origin") for family in families)
+    assert _answer_support_diversity_family(motivation).endswith(":start-motivation")
+    assert ":start-motivation" not in _answer_support_diversity_family(generic_struggle)
+    assert (
+        _precise_answer_content_rank(
+            motivation,
+            query_reason="volunteer_career_inference_bridge",
+        )
+        == 0
+    )
 
 
 def test_answer_support_family_ranks_degree_policy_inference_turn() -> None:
@@ -1100,6 +2165,90 @@ def test_answer_support_family_ranks_degree_policy_inference_turn() -> None:
     assert generic_family.endswith(":degree-completion-context")
     assert _answer_support_family_item_key(precise) < _answer_support_family_item_key(
         generic
+    )
+
+
+def test_answer_support_prioritizes_degree_completion_for_temporal_degree_query() -> None:
+    completion = ContextItem(
+        item_id="degree_completion_date",
+        item_type="chunk",
+        text=(
+            "D9:2 John shared an image captioned as a certificate of completion "
+            "of a university degree."
+        ),
+        score=0.88,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:2:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "degree_policy_inference_bridge",
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+    policy = ContextItem(
+        item_id="degree_policy_plan",
+        item_type="chunk",
+        text=(
+            "D9:6 John: I'm considering going into policymaking because of my "
+            "degree and my passion for making a positive impact."
+        ),
+        score=0.96,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:6:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "degree_policy_inference_bridge",
+                "phrase_bigram_hits": 2,
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+    unrelated_temporal = ContextItem(
+        item_id="unrelated_temporal",
+        item_type="chunk",
+        text="D11:1 John: Yesterday I tried a new cafe downtown.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_11:D11:1:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_temporal_answer",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 9,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [unrelated_temporal, policy, completion],
+        query="When did John get his degree?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="When did John get his degree?",
+    )
+    completion_family = _answer_support_diversity_family(completion)
+
+    assert candidates[ordered[0]].item_id == "degree_completion_date"
+    assert _is_exact_temporal_query_object_family(
+        completion_family,
+        item=completion,
+        query="When did John get his degree?",
     )
 
 
@@ -1258,6 +2407,153 @@ def test_answer_support_family_splits_business_commonality_slots() -> None:
     assert any(family.endswith(":gina-job-loss") for family in families)
     assert any(family.endswith(":jon-business-type") for family in families)
     assert any(family.endswith(":gina-store-start") for family in families)
+
+
+def test_answer_support_family_splits_business_start_reason_slots() -> None:
+    jon_reason = _answer_support_item(
+        "jon_dance_reason",
+        "D1:4 Jon: I'm starting a dance studio because I love dancing.",
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_1:D1:4:turn",
+    )
+    gina_reason = _answer_support_item(
+        "gina_fashion_reason",
+        (
+            "D6:8 Gina: I'm passionate about fashion trends and finding unique "
+            "pieces. I wanted to blend my love for dance and fashion."
+        ),
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_6:D6:8:turn",
+    )
+    generic = _answer_support_item(
+        "business_generic",
+        "D10:2 Gina: Starting a business has been a lot of work lately.",
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_10:D10:2:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, gina_reason, jon_reason])
+    ordered = _ordered_answer_support_families(candidates)
+    first_two_ids = {candidates[ordered[index]].item_id for index in range(2)}
+    families = {
+        _answer_support_diversity_family(item)
+        for item in (jon_reason, gina_reason, generic)
+    }
+
+    assert any(":jon-business-type:" in family for family in families)
+    assert any(":gina-store-start:" in family for family in families)
+    assert first_two_ids == {"jon_dance_reason", "gina_fashion_reason"}
+    assert _is_exact_precise_content_answer_support_item(jon_reason)
+    assert _is_exact_precise_content_answer_support_item(gina_reason)
+
+
+def test_answer_support_business_job_loss_stays_in_career_slot() -> None:
+    job_loss = ContextItem(
+        item_id="jon_job_loss",
+        item_type="chunk",
+        text=(
+            "D1:2 Jon: Lost my job as a banker yesterday, so I'm gonna take "
+            "a shot at starting my own business."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-30:session_1:D1:2:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "business_commonality_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    family = _answer_support_diversity_family(job_loss)
+
+    assert family.startswith("query_reason_career_slot_source_group:")
+    assert ":jon-job-loss:" in family
+
+
+def test_answer_support_round_robins_business_commonality_career_slots() -> None:
+    gina_store = _answer_support_item(
+        "gina_store",
+        "D2:1 Gina launched an ad campaign for her clothing store.",
+        query_reason="business_commonality_bridge",
+        source_id="locomo:conv-30:session_2:D2:1:turn",
+    )
+    jon_business_a = _answer_support_item(
+        "jon_business_a",
+        "D1:4 Jon: I'm starting a dance studio because I love dancing.",
+        query_reason="business_commonality_bridge",
+        source_id="locomo:conv-30:session_1:D1:4:turn",
+    )
+    jon_business_b = _answer_support_item(
+        "jon_business_b",
+        "D18:2 Jon: The dance studio business is growing.",
+        query_reason="business_commonality_bridge",
+        source_id="locomo:conv-30:session_18:D18:2:turn",
+    )
+    gina_loss = _answer_support_item(
+        "gina_loss",
+        "D1:3 Gina: I also lost my job at Door Dash this month.",
+        query_reason="business_commonality_bridge",
+        source_id="locomo:conv-30:session_1:D1:3:turn",
+    )
+    jon_loss = _answer_support_item(
+        "jon_loss",
+        "D1:2 Jon: Lost my job as a banker yesterday, so I'm starting my own business.",
+        query_reason="business_commonality_bridge",
+        source_id="locomo:conv-30:session_1:D1:2:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [gina_store, jon_business_a, jon_business_b, gina_loss, jon_loss]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+    first_four_ids = {candidates[ordered[index]].item_id for index in range(4)}
+
+    assert "gina_store" in first_four_ids
+    assert {"jon_business_a", "jon_business_b"}.intersection(first_four_ids)
+    assert "gina_loss" in first_four_ids
+    assert "jon_loss" in first_four_ids
+
+
+def test_answer_support_family_splits_item_purchase_object_slots() -> None:
+    shoes = _answer_support_item(
+        "purchase_shoes",
+        "D7:18 Melanie: Just got some new shoes, too!",
+        query_reason="item_purchase_bridge",
+        source_id="locomo:conv-26:session_7:D7:18:turn",
+    )
+    figurines = _answer_support_item(
+        "purchase_figurines",
+        "D19:2 Melanie: I bought some figurines and wooden dolls at the market.",
+        query_reason="item_purchase_bridge",
+        source_id="locomo:conv-26:session_19:D19:2:turn",
+    )
+    generic = _answer_support_item(
+        "purchase_generic",
+        "D4:5 Melanie: I bought a few items for the house.",
+        query_reason="item_purchase_bridge",
+        source_id="locomo:conv-26:session_4:D4:5:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, shoes, figurines])
+    ordered = _ordered_answer_support_families(candidates)
+    first_two_ids = {candidates[ordered[index]].item_id for index in range(2)}
+    families = {
+        _answer_support_diversity_family(item)
+        for item in (shoes, figurines, generic)
+    }
+
+    assert any(":item-purchase-shoes:" in family for family in families)
+    assert any(":item-purchase-figurines:" in family for family in families)
+    assert any(":item-purchase-generic:" in family for family in families)
+    assert first_two_ids == {"purchase_shoes", "purchase_figurines"}
+    assert _is_exact_inventory_answer_family(shoes)
+    assert _is_exact_inventory_answer_family(figurines)
 
 
 def test_answer_support_family_splits_charity_brand_sponsorship_slots() -> None:
@@ -1979,6 +3275,63 @@ def test_answer_support_family_splits_activity_slots_within_same_source_group() 
     )
 
 
+def test_ordered_answer_support_families_round_robins_activity_slots() -> None:
+    def item(item_id: str, text: str, source_id: str) -> ContextItem:
+        return ContextItem(
+            item_id=item_id,
+            item_type="chunk",
+            text=text,
+            score=0.99,
+            source_refs=(SourceRef(source_type="document", source_id=source_id),),
+            diagnostics={
+                "retrieval_source": "keyword_source_sibling_chunks",
+                "score_signals": {
+                    "query_expansion_reason": "decomposition_activity_participation"
+                },
+            },
+        )
+
+    camping_a = item(
+        "camping_a",
+        "D9:1 Melanie went camping with family.",
+        "locomo:conv-fixture:session_9:D9:1:turn",
+    )
+    camping_b = item(
+        "camping_b",
+        "D8:1 Melanie went camping near the lake.",
+        "locomo:conv-fixture:session_8:D8:1:turn",
+    )
+    hiking = item(
+        "hiking",
+        "D16:1 Melanie went hiking on a trail.",
+        "locomo:conv-fixture:session_16:D16:1:turn",
+    )
+    pottery = item(
+        "pottery",
+        "D5:4 Melanie signed up for a pottery class.",
+        "locomo:conv-fixture:session_5:D5:4:turn",
+    )
+    painting = item(
+        "painting",
+        "D1:12 Melanie painted a lake sunrise.",
+        "locomo:conv-fixture:session_1:D1:12:turn",
+    )
+    swimming = item(
+        "swimming",
+        "D1:18 Melanie went swimming with the kids.",
+        "locomo:conv-fixture:session_1:D1:18:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [camping_a, camping_b, hiking, pottery, painting, swimming]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert ordered.index(_answer_support_diversity_family(swimming)) < ordered.index(
+        _answer_support_diversity_family(camping_b)
+    )
+
+
 def test_context_rank_key_prefers_group_level_source_sibling_turn_over_broad_chunk() -> None:
     broad = ContextItem(
         item_id="broad_session",
@@ -2240,6 +3593,70 @@ def test_context_dedupe_prefers_precise_citations_when_duplicate_scores_tie() ->
     assert result.source_refs[0].bbox == (16.0, 24.0, 280.0, 64.0)
 
 
+def test_context_dedupe_preserves_exact_source_sibling_answer_body() -> None:
+    broad = ContextItem(
+        item_id="chunk_same",
+        item_type="chunk",
+        text=(
+            "D6:5 D6:6 D6:7 ... D6:1 Caroline discussed counseling, friends, "
+            "family, and transition support."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_session",
+                source_id="locomo:conv-26:session_6",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:4:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:5:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_temporal_answer",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+    exact = ContextItem(
+        item_id="chunk_same",
+        item_type="chunk",
+        text=(
+            "D6:11 Caroline: My friends and family helped with my transition. "
+            "They make all the difference. We even had a picnic."
+        ),
+        score=0.97,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_6:D6:11:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_temporal_answer",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 1,
+            },
+        },
+    )
+
+    (result,) = dedupe_rank_items((broad, exact))
+
+    assert result.text.startswith("D6:11 Caroline")
+    assert any("D6:11" in ref.source_id for ref in result.source_refs)
+
+
 def test_memory_items_skip_sensitive_citation_quote_previews() -> None:
     result = ContextPacker().pack(
         bundle_id="ctx_sensitive_citation_quote",
@@ -2416,6 +3833,64 @@ def test_context_packer_preserves_answer_support_reason_diversity_under_budget()
     assert result.bundle.diagnostics["answer_support_items_used"] == 1
 
 
+def test_context_packer_preserves_exact_query_object_turn_before_broad_support() -> None:
+    broad_support_items = tuple(
+        ContextItem(
+            item_id=f"broad_support_{index}",
+            item_type="chunk",
+            text=(
+                f"BROAD_SUPPORT_MARKER_{index} family and friends were supportive "
+                f"and encouraging during a difficult season. "
+                + ("support context " * 10)
+            ),
+            score=0.99 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+                    chunk_id=f"broad_support_{index}",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "query_expansion_reason": "support_network_bridge",
+                "retrieval_sources": ("keyword_source_sibling_chunks",),
+                "score_signals": {"source_sibling_answer_evidence": 1.0},
+            },
+        )
+        for index in range(1, 9)
+    )
+    exact_busy_turn = ContextItem(
+        item_id="exact_busy_turn",
+        item_type="chunk",
+        text=(
+            "EXACT_BUSY_MARKER D17:10 Melanie: I have been reading that book "
+            "and painting to keep busy during the pottery break."
+        ),
+        score=0.2,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_17:D17:10:turn",
+                chunk_id="exact_busy_turn",
+            ),
+        ),
+        diagnostics={"memory_scope_id": "memory_scope_default"},
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_exact_query_object_turn",
+        items=(*broad_support_items, exact_busy_turn),
+        token_budget=1000,
+        query="What does Melanie do to keep herself busy during her pottery break?",
+        max_rendered_chars=950,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "EXACT_BUSY_MARKER" in rendered
+    assert result.bundle.diagnostics["exact_query_object_turn_items_used"] == 1
+
+
 def test_context_packer_preserves_answer_support_source_group_diversity_under_budget() -> None:
     pride_school = ContextItem(
         item_id="chunk_lgbtq_school_event",
@@ -2469,6 +3944,59 @@ def test_context_packer_preserves_answer_support_source_group_diversity_under_bu
     assert result.bundle.diagnostics["answer_support_families_considered"] == 2
     assert result.bundle.diagnostics["answer_support_families_used"] == 2
     assert result.bundle.diagnostics["answer_support_items_used"] == 1
+
+
+def test_answer_support_prioritizes_concrete_community_participation_slots() -> None:
+    generic_support = _answer_support_item(
+        "chunk_community_support",
+        "D1:1 Riley attended a LGBTQ support group and felt welcomed.",
+        query_reason="decomposition_lgbtq_support_group_event",
+        source_id="locomo:conv-1:session_1:D1:1:turn",
+    )
+    mentorship = _answer_support_item(
+        "chunk_community_mentorship",
+        "D9:2 Riley joined a mentorship program for LGBTQ youth.",
+        query_reason="decomposition_lgbtq_pride_event",
+        source_id="locomo:conv-1:session_9:D9:2:turn",
+    )
+    art_show = _answer_support_item(
+        "chunk_community_art_show",
+        "D9:12 Riley is having an LGBTQ art show with paintings.",
+        query_reason="lgbtq_community_participation_bridge",
+        source_id="locomo:conv-1:session_9:D9:12:turn",
+    )
+    later_art_show = _answer_support_item(
+        "chunk_community_later_art_show",
+        "D14:33 Riley is putting together an LGBTQ art show next month.",
+        query_reason="lgbtq_community_participation_bridge",
+        source_id="locomo:conv-1:session_14:D14:33:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_support, mentorship, later_art_show, art_show]
+    )
+    generic_family = _answer_support_diversity_family(generic_support)
+    mentorship_family = _answer_support_diversity_family(mentorship)
+    art_show_family = _answer_support_diversity_family(art_show)
+    later_art_show_family = _answer_support_diversity_family(later_art_show)
+    ordered = _ordered_answer_support_families(candidates)
+    recency_ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What is Riley's latest LGBTQ community activity?",
+    )
+
+    assert ":community-mentorship-program:" in mentorship_family
+    assert ":community-art-show:" in art_show_family
+    assert ":community-art-show:" in later_art_show_family
+    assert _is_exact_inventory_answer_family(mentorship)
+    assert _is_exact_inventory_answer_family(art_show)
+    assert not _is_exact_inventory_answer_family(generic_support)
+    assert ordered.index(mentorship_family) < ordered.index(generic_family)
+    assert ordered.index(art_show_family) < ordered.index(generic_family)
+    assert ordered.index(art_show_family) < ordered.index(later_art_show_family)
+    assert recency_ordered.index(later_art_show_family) < recency_ordered.index(
+        art_show_family
+    )
 
 
 def test_context_packer_preserves_distinct_observation_marker_windows_under_budget() -> None:
@@ -2664,6 +4192,14 @@ def test_answer_support_orders_specific_pottery_before_generic_inventory_slots()
                 source_type="locomo_observation",
                 source_id="locomo:conv-26:session_12:observation",
             ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:8:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:14:turn",
+            ),
         ),
         diagnostics={
             "memory_scope_id": "memory_scope_default",
@@ -2680,6 +4216,69 @@ def test_answer_support_orders_specific_pottery_before_generic_inventory_slots()
     assert _ordered_answer_support_families(candidates)[0] == (
         _answer_support_diversity_family(pottery_marker_window)
     )
+
+
+def test_answer_support_family_splits_dessert_inventory_slots() -> None:
+    cobbler = ContextItem(
+        item_id="dessert_cobbler",
+        item_type="chunk",
+        text="D2:25 Maria: I made some peach cobbler recently, it was great.",
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_2:D2:25:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    sundae = ContextItem(
+        item_id="dessert_sundae",
+        item_type="chunk",
+        text=(
+            "D13:18 Maria: My favorite homemade dessert is a banana split "
+            "sundae after volunteering."
+        ),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_13:D13:18:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+    generic = ContextItem(
+        item_id="dessert_generic",
+        item_type="chunk",
+        text="D20:4 Maria talked about homemade desserts.",
+        score=0.99,
+        source_refs=(SourceRef(source_type="chunk", source_id="generic"),),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "decomposition_inventory_list"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic, sundae, cobbler],
+        query="What desserts has Maria made?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What desserts has Maria made?",
+    )
+    first_two_ids = {candidates[family].item_id for family in ordered[:2]}
+
+    assert any(":dessert-cobbler:" in family for family in candidates)
+    assert any(":dessert-sundae:" in family for family in candidates)
+    assert first_two_ids == {"dessert_cobbler", "dessert_sundae"}
 
 
 def test_context_packer_caps_answer_support_source_group_repairs_per_reason() -> None:
@@ -2954,6 +4553,242 @@ def test_answer_support_prefers_friend_place_shelter_anchor_over_later_activity_
     assert candidates[ordered[0]].item_id == "d2_shelter_anchor"
 
 
+def test_answer_support_prioritizes_shelter_service_activity_inventory_slot() -> None:
+    generic = ContextItem(
+        item_id="generic_shelter",
+        item_type="chunk",
+        text="D5:1 Riley volunteers at a neighborhood shelter on weekends.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_5:D5:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "volunteering_inventory_bridge",
+                "distinctive_term_hits": 6,
+            },
+        },
+    )
+    service_activity = ContextItem(
+        item_id="shelter_service",
+        item_type="chunk",
+        text=(
+            "D4:2 Riley volunteered at a homeless shelter to give out food "
+            "and supplies, then helped organize a donation drive for kids in need."
+        ),
+        score=0.94,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:2:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "volunteering_inventory_bridge",
+                "distinctive_term_hits": 9,
+                "phrase_bigram_hits": 2,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, service_activity])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert "shelter-service-activity" in ordered[0]
+    assert candidates[ordered[0]].item_id == "shelter_service"
+
+
+def test_answer_support_prioritizes_exact_church_friend_activity_inventory_slots() -> None:
+    generic_hike = _answer_support_item(
+        "generic_hike",
+        "D2:17 Riley hikes with friends and has game nights.",
+        query_reason="church_friend_activity_inventory_bridge",
+        source_id="locomo:conv-fixture:session_2:D2:17:turn",
+    )
+    church_anchor = _answer_support_item(
+        "church_anchor",
+        "D4:1 Riley joined a local church and met welcoming people.",
+        query_reason="church_friend_activity_inventory_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:1:turn",
+    )
+    picnic = _answer_support_item(
+        "picnic",
+        "D5:6 Riley had a picnic with friends from church and played games.",
+        query_reason="church_friend_activity_inventory_bridge",
+        source_id="locomo:conv-fixture:session_5:D5:6:turn",
+    )
+    community_work = _answer_support_item(
+        "community_work",
+        "D6:8 Riley took up community work with friends from church.",
+        query_reason="church_friend_activity_inventory_bridge",
+        source_id="locomo:conv-fixture:session_6:D6:8:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_hike, church_anchor, picnic, community_work]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert {candidates[ordered[index]].item_id for index in range(2)} == {
+        "picnic",
+        "community_work",
+    }
+    assert "church-friend-activity" in ordered[0]
+
+
+def test_answer_support_splits_volunteer_helped_person_inventory_slot() -> None:
+    items = (
+        ContextItem(
+            item_id="named_person",
+            item_type="chunk",
+            text=(
+                "D4:2 Riley had a conversation with someone named Taylor at "
+                "the charity event and connected them with local support."
+            ),
+            score=0.91,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-fixture:session_4:D4:2:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {
+                    "query_expansion_reason": "volunteering_inventory_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="met_person",
+            item_type="chunk",
+            text=(
+                "D5:6 Riley met this amazing woman, Harper, while volunteering "
+                "and learned a lot from her resilience."
+            ),
+            score=0.9,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-fixture:session_5:D5:6:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {
+                    "query_expansion_reason": "volunteering_inventory_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="resident_letter",
+            item_type="chunk",
+            text=(
+                "D6:8 One of the shelter residents, Morgan, wrote a letter "
+                "expressing gratitude for the support they received."
+            ),
+            score=0.89,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-fixture:session_6:D6:8:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {
+                    "query_expansion_reason": "volunteering_inventory_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        ),
+    )
+
+    families = {_answer_support_diversity_family(item) for item in items}
+
+    assert len(families) == len(items)
+    assert all(":volunteer-helped-person:" in family for family in families)
+
+
+def test_answer_support_prioritizes_volunteering_people_source_groups() -> None:
+    def item(
+        item_id: str,
+        text: str,
+        source_id: str,
+    ) -> ContextItem:
+        return ContextItem(
+            item_id=item_id,
+            item_type="chunk",
+            text=text,
+            score=0.9,
+            source_refs=(SourceRef(source_type="locomo_turn", source_id=source_id),),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "score_signals": {
+                    "query_expansion_reason": "volunteering_people_inventory_bridge",
+                    "distinctive_term_hits": 8,
+                },
+            },
+        )
+
+    people = (
+        item(
+            "named_person",
+            "D4:2 Riley had a conversation with someone named Taylor.",
+            "locomo:conv-fixture:session_4:D4:2:turn",
+        ),
+        item(
+            "met_person",
+            "D5:6 Riley met this amazing woman, Harper, while volunteering.",
+            "locomo:conv-fixture:session_5:D5:6:turn",
+        ),
+        item(
+            "resident_letter",
+            "D6:8 One of the shelter residents, Morgan, wrote a gratitude letter.",
+            "locomo:conv-fixture:session_6:D6:8:turn",
+        ),
+        item(
+            "later_resident_letter",
+            (
+                "D8:9 One of the residents at the shelter, Jordan, wrote a "
+                "heartfelt expression of gratitude."
+            ),
+            "locomo:conv-fixture:session_8:D8:9:turn",
+        ),
+    )
+    direct_friend = item(
+        "direct_friend",
+        "D9:1 Riley became friends with a fellow volunteer.",
+        "locomo:conv-fixture:session_9:D9:1:turn",
+    )
+    fundraiser = item(
+        "fundraiser",
+        "D10:4 Riley helped with a chili cook-off fundraiser.",
+        "locomo:conv-fixture:session_10:D10:4:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [people[0], direct_friend, fundraiser, people[1], people[2], people[3]]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+    ordered_item_ids = [candidates[family].item_id for family in ordered]
+
+    assert ordered_item_ids[:4] == [
+        "named_person",
+        "met_person",
+        "resident_letter",
+        "later_resident_letter",
+    ]
+
+
 def test_answer_support_family_splits_inventory_place_slots() -> None:
     items = (
         ContextItem(
@@ -3215,6 +5050,14 @@ def test_answer_support_family_keeps_pottery_slots_query_scoped() -> None:
                 source_type="locomo_observation",
                 source_id="locomo:conv-26:session_12:observation",
             ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:8:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:14:turn",
+            ),
         ),
         diagnostics={
             "memory_scope_id": "memory_scope_default",
@@ -3250,6 +5093,14 @@ def test_answer_support_rank_prefers_pottery_friendship_companion_over_art_show_
                 source_type="locomo_observation",
                 source_id="locomo:conv-26:session_12:observation",
             ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:8:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:14:turn",
+            ),
         ),
         diagnostics={
             "memory_scope_id": "memory_scope_default",
@@ -3280,8 +5131,36 @@ def test_answer_support_rank_prefers_pottery_friendship_companion_over_art_show_
             "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
         },
     )
+    direct_friendship = ContextItem(
+        item_id="d12_direct_friendship",
+        item_type="chunk",
+        text=(
+            "D12:14 Melanie: I appreciate our friendship too, Caroline. "
+            "You've always been there for me."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_12:D12:14:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_turn",
+            "score_signals": {"query_expansion_reason": "pottery_type_bridge"},
+        },
+    )
 
+    assert _precise_answer_content_rank(
+        direct_friendship,
+        query_reason="pottery_type_bridge",
+    ) == 1
     assert _answer_support_family_item_key(friendship_companion) < (
+        _answer_support_family_item_key(art_show_noise)
+    )
+    assert _answer_support_family_item_key(direct_friendship) < (
         _answer_support_family_item_key(art_show_noise)
     )
 
@@ -3451,6 +5330,140 @@ def test_answer_support_inventory_slot_takes_precedence_over_marker_coverage() -
     assert ":church-joined:" in family
 
 
+def test_answer_support_outdoor_visual_group_response_stays_inventory_slot() -> None:
+    item = ContextItem(
+        item_id="d16_visual_group_response",
+        item_type="chunk",
+        text=(
+            "D16:2 Riley: Cool that it went well - you and your friends look "
+            "like a great team. I'm busy getting ready for a fundraiser next week."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_16:D16:2:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_turn",
+            "source_id": "locomo:conv-41:session_16:D16:2:turn",
+            "query_expansion_reason": "outdoor_activity_inventory_bridge",
+            "score_signals": {
+                "query_expansion_reason": "outdoor_activity_inventory_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+
+    family = _answer_support_diversity_family(item)
+
+    assert not family.startswith("temporal_source_sibling")
+    assert family.startswith(
+        "query_reason_inventory_slot_source_group:"
+        "outdoor-activity-inventory-bridge:outdoor-visual-group:"
+    )
+
+
+def test_answer_support_place_area_inventory_splits_broad_regions() -> None:
+    northwest = ContextItem(
+        item_id="d11_region",
+        item_type="chunk",
+        text=(
+            "D11:5 John: We explored the coast up in the Pacific Northwest "
+            "and hit some cool national parks."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_11:D11:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_turn",
+            "source_id": "locomo:conv-41:session_11:D11:5:turn",
+            "query_expansion_reason": "trip_destination_bridge",
+            "score_signals": {
+                "query_expansion_reason": "trip_destination_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+    east = ContextItem(
+        item_id="d12_region",
+        item_type="chunk",
+        text="D12:17 John: I'm planning a trip to the East Coast.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_12:D12:17:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_turn",
+            "source_id": "locomo:conv-41:session_12:D12:17:turn",
+            "query_expansion_reason": "place_area_inventory_bridge",
+            "score_signals": {
+                "query_expansion_reason": "place_area_inventory_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+
+    assert ":state-pacific-northwest:" in _answer_support_diversity_family(northwest)
+    assert ":state-east-coast:" in _answer_support_diversity_family(east)
+
+
+def test_answer_support_music_event_date_turn_keeps_temporal_support_family() -> None:
+    item = ContextItem(
+        item_id="d8_violin_concert",
+        item_type="chunk",
+        text=(
+            "D8:12 John: Just last week, I found a violin concert that we "
+            "all enjoyed."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_8:D8:12:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_turn",
+            "source_id": "locomo:conv-41:session_8:D8:12:turn",
+            "query_expansion_reason": "classical_music_preference_bridge",
+            "score_signals": {
+                "query_expansion_reason": "classical_music_preference_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+
+    family = _answer_support_diversity_family(item)
+
+    assert family.startswith("temporal_source_sibling_marker_source_group:")
+    assert ":d8-12:" in family
+
+
 def test_answer_support_family_splits_religious_direct_and_contrast_evidence() -> None:
     direct = ContextItem(
         item_id="d14_church",
@@ -3589,6 +5602,130 @@ def test_answer_support_family_splits_cause_inventory_slots() -> None:
     assert first_three_ids == {"d9_education", "d12_education", "d15_veterans"}
 
 
+def test_answer_support_restricts_cause_inventory_to_cause_slots() -> None:
+    education = ContextItem(
+        item_id="d12_education",
+        item_type="chunk",
+        text=(
+            "D12:5 John: Recently, education reform and infrastructure "
+            "development are key to a thriving community."
+        ),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_12:D12:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": (
+                    "cause_education_infrastructure_inventory_bridge"
+                ),
+            },
+        },
+    )
+    adjacent_visual_query = ContextItem(
+        item_id="d12_adjacent_visual_query",
+        item_type="chunk",
+        text=(
+            "D12:7 John: Thanks, Maria! I got good feedback on my blog posts. "
+            "image query: blog post education reform"
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_12:D12:7:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": (
+                    "cause_education_infrastructure_inventory_bridge"
+                ),
+            },
+        },
+    )
+    generic_help = ContextItem(
+        item_id="generic_help",
+        item_type="chunk",
+        text="D6:7 John helped at a shelter and made a difference.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_6:D6:7:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "cause_veterans_inventory_bridge",
+            },
+        },
+    )
+    veterans_direct = ContextItem(
+        item_id="veterans_direct",
+        item_type="chunk",
+        text="D15:3 John: I am passionate about veterans and their rights.",
+        score=0.89,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_15:D15:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "cause_veterans_inventory_bridge",
+            },
+        },
+    )
+    veterans_event = ContextItem(
+        item_id="veterans_event",
+        item_type="chunk",
+        text="D21:22 John participated in a marching event for veterans' rights.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_21:D21:22:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {
+                "query_expansion_reason": "cause_veterans_inventory_bridge",
+            },
+        },
+    )
+
+    education_family = _answer_support_diversity_family(education)
+    adjacent_family = _answer_support_diversity_family(adjacent_visual_query)
+    help_family = _answer_support_diversity_family(generic_help)
+    candidates = _answer_support_diversity_candidates(
+        [generic_help, veterans_event, veterans_direct, education, adjacent_visual_query],
+        query="What causes does John feel passionate about supporting?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What causes does John feel passionate about supporting?",
+    )
+    first_two_ids = {candidates[family].item_id for family in ordered[:2]}
+
+    assert ":education-infrastructure:" in education_family
+    assert _is_exact_inventory_answer_family(education)
+    assert ":education-infrastructure:" not in adjacent_family
+    assert not _is_exact_inventory_answer_family(adjacent_visual_query)
+    assert "volunteer-helped-person" not in help_family
+    assert not _is_exact_inventory_answer_family(generic_help)
+    assert first_two_ids == {"d12_education", "veterans_direct"}
+
+
 def test_context_packer_allows_more_answer_support_repairs_for_family_activity() -> None:
     items = tuple(
         ContextItem(
@@ -3651,6 +5788,97 @@ def test_context_packer_allows_more_answer_support_repairs_for_activity_decompos
 
     assert result.bundle.diagnostics["answer_support_families_considered"] == 5
     assert result.bundle.diagnostics["answer_support_items_used"] == 4
+
+
+def test_context_packer_allows_pet_acquisition_date_anchor_past_default_support_cap() -> None:
+    filler_items = tuple(
+        ContextItem(
+            item_id=f"pet_temporal_filler_{index}",
+            item_type="chunk",
+            text=(
+                f"D{index}:1 session date: yesterday. Sam and Dana discussed "
+                "family recipes and pets without naming the new gift."
+            ),
+            score=0.98 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "retrieval_sources": ["keyword_source_sibling_chunks"],
+                "score_signals": {
+                    "query_expansion_reason": "pet_acquisition_date_bridge",
+                    "source_sibling_answer_evidence": 1,
+                    "distinctive_term_hits": 8,
+                },
+            },
+        )
+        for index in range(1, 13)
+    )
+    date_anchor = ContextItem(
+        item_id="named_gift_date_anchor_late",
+        item_type="chunk",
+        text=(
+            "D9:2 Dana: Dana has been revising and perfecting a recipe for "
+            "her family. Related turns: D9:4."
+        ),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:2:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "pet_acquisition_date_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 6,
+            },
+        },
+    )
+    named_gift_turn = ContextItem(
+        item_id="named_gift_later_turn",
+        item_type="chunk",
+        text=(
+            "D9:4 Dana: The stuffed animal dog you gave me is named Pippa, "
+            "and she stays with me while I write."
+        ),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "pet_acquisition_date_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 9,
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_pet_acquisition_support_cap",
+        items=(*filler_items, date_anchor, named_gift_turn),
+        token_budget=4000,
+        query="When did Sam get Pippa for Dana?",
+    )
+
+    selected_source_ids = {
+        ref.source_id for item in result.bundle.items for ref in item.source_refs
+    }
+    assert "locomo:conv-fixture:session_9:D9:2:turn" in selected_source_ids
+    assert result.bundle.diagnostics["answer_support_items_used"] > 8
 
 
 def test_answer_support_splits_painting_inventory_visual_slots() -> None:
@@ -4209,6 +6437,443 @@ def test_context_packer_prefers_birdwatching_exact_turn_evidence_over_broad_wind
 
     assert candidates[ordered[0]].item_id == "birdwatching_exact_turn"
     assert _answer_support_family_item_key(exact) < _answer_support_family_item_key(broad)
+
+
+def test_context_packer_prefers_exact_career_intent_turn_over_broad_window() -> None:
+    broad = ContextItem(
+        item_id="career_broad_session",
+        item_type="chunk",
+        text=(
+            "D4:12 Melanie asked about counseling and mental health services. "
+            "D4:14 Melanie said Caroline's dedication to helping others was inspiring."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_session",
+                source_id="locomo:conv-26:session_4",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_4:D4:14:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_intent_bridge",
+                "distinctive_term_hits": 12,
+            },
+        },
+    )
+    exact = ContextItem(
+        item_id="career_exact_turn",
+        item_type="chunk",
+        text=(
+            "D4:13 Caroline: I'm thinking of working with trans people, "
+            "helping them accept themselves and supporting their mental health."
+        ),
+        score=0.976,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-26:session_4:D4:13:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_intent_bridge",
+                "distinctive_term_hits": 7,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([broad, exact])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert candidates[ordered[0]].item_id == "career_exact_turn"
+    assert (
+        _precise_turn_answer_support_rank(
+            exact,
+            query_reason="career_intent_bridge",
+        )
+        == 0
+    )
+    assert _answer_support_family_item_key(exact) < _answer_support_family_item_key(broad)
+
+
+def test_career_path_answer_support_keeps_specific_population_detail_slot() -> None:
+    generic = ContextItem(
+        item_id="career_generic_turn",
+        item_type="chunk",
+        text=(
+            "D4:11 Riley: I'm looking into counseling and mental health as a "
+            "career because I want to help people."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:11:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_path_bridge",
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+    specific = ContextItem(
+        item_id="career_specific_turn",
+        item_type="chunk",
+        text=(
+            "D4:13 Riley: I'm thinking of working with trans people, helping "
+            "them accept themselves and supporting their mental health."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:13:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_path_bridge",
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([generic, specific])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert len(candidates) == 2
+    assert candidates[ordered[0]].item_id == "career_specific_turn"
+    assert {item.item_id for item in candidates.values()} == {
+        "career_generic_turn",
+        "career_specific_turn",
+    }
+
+
+def test_exact_temporal_answer_support_requires_temporal_query_wording() -> None:
+    item = ContextItem(
+        item_id="career_source_sibling",
+        item_type="chunk",
+        text=(
+            "D4:13 Riley described a career path in counseling and mental health "
+            "after a workshop."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:13:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_path_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    family = (
+        "temporal_source_sibling_marker_source_group:"
+        "d4-13:memory-scope-fixture-session-4"
+    )
+
+    assert (
+        _is_exact_temporal_query_object_family(
+            family,
+            item=item,
+            query="What career path did Riley decide to pursue?",
+        )
+        is False
+    )
+    assert (
+        _is_exact_temporal_query_object_family(
+            family,
+            item=item,
+            query="When did Riley discuss the career path?",
+        )
+        is False
+    )
+
+
+def test_non_temporal_activity_list_does_not_promote_temporal_sibling() -> None:
+    temporal_noise = ContextItem(
+        item_id="temporal_noise",
+        item_type="chunk",
+        text=(
+            "TEMPORAL_NOISE_MARKER D9:1 Riley: Last weekend we discussed plans "
+            "after the trip. "
+            + ("temporal detail " * 20)
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:1:turn",
+                chunk_id="temporal_noise",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_temporal_answer",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    activity_answer = ContextItem(
+        item_id="activity_answer",
+        item_type="chunk",
+        text=(
+            "ACTIVITY_ANSWER_MARKER D3:4 Riley: I signed up for a pottery class "
+            "and started painting again."
+        ),
+        score=0.6,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_3:D3:4:turn",
+                chunk_id="activity_answer",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "decomposition_activity_participation",
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_non_temporal_activity_list",
+        items=(temporal_noise, activity_answer),
+        token_budget=300,
+        query="What activities does Riley do?",
+        max_rendered_chars=540,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "ACTIVITY_ANSWER_MARKER" in rendered
+    assert "TEMPORAL_NOISE_MARKER" not in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] == 1
+
+
+def test_exact_query_object_turns_prefer_direct_answer_content() -> None:
+    generic_items = tuple(
+        ContextItem(
+            item_id=f"generic_kids_{index}",
+            item_type="chunk",
+            text=(
+                f"GENERIC_KIDS_MARKER_{index} D{index}:1 Riley: "
+                "The kids had context at the museum with books, painting, "
+                "animals, and family plans."
+            ),
+            score=0.99 - (index * 0.01),
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=(
+                        f"locomo:conv-fixture:session_{index}:D{index}:1:turn"
+                    ),
+                    chunk_id=f"generic_kids_{index}",
+                ),
+            ),
+            diagnostics={
+                "score_signals": {
+                    "query_expansion_reason": "children_preference_bridge",
+                },
+            },
+        )
+        for index in range(1, 5)
+    )
+    direct_answer = ContextItem(
+        item_id="direct_kids_nature",
+        item_type="chunk",
+        text=(
+            "DIRECT_NATURE_MARKER D9:1 Riley: The younger kids love nature "
+            "and hiking."
+        ),
+        score=0.2,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:1:turn",
+                chunk_id="direct_kids_nature",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "children_preference_bridge",
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_exact_query_object_direct_answer",
+        items=(*generic_items, direct_answer),
+        token_budget=2000,
+        query="What do Riley's kids like?",
+        max_rendered_chars=1100,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "DIRECT_NATURE_MARKER" in rendered
+    assert result.bundle.diagnostics["exact_query_object_turn_items_used"] >= 1
+
+
+def test_exact_query_object_prepass_skips_event_participation_help_reason() -> None:
+    event_help_exact = ContextItem(
+        item_id="event_help_exact",
+        item_type="chunk",
+        text=(
+            "EVENT_HELP_EXACT_MARKER D1:1 Riley: I joined a mentoring event "
+            "to help children."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_1:D1:1:turn",
+                chunk_id="event_help_exact",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "event_participation_help_bridge",
+            },
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_event_help_exact_query_object",
+        items=(event_help_exact,),
+        token_budget=1000,
+        query="What events has Riley participated in to help children?",
+        max_rendered_chars=2000,
+    )
+
+    assert "EVENT_HELP_EXACT_MARKER" in result.bundle.rendered_text
+    assert result.bundle.diagnostics["exact_query_object_turn_items_used"] == 0
+
+
+def test_career_answer_support_demotes_temporal_marker_noise() -> None:
+    temporal_marker = ContextItem(
+        item_id="career_temporal_marker_noise",
+        item_type="chunk",
+        text="D3:3 Riley discussed identity and inclusion at a school event.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_3:D3:3:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    career_detail = ContextItem(
+        item_id="career_specific_turn",
+        item_type="chunk",
+        text=(
+            "D4:13 Riley: I'm thinking of working with trans people, helping "
+            "them accept themselves and supporting their mental health."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:13:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "career_intent_bridge",
+                "distinctive_term_hits": 8,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [temporal_marker, career_detail]
+    )
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert candidates[ordered[0]].item_id == "career_specific_turn"
+
+
+def test_answer_support_prefers_pet_acquisition_date_anchor_over_later_pet_turn() -> None:
+    date_anchor = ContextItem(
+        item_id="named_gift_date_anchor",
+        item_type="chunk",
+        text=(
+            "session_9 turn D9:2\nsession_9 date: 2:01 pm on 21 October, 2022\n"
+            "D9:2 Dana: Hey Sam! I have been revising and perfecting the recipe "
+            "I made for my family and it turned out really tasty. What's been happening?"
+        ),
+        score=0.97,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:2:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "pet_acquisition_date_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 6,
+            },
+        },
+    )
+    later_pet_turn = ContextItem(
+        item_id="named_gift_later_pet_turn",
+        item_type="chunk",
+        text=(
+            "D9:4 Dana: Pets have a way of brightening our days. I still have "
+            "that stuffed animal dog you gave me! I named her Pippa."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:4:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "pet_acquisition_date_bridge",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 9,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([later_pet_turn, date_anchor])
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="When did Sam get Pippa for Dana?",
+    )
+
+    assert candidates[ordered[0]].item_id == "named_gift_date_anchor"
+    assert _answer_support_family_item_key(date_anchor) < _answer_support_family_item_key(
+        later_pet_turn
+    )
 
 
 def test_context_packer_allows_multiple_adoption_goal_items_from_same_source_group() -> None:
@@ -5180,3 +7845,85 @@ def test_context_policy_thread_visibility() -> None:
     assert thread_is_visible("thread-1", "thread-1") is True
     assert thread_is_visible("thread-2", "thread-1") is False
     assert thread_is_visible("thread-2", None) is True
+
+
+def _answer_support_item(
+    item_id: str,
+    text: str,
+    *,
+    query_reason: str,
+    source_id: str,
+) -> ContextItem:
+    return ContextItem(
+        item_id=item_id,
+        item_type="chunk",
+        text=text,
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id=source_id,
+                chunk_id=item_id,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "query_expansion_reason": query_reason,
+        },
+    )
+
+
+def _answer_support_observation_item(
+    item_id: str,
+    text: str,
+    *,
+    query_reason: str,
+    source_id: str,
+) -> ContextItem:
+    return ContextItem(
+        item_id=item_id,
+        item_type="chunk",
+        text=text,
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id=source_id,
+                chunk_id=item_id,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "query_expansion_reason": query_reason,
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "source_type": "locomo_observation",
+        },
+    )
+
+
+def _pottery_support_item(
+    item_id: str,
+    text: str,
+    *,
+    source_id: str,
+) -> ContextItem:
+    return ContextItem(
+        item_id=item_id,
+        item_type="chunk",
+        text=text,
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id=source_id,
+                chunk_id=item_id,
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "query_expansion_reason": "pottery_type_bridge",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ("keyword_source_sibling_chunks",),
+            "score_signals": {"source_sibling_answer_evidence": 1.0},
+        },
+    )

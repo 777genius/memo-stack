@@ -7,47 +7,48 @@ from infinity_context_core.application import context_query_expansion_rule_terms
 _EXERCISE_ACTIVITY_EXPANSION = (
     "exercise exercises workout workouts kickboxing taekwondo yoga weight "
     "training circuit training strength flexibility agility speed shooting "
-    "accuracy stamina endurance boxing sprinting running stay shape fitness energy "
-    "basketball performance game court"
+    "accuracy stamina endurance boxing sprinting running class classes started "
+    "starting colleague friend session routine mentally physically stay shape "
+    "fitness energy basketball performance game court"
 )
 
 EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
     (
-            frozenset({"artist", "seen"}),
-            (
-                "musical artists bands saw seen live concert show festival performance "
-                "performed summer sounds band pop dancing singing lively fun"
-            ),
-            "music_artist_band_bridge",
+        frozenset({"artist", "seen"}),
+        (
+            "musical artists bands saw seen live concert show festival performance "
+            "performed summer sounds band pop dancing singing lively fun"
         ),
+        "music_artist_band_bridge",
+    ),
     (
-            frozenset({"band", "seen"}),
-            (
-                "musical artists bands saw seen live concert show festival performance "
-                "performed summer sounds band pop dancing singing lively fun"
-            ),
-            "music_artist_band_bridge",
+        frozenset({"band", "seen"}),
+        (
+            "musical artists bands saw seen live concert show festival performance "
+            "performed summer sounds band pop dancing singing lively fun"
         ),
+        "music_artist_band_bridge",
+    ),
     (
-            frozenset({"artist", "band"}),
-            "matt patterson talented voice amazing singer named performer artist",
-            "music_artist_answer_bridge",
-        ),
+        frozenset({"artist", "band"}),
+        "talented voice amazing singer named performer artist musician band vocalist",
+        "music_artist_answer_bridge",
+    ),
     (
-            frozenset({"artist", "seen"}),
-            "matt patterson talented voice amazing singer named performer artist",
-            "music_artist_answer_bridge",
-        ),
+        frozenset({"artist", "seen"}),
+        "talented voice amazing singer named performer artist musician band vocalist",
+        "music_artist_answer_bridge",
+    ),
     (
-            frozenset({"band", "seen"}),
-            "matt patterson talented voice amazing singer named performer artist",
-            "music_artist_answer_bridge",
-        ),
+        frozenset({"band", "seen"}),
+        "talented voice amazing singer named performer artist musician band vocalist",
+        "music_artist_answer_bridge",
+    ),
     (
-            frozenset({"shoe", "used"}),
-            ("new shoes purple walking running used for walk run love color sneakers"),
-            "shoe_usage_bridge",
-        ),
+        frozenset({"shoe", "used"}),
+        ("new shoes purple walking running used for walk run love color sneakers"),
+        "shoe_usage_bridge",
+    ),
     (
             frozenset({"both", "common"}),
             (
@@ -95,6 +96,23 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             _EXERCISE_ACTIVITY_EXPANSION,
             "exercise_activity_inventory_bridge",
         ),
+    (
+        frozenset({"yoga"}),
+        (
+            "yoga type types style styles practiced practice practicing class classes "
+            "started starting trying tried poses breathing meditation flexibility "
+            "strength routine workout exercise fitness"
+        ),
+        "exercise_activity_inventory_bridge",
+    ),
+    (
+        frozenset({"events", "shelter"}),
+        (
+            "shelter fundraiser fundraising planned planning organize organized "
+            "tournament cook-off poster booth game homeless"
+        ),
+        "fundraiser_event_inventory_bridge",
+    ),
     (
             frozenset({"reason", "running"}),
             _terms._RUNNING_REASON_EXPANSION,
@@ -207,22 +225,190 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"lewis"}),
             (
-                "books author C S Lewis Narnia Chronicles wardrobe fantasy "
-                "magical world Harry Potter universe characters spells magical creatures "
-                "wizarding world Potter places London tour movie explore fan friend "
-                "project getting lost magical world loves books"
+                "books author fantasy classics wardrobe magical world universe "
+                "characters spells magical creatures wizard wizarding magical school "
+                "fantasy places tour movie location explore fan friend project "
+                "getting lost magical world loves books"
             ),
             "book_suggestion_bridge",
         ),
     (
-            frozenset({"book", "read"}),
-            (
-                "books read collection bookshelf Harry Potter Game of Thrones Name "
-                "of the Wind Alchemist Hobbit Dance with Dragons Wheel of Time fantasy "
-                "novel series finished favorite love"
-            ),
-            "book_reading_list_bridge",
+        frozenset({"book", "read"}),
+        (
+            "books read reading loved reading novel title book cover named title "
+            "read as a kid childhood book favorite book book I read last year "
+            "story fantasy novel series memoir classic remembered childhood"
         ),
+        "book_reading_list_bridge",
+    ),
+    (
+        frozenset({"books", "read"}),
+        (
+            "books read reading loved reading novel title book cover named title "
+            "read as a kid childhood book favorite book book I read last year "
+            "story fantasy novel series memoir classic remembered childhood"
+        ),
+        "book_reading_list_bridge",
+    ),
+    (
+        frozenset({"children", "names"}),
+        (
+            "children child kids kid names named called son daughter one-year-old "
+            "birthday family parent children doing great family memories"
+        ),
+        "children_name_inventory_bridge",
+    ),
+    (
+        frozenset({"child", "name"}),
+        (
+            "children child kids kid names named called son daughter one-year-old "
+            "birthday family parent children doing great family memories"
+        ),
+        "children_name_inventory_bridge",
+    ),
+    (
+        frozenset({"child", "items"}),
+        (
+            "childhood child kid kids when younger had owned used to have mentioned "
+            "memory memories remembered possession object item keepsake toy memento "
+            "reminds reminded as a kid from childhood"
+        ),
+        "childhood_possession_inventory_bridge",
+    ),
+    (
+        frozenset({"child", "item"}),
+        (
+            "childhood child kid kids when younger had owned used to have mentioned "
+            "memory memories remembered possession object item keepsake toy memento "
+            "reminds reminded as a kid from childhood"
+        ),
+        "childhood_possession_inventory_bridge",
+    ),
+    (
+        frozenset({"multiple", "test"}),
+        (
+            "test tests exam assessment aptitude multiple times repeated retook "
+            "retake again failed passed results attempt tried again"
+        ),
+        "repeated_test_attempt_bridge",
+    ),
+    (
+        frozenset({"multiple", "tests"}),
+        (
+            "test tests exam assessment aptitude multiple times repeated retook "
+            "retake again failed passed results attempt tried again"
+        ),
+        "repeated_test_attempt_bridge",
+    ),
+    (
+        frozenset({"family", "money", "younger"}),
+        (
+            "family money problems financial hardship tough times younger outside "
+            "help helped support relative relatives struggled struggling difficult "
+            "times inspired volunteering"
+        ),
+        "family_hardship_support_bridge",
+    ),
+    (
+        frozenset({"reminder"}),
+        (
+            "reminder reminds sentimental value memory symbol meaning pattern colors "
+            "art self expression keepsake handmade object gift personal memory"
+        ),
+        "sentimental_reminder_bridge",
+    ),
+    (
+        frozenset({"remind"}),
+        (
+            "reminder reminds sentimental value memory symbol meaning pattern colors "
+            "art self expression keepsake handmade object gift personal memory"
+        ),
+        "sentimental_reminder_bridge",
+    ),
+    (
+        frozenset({"motivated"}),
+        (
+            "motivated inspired reason because journey support helped improved life "
+            "made a huge difference caring mental health counseling support groups"
+        ),
+        "motivation_reason_bridge",
+    ),
+    (
+        frozenset({"pursue", "counseling"}),
+        (
+            "motivated inspired reason because journey support helped improved life "
+            "made a huge difference caring mental health counseling support groups"
+        ),
+        "motivation_reason_bridge",
+    ),
+    (
+        frozenset({"participating", "community"}),
+        (
+            "participating community LGBTQ art show paintings conference workshop "
+            "support group counseling parade pride volunteer meet connect"
+        ),
+        "community_participation_bridge",
+    ),
+    (
+        frozenset({"volunteering"}),
+        (
+            "volunteering volunteer helped community charity shelter homeless shelter "
+            "food supplies toy drive fundraiser veterans children people met helped "
+            "residents gratitude letter appreciation wrote support received"
+        ),
+        "volunteering_inventory_bridge",
+    ),
+    (
+        frozenset({"people", "volunteering"}),
+        (
+            "volunteering volunteer shelter residents resident people someone named "
+            "met helped hardship story local organization support wrote letter note "
+            "thank gratitude appreciation heartfelt expression support received support "
+            "they receive impact life person who wrote thank you note"
+        ),
+        "volunteering_people_inventory_bridge",
+    ),
+    (
+        frozenset({"events", "veterans"}),
+        (
+            "events veterans charity run fundraiser military service families parade "
+            "community participated organized raised funds support"
+        ),
+        "veterans_event_inventory_bridge",
+    ),
+    (
+        frozenset({"outdoor", "activities"}),
+        (
+            "outdoor activities hiking camping hike campfire nature trail yoga class "
+            "colleagues friends team group people photo image visual waterfall "
+            "beach mountains park trip"
+        ),
+        "outdoor_activity_inventory_bridge",
+    ),
+    (
+        frozenset({"areas"}),
+        (
+            "areas places states cities countries visited vacationed traveled trip "
+            "coastal city mountain area hometown capital abroad beach mountains"
+        ),
+        "place_area_inventory_bridge",
+    ),
+    (
+        frozenset({"states"}),
+        (
+            "states places areas vacationed visited traveled trip city country region "
+            "coast mountains beach hometown capital abroad"
+        ),
+        "place_area_inventory_bridge",
+    ),
+    (
+        frozenset({"music", "events"}),
+        (
+            "music events concert concerts festival festivals live show band artist "
+            "artists singing dancing performance attended went saw"
+        ),
+        "music_event_inventory_bridge",
+    ),
     (
             frozenset({"book", "suggest"}),
             _terms._BOOK_SUGGESTION_EXPANSION,

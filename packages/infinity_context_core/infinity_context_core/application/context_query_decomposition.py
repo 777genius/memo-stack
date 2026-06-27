@@ -452,6 +452,8 @@ _INVENTORY_LIST_SLOT_TERMS = frozenset(
         "cities",
         "countries",
         "country",
+        "dessert",
+        "desserts",
         "hobbies",
         "instruments",
         "items",
@@ -741,6 +743,9 @@ _KNOWLEDGE_UPDATE_DECISION_TERMS = frozenset(
         "рекомендовал",
         "рекомендовала",
     }
+)
+_KNOWLEDGE_UPDATE_STRONG_DECISION_TERMS = (
+    _KNOWLEDGE_UPDATE_DECISION_TERMS - frozenset({"use", "использовать"})
 )
 _KNOWLEDGE_UPDATE_CURRENT_STATE_TERMS = frozenset(
     {
@@ -2043,6 +2048,11 @@ def _inventory_list_tail(variants: frozenset[str]) -> str:
             "event events attended participated joined went planning fundraiser tournament "
             "fair networking conference parade speech support group"
         )
+    if variants.intersection({"dessert", "desserts"}):
+        tails.append(
+            "dessert desserts homemade made baked baking cobbler pie sundae ice cream "
+            "cake cookies brownies pastry favorite"
+        )
     if variants.intersection({"types", "kinds", "projects", "виды", "типы"}):
         tails.append(
             "type kind made finished created project item object piece visual image "
@@ -2167,6 +2177,7 @@ def _requests_knowledge_update_current(
     return bool(
         variants.intersection(_KNOWLEDGE_UPDATE_PROMPT_TERMS)
         and variants.intersection(_KNOWLEDGE_UPDATE_PROMPT_ACTION_TERMS)
+        and variants.intersection(_KNOWLEDGE_UPDATE_STRONG_DECISION_TERMS)
     )
 
 

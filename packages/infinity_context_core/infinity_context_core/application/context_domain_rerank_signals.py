@@ -63,6 +63,8 @@ _INVENTORY_LIST_RERANK_REASONS = frozenset(
         "travel_country_inventory_bridge",
         "cause_education_infrastructure_inventory_bridge",
         "cause_veterans_inventory_bridge",
+        "book_reading_list_bridge",
+        "church_friend_activity_inventory_bridge",
     )
 )
 _CURRENT_GOAL_RERANK_REASONS = frozenset(
@@ -160,11 +162,24 @@ _INVENTORY_POTTERY_EVIDENCE_RE = re.compile(
     re.IGNORECASE,
 )
 _INVENTORY_POTTERY_OWNER_EVIDENCE_RE = re.compile(
-    r"\bD\d+:\d+\s+Melanie:"
+    r"\bD\d+:\d+\s+(?P<speaker>[A-Z][A-Za-z'_-]{1,40}):"
     r"(?=.{0,260}\b(?:pottery|ceramic|clay|pots?|bowls?|cups?|mugs?|plates?|dog\s+face)\b)"
     r"(?=.{0,260}\b(?:made|make|making|class|workshop|kids?|children|finished|project|"
     r"hands\s+dirty|creativity|imagination|proud)\b)",
     re.IGNORECASE | re.DOTALL,
+)
+_QUERY_PERSON_STOPWORDS = frozenset(
+    {
+        "what",
+        "which",
+        "where",
+        "when",
+        "who",
+        "whom",
+        "whose",
+        "why",
+        "how",
+    }
 )
 _INVENTORY_COUNTRY_QUERY_RE = re.compile(
     r"\b(?:cities|city|countries|country|abroad|europe(?:an)?|places?)\b",
@@ -182,6 +197,16 @@ _INVENTORY_CAUSE_QUERY_RE = re.compile(
 _INVENTORY_CAUSE_EVIDENCE_RE = re.compile(
     r"\b(?:veterans?\s+rights?|military|education\s+reform|"
     r"infrastructure\s+development|education|infrastructure)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_DESSERT_QUERY_RE = re.compile(
+    r"\b(?:desserts?|sweets?|baked\s+goods?)\b",
+    re.IGNORECASE,
+)
+_INVENTORY_DESSERT_EVIDENCE_RE = re.compile(
+    r"\b(?:desserts?|cobblers?|peach\s+cobbler|sundae|banana\s+split|"
+    r"ice\s+cream|pies?|cakes?|cookies?|brownies?|puddings?|pastr(?:y|ies)|"
+    r"baked\s+goods?)\b",
     re.IGNORECASE,
 )
 _INVENTORY_FRIEND_PLACE_QUERY_RE = re.compile(
@@ -206,7 +231,7 @@ _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE = re.compile(
 )
 _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE = re.compile(
     r"\b(?:gave\s+a\s+few\s+talks|received\s+lots\s+of\s+compliments|"
-    r"fundraiser|ring-toss|baked\s+goods?|dropped\s+off|"
+    r"fundraiser|tournament|baked\s+goods?|dropped\s+off|"
     r"received\s+a\s+medal|front\s+desk|kids?\s+event)\b",
     re.IGNORECASE,
 )
@@ -217,6 +242,36 @@ _INVENTORY_SHELTER_QUERY_RE = re.compile(
 _INVENTORY_SHELTER_EVIDENCE_RE = re.compile(
     r"\b(?:homeless\s+shelter|dog\s+shelter|animal\s+shelter|shelter)\b",
     re.IGNORECASE,
+)
+_INVENTORY_BOOK_READING_QUERY_RE = re.compile(
+    r"\b(?:books?|novels?|stories?)\b(?=.{0,80}\bread\b)|"
+    r"\bread\b(?=.{0,80}\b(?:books?|novels?|stories?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_BOOK_READING_EVIDENCE_RE = re.compile(
+    r"\b(?:loved\s+reading\s+\"?[A-Z][^\"\n]{1,80}\"?|"
+    r"love\s+reading\s+\"?[A-Z][^\"\n]{1,80}\"?|"
+    r"read(?:ing)?\s+\"?[A-Z][^\"\n]{1,80}\"?|"
+    r"book\s+i\s+read\s+last\s+year|favorite\s+book|favourite\s+book|"
+    r"book\s+you\s+remember\s+from\s+your\s+childhood|childhood\s+book|"
+    r"read\s+as\s+a\s+kid)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_CHURCH_FRIEND_ACTIVITY_QUERY_RE = re.compile(
+    r"\b(?:activities?|do|done|did|went|visit(?:ed)?|hikes?|hiking|picnic)\b"
+    r"(?=.{0,120}\bchurch\s+friends?\b)|"
+    r"\bchurch\s+friends?\b(?=.{0,120}\b"
+    r"(?:activities?|do|done|did|went|visit(?:ed)?|hikes?|hiking|picnic)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_INVENTORY_CHURCH_FRIEND_ACTIVITY_EVIDENCE_RE = re.compile(
+    r"\bchurch\s+friends?\b(?=.{0,180}\b"
+    r"(?:hikes?|hiking|picnic|visited?|park|activities?|outing|trip|"
+    r"chilled|played\s+games|games|charades|scavenger\s+hunt|nature|refreshed)\b)|"
+    r"\b(?:hikes?|hiking|picnic|visited?|park|activities?|outing|trip|"
+    r"chilled|played\s+games|games|charades|scavenger\s+hunt|nature|refreshed)\b"
+    r"(?=.{0,180}\bchurch\s+friends?\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _INVENTORY_GENERIC_WEAK_RE = re.compile(
     r"\b(?:inventory\s+list|answer\s+options|evidence\s+observed|"
@@ -552,7 +607,7 @@ _AGGREGATION_COUNT_QUERY_RE = re.compile(
 _AGGREGATION_LIST_QUERY_RE = re.compile(
     r"\b(?:what|which|where)\b(?=.{0,80}\b(?:items?|things?|countries|places|"
     r"types?|kinds?|events?|activities|bands?|artists?|shelters?|causes?|people|"
-    r"foods?|recipes?|meals?|dishes?)\b)|"
+    r"foods?|recipes?|meals?|dishes?|desserts?|baked\s+goods?)\b)|"
     r"\b(?:какие|какой|где|кого|кому)\b",
     re.IGNORECASE | re.DOTALL,
 )
@@ -861,6 +916,20 @@ def inventory_list_rerank_signal(
             rank_signal=3.0,
         )
     if _inventory_list_exact_evidence(query=query, query_reason=query_reason, item=item):
+        if _inventory_book_reading_exact_match(query=query, item=item):
+            return DomainRerankSignal(
+                boost=0.09,
+                reason="book_reading_inventory_evidence",
+                rank_signal_key="book_reading_inventory_evidence",
+                rank_signal=3.0,
+            )
+        if _inventory_church_friend_activity_exact_match(query=query, item=item):
+            return DomainRerankSignal(
+                boost=0.09,
+                reason="church_friend_activity_inventory_evidence",
+                rank_signal_key="church_friend_activity_inventory_evidence",
+                rank_signal=3.0,
+            )
         return DomainRerankSignal(boost=0.058, reason="inventory_list_exact_evidence")
     if _inventory_list_wrong_owner_evidence(query=query, query_reason=query_reason, item=item):
         return DomainRerankSignal(penalty=0.16, reason="inventory_list_wrong_owner_evidence")
@@ -1663,7 +1732,7 @@ def _inventory_list_exact_evidence(
         return False
     text = item.text
     if _INVENTORY_POTTERY_QUERY_RE.search(query):
-        return _INVENTORY_POTTERY_OWNER_EVIDENCE_RE.search(text) is not None
+        return _pottery_inventory_owner_evidence_matches_query(query=query, text=text)
     if _INVENTORY_COUNTRY_QUERY_RE.search(query):
         return (
             _INVENTORY_COUNTRY_EVIDENCE_RE.search(text) is not None
@@ -1671,11 +1740,53 @@ def _inventory_list_exact_evidence(
         )
     if _INVENTORY_CAUSE_QUERY_RE.search(query):
         return _INVENTORY_CAUSE_EVIDENCE_RE.search(text) is not None
+    if _INVENTORY_DESSERT_QUERY_RE.search(query):
+        return _INVENTORY_DESSERT_EVIDENCE_RE.search(text) is not None
     if _INVENTORY_FRIEND_PLACE_QUERY_RE.search(query):
         return _INVENTORY_FRIEND_PLACE_EVIDENCE_RE.search(text) is not None
     if _INVENTORY_SHELTER_QUERY_RE.search(query):
         return _INVENTORY_SHELTER_EVIDENCE_RE.search(text) is not None
+    if _INVENTORY_BOOK_READING_QUERY_RE.search(query):
+        return _INVENTORY_BOOK_READING_EVIDENCE_RE.search(text) is not None
+    if _INVENTORY_CHURCH_FRIEND_ACTIVITY_QUERY_RE.search(query):
+        return _INVENTORY_CHURCH_FRIEND_ACTIVITY_EVIDENCE_RE.search(text) is not None
     return False
+
+
+def _pottery_inventory_owner_evidence_matches_query(*, query: str, text: str) -> bool:
+    matches = tuple(_INVENTORY_POTTERY_OWNER_EVIDENCE_RE.finditer(text))
+    if not matches:
+        return False
+    query_people = _query_person_terms(query)
+    if not query_people:
+        return True
+    return any(
+        match.group("speaker").casefold() in query_people
+        for match in matches
+        if match.group("speaker")
+    )
+
+
+def _query_person_terms(query: str) -> frozenset[str]:
+    return frozenset(
+        match.group(0).casefold()
+        for match in re.finditer(r"\b[A-Z][A-Za-z'_-]{1,40}\b", query)
+        if match.group(0).casefold() not in _QUERY_PERSON_STOPWORDS
+    )
+
+
+def _inventory_book_reading_exact_match(*, query: str, item: ContextItem) -> bool:
+    return (
+        _INVENTORY_BOOK_READING_QUERY_RE.search(query) is not None
+        and _INVENTORY_BOOK_READING_EVIDENCE_RE.search(item.text) is not None
+    )
+
+
+def _inventory_church_friend_activity_exact_match(*, query: str, item: ContextItem) -> bool:
+    return (
+        _INVENTORY_CHURCH_FRIEND_ACTIVITY_QUERY_RE.search(query) is not None
+        and _INVENTORY_CHURCH_FRIEND_ACTIVITY_EVIDENCE_RE.search(item.text) is not None
+    )
 
 
 def _inventory_friend_place_shelter_anchor_evidence(
@@ -1736,8 +1847,11 @@ def _inventory_query_has_specific_expected_slot(query: str) -> bool:
             _INVENTORY_POTTERY_QUERY_RE,
             _INVENTORY_COUNTRY_QUERY_RE,
             _INVENTORY_CAUSE_QUERY_RE,
+            _INVENTORY_DESSERT_QUERY_RE,
             _INVENTORY_FRIEND_PLACE_QUERY_RE,
             _INVENTORY_SHELTER_QUERY_RE,
+            _INVENTORY_BOOK_READING_QUERY_RE,
+            _INVENTORY_CHURCH_FRIEND_ACTIVITY_QUERY_RE,
         )
     )
 

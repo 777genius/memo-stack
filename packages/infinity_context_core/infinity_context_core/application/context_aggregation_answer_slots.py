@@ -51,8 +51,13 @@ _SLOT_RULES: tuple[
     ),
     (
         re.compile(
-            r"\b(?:lgbtq|transgender|trans)\b(?=.{0,100}\bevents?\b)|"
-            r"\bevents?\b(?=.{0,100}\b(?:lgbtq|transgender|trans)\b)",
+            r"\b(?:lgbtq\+?|lgbt|transgender|trans)\b"
+            r"(?=.{0,120}\b(?:events?|community|participat\w*|ways?|"
+            r"activis\w*|advocacy|mentorship|mentor\w*|pride|art\s+show|"
+            r"support\s+group)\b)|"
+            r"\b(?:events?|community|participat\w*|ways?|activis\w*|"
+            r"advocacy|mentorship|mentor\w*|pride|art\s+show|support\s+group)\b"
+            r"(?=.{0,120}\b(?:lgbtq\+?|lgbt|transgender|trans)\b)",
             re.IGNORECASE | re.DOTALL,
         ),
         (
@@ -136,7 +141,7 @@ _SLOT_RULES: tuple[
     (
         re.compile(r"\b(?:pets?|animals?)\b", re.IGNORECASE),
         (
-            ("pet_dog", re.compile(r"\b(?:dog|puppy|max|new\s+addition)\b", re.IGNORECASE)),
+            ("pet_dog", re.compile(r"\b(?:dog|puppy|new\s+addition)\b", re.IGNORECASE)),
             ("pet_turtle", re.compile(r"\b(?:turtles?|critters?|basking)\b", re.IGNORECASE)),
         ),
     ),
@@ -211,6 +216,124 @@ _SLOT_RULES: tuple[
                 "cause_infrastructure",
                 re.compile(r"\b(?:infrastructure|infrastructure\s+development)\b", re.IGNORECASE),
             ),
+        ),
+    ),
+    (
+        re.compile(r"\b(?:events?|veterans?|military)\b", re.IGNORECASE),
+        (
+            (
+                "veterans_petition",
+                re.compile(
+                    r"\b(?:petition|signatures?)\b(?=.{0,160}\b(?:veterans?|military)\b)|"
+                    r"\b(?:veterans?|military)\b(?=.{0,160}\b(?:petition|signatures?)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "veterans_charity_run",
+                re.compile(
+                    r"\b(?:5k|charity\s+run|run|funds?|raise(?:d)?)\b"
+                    r"(?=.{0,180}\b(?:veterans?|military|families)\b)|"
+                    r"\b(?:veterans?|military|families)\b"
+                    r"(?=.{0,180}\b(?:5k|charity\s+run|run|funds?|raise(?:d)?)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "veterans_march",
+                re.compile(
+                    r"\b(?:march(?:ing)?|parade)\b"
+                    r"(?=.{0,160}\b(?:veterans?|military|rights?)\b)|"
+                    r"\b(?:veterans?|military|rights?)\b"
+                    r"(?=.{0,160}\b(?:march(?:ing)?|parade)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "veterans_hospital",
+                re.compile(
+                    r"\b(?:veterans?'?\s+hospital|hospital)\b"
+                    r"(?=.{0,160}\b(?:veterans?|military)\b)|"
+                    r"\b(?:veterans?|military)\b(?=.{0,160}\bhospital\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:events?|fundraisers?|fundraising|funraisers?|funraising|shelter)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "fundraiser_chili_cookoff",
+                re.compile(r"\bchili\s+cook[-\s]?off\b", re.IGNORECASE),
+            ),
+            (
+                "fundraiser_tournament",
+                re.compile(
+                    r"\btournament\b"
+                    r"(?=.{0,180}\b(?:fundraiser|fundraising|shelter|homeless)\b)|"
+                    r"\b(?:fundraiser|fundraising|shelter|homeless)\b"
+                    r"(?=.{0,180}\btournament\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "fundraiser_shelter_setup",
+                re.compile(
+                    r"\b(?:getting\s+ready|preparing|planning|organizing|"
+                    r"cover\s+basic\s+needs|raise\s+enough)\b"
+                    r"(?=.{0,180}\b(?:fundraiser|fundraising|shelter|homeless)\b)|"
+                    r"\b(?:fundraiser|fundraising|shelter|homeless)\b"
+                    r"(?=.{0,180}\b(?:getting\s+ready|preparing|planning|"
+                    r"organizing|cover\s+basic\s+needs|raise\s+enough)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(r"\b(?:music|concerts?)\b", re.IGNORECASE),
+        (
+            (
+                "music_live_event",
+                re.compile(r"\blive\s+music(?:\s+event)?\b", re.IGNORECASE),
+            ),
+            (
+                "music_violin_concert",
+                re.compile(r"\bviolin\s+concert\b", re.IGNORECASE),
+            ),
+            (
+                "music_concert",
+                re.compile(r"\b(?:concert|festival|show|performance)\b", re.IGNORECASE),
+            ),
+        ),
+    ),
+    (
+        re.compile(r"\b(?:areas?|states?|places?|vacation(?:ed)?|been\s+to)\b", re.IGNORECASE),
+        (
+            ("place_florida", re.compile(r"\bflorida\b", re.IGNORECASE)),
+            ("place_oregon", re.compile(r"\boregon\b", re.IGNORECASE)),
+            ("place_east_coast", re.compile(r"\beast\s+coast\b", re.IGNORECASE)),
+            (
+                "place_pacific_northwest",
+                re.compile(r"\bpacific\s+northwest\b|\bnorthwest\b", re.IGNORECASE),
+            ),
+        ),
+    ),
+    (
+        re.compile(r"\b(?:outdoor\s+activities?|activities?|colleagues?)\b", re.IGNORECASE),
+        (
+            ("outdoor_waterfall", re.compile(r"\bwaterfall\b", re.IGNORECASE)),
+            ("outdoor_hiking", re.compile(r"\bhik(?:e|ing)\b", re.IGNORECASE)),
+            (
+                "outdoor_mountaineering",
+                re.compile(r"\bmountaineering\b", re.IGNORECASE),
+            ),
+            ("outdoor_picnic", re.compile(r"\bpicnic\b", re.IGNORECASE)),
+            ("outdoor_camping", re.compile(r"\bcamping\b", re.IGNORECASE)),
         ),
     ),
     (

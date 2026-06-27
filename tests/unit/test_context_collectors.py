@@ -137,6 +137,22 @@ def test_protected_query_head_keys_keep_inventory_and_friend_place_heads() -> No
     )
 
 
+def test_protected_query_head_keys_keep_multiple_volunteering_people_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_shelter",),
+        "1:volunteering_people_inventory_bridge": (
+            "resident_letter",
+            "charity_event_person",
+            "generic_shelter",
+        ),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "resident_letter",
+        "charity_event_person",
+    )
+
+
 def test_protected_query_head_keys_keep_multiple_item_purchase_heads() -> None:
     rankings = {
         "0:original_query": ("generic_a",),
@@ -146,6 +162,22 @@ def test_protected_query_head_keys_keep_multiple_item_purchase_heads() -> None:
     assert _protected_query_head_keys(rankings) == (
         "figurines_purchase",
         "shoes_purchase",
+    )
+
+
+def test_protected_query_head_keys_keep_creative_writing_and_nickname_heads() -> None:
+    rankings = {
+        "0:original_query": ("generic_a",),
+        "1:creative_writing_career_bridge": (
+            "exact_screenplay",
+            "generic_writing_context",
+        ),
+        "2:nickname_bridge": ("nickname_origin", "generic_identity_context"),
+    }
+
+    assert _protected_query_head_keys(rankings) == (
+        "exact_screenplay",
+        "nickname_origin",
     )
 
 

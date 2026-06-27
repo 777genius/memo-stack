@@ -186,6 +186,68 @@ _POSSESSION_OBJECT_TERMS = frozenset(
         "ring",
     }
 )
+_SENTIMENTAL_REMINDER_TERMS = frozenset(
+    {
+        "remind",
+        "reminded",
+        "reminder",
+        "reminders",
+        "reminds",
+        "sentimental",
+    }
+)
+_SENTIMENTAL_REMINDER_OBJECT_TERMS = frozenset(
+    {
+        "bowl",
+        "bowls",
+        "bracelet",
+        "colors",
+        "colours",
+        "gift",
+        "hand",
+        "hand-painted",
+        "handmade",
+        "keepsake",
+        "meaning",
+        "necklace",
+        "pattern",
+        "pendant",
+        "photo",
+        "picture",
+        "ring",
+        "symbol",
+    }
+)
+_PET_ACQUISITION_OBJECT_TERMS = frozenset(
+    {
+        "animal",
+        "cat",
+        "dog",
+        "gift",
+        "kitten",
+        "pet",
+        "present",
+        "pup",
+        "puppy",
+        "stuffed",
+        "toy",
+    }
+)
+_NAMED_OBJECT_ACQUISITION_QUERY_RE = re.compile(
+    r"\bwhen\s+(?:did|was)\s+"
+    r"[A-Z][A-Za-z._'-]{1,39}\s+"
+    r"(?:get|got|buy|bought|bring|brought|give|gave)\s+"
+    r"[A-Z][A-Za-z._'-]{1,39}\s+"
+    r"(?:for|to)\s+[A-Z][A-Za-z._'-]{1,39}\b",
+    re.IGNORECASE,
+)
+_NAMED_ADOPTION_QUERY_RE = re.compile(
+    r"\bwhen\s+did\s+"
+    r"[A-Z][A-Za-z._'-]{1,39}\s+"
+    r"adopt(?:ed)?\s+"
+    r"[A-Z][A-Za-z._'-]{1,39}\b",
+    re.IGNORECASE,
+)
 _POST_EVENT_EMOTION_TERMS = frozenset(
     {
         "feel",
@@ -285,6 +347,17 @@ _STUDY_TIME_MANAGEMENT_TECHNICAL_TERMS = _TECHNICAL_SUPPORT_CONTEXT_TERMS | froz
         "workflow",
     }
 )
+_TEST_ATTEMPT_TECHNICAL_TERMS = _TECHNICAL_SUPPORT_CONTEXT_TERMS | frozenset(
+    {
+        "benchmark",
+        "build",
+        "ci",
+        "pipeline",
+        "pytest",
+        "suite",
+        "unit",
+    }
+)
 
 
 def query_expansion_variant_set(query: str) -> frozenset[str]:
@@ -334,10 +407,30 @@ def should_skip_expansion_rule(
         return not _requests_business_promotion_events(raw_tokens)
     if reason == "business_opening_timeline_bridge":
         return not _requests_business_opening_timeline(raw_tokens)
+    if reason == "exercise_activity_inventory_bridge" and raw_tokens.intersection(
+        {"delay", "delayed", "off", "postpone", "postponed", "why"}
+    ):
+        return True
+    if reason == "hobby_interest_bridge" and _requests_outdoor_activity_inventory(
+        raw_tokens
+    ):
+        return True
+    if reason in {"painting_inventory_bridge", "followup_task_bridge"} and (
+        _requests_sentimental_reminder(raw_tokens)
+    ):
+        return True
     if reason == "children_count_sibling_bridge" and not raw_tokens.intersection(
         {"child", "children", "kid", "kids", "sibling", "siblings", "brother", "sister"}
     ):
         return True
+    if reason == "children_name_inventory_bridge":
+        return not _requests_children_name_inventory(raw_tokens)
+    if reason == "childhood_possession_inventory_bridge":
+        return not _requests_childhood_possession_inventory(raw_tokens)
+    if reason == "repeated_test_attempt_bridge":
+        return not _requests_repeated_test_attempt(raw_tokens)
+    if reason == "family_hardship_support_bridge":
+        return not _requests_family_hardship_support(raw_tokens)
     if reason == "allergy_inventory_bridge" and raw_tokens.intersection(
         {"condition", "underlying"}
     ):
@@ -382,6 +475,10 @@ def should_skip_expansion_rule(
         )
     if reason == "cause_awareness_event_bridge":
         return not _requests_awareness_cause_event(raw_tokens)
+    if reason == "event_participation_bridge" and raw_tokens.intersection(
+        {"military", "veteran", "veterans"}
+    ):
+        return True
     if reason == "support_network_bridge":
         return (
             not _SOCIAL_SUPPORT_NETWORK_QUERY_RE.search(query)
@@ -403,6 +500,8 @@ def should_skip_expansion_rule(
         return not _requests_post_athletic_career(raw_tokens)
     if reason == "study_time_management_bridge":
         return not _requests_study_time_management(raw_tokens)
+    if reason == "pet_acquisition_date_bridge":
+        return not _requests_pet_acquisition_date(query=query, raw_tokens=raw_tokens)
     if reason == "after_event_temporal_bridge":
         return not build_temporal_query_intent(query).after_event
     if reason == "before_event_temporal_bridge":
@@ -475,6 +574,13 @@ def _requests_symbol_importance(raw_tokens: set[str]) -> bool:
     )
 
 
+def _requests_sentimental_reminder(raw_tokens: set[str]) -> bool:
+    return bool(
+        raw_tokens.intersection(_SENTIMENTAL_REMINDER_TERMS)
+        and raw_tokens.intersection(_SENTIMENTAL_REMINDER_OBJECT_TERMS)
+    )
+
+
 def _requests_possession_gift_object(raw_tokens: set[str]) -> bool:
     if not raw_tokens.intersection(_POSSESSION_GIFT_TERMS):
         return False
@@ -484,10 +590,82 @@ def _requests_possession_gift_object(raw_tokens: set[str]) -> bool:
     )
 
 
+def _requests_pet_acquisition_date(*, query: str, raw_tokens: set[str]) -> bool:
+    if "when" not in raw_tokens:
+        return False
+    if raw_tokens.intersection({"meeting", "meetings", "appointment", "appointments"}):
+        return False
+    acquisition_verbs = {"adopt", "adopted", "get", "got", "buy", "bought"}
+    if not raw_tokens.intersection(acquisition_verbs):
+        return False
+    if raw_tokens.intersection(_PET_ACQUISITION_OBJECT_TERMS):
+        return True
+    return bool(
+        _NAMED_OBJECT_ACQUISITION_QUERY_RE.search(query)
+        or _NAMED_ADOPTION_QUERY_RE.search(query)
+    )
+
+
 def _requests_family_origin(raw_tokens: set[str]) -> bool:
     if not raw_tokens.intersection(_FAMILY_RELATIVE_TERMS):
         return False
     return bool(raw_tokens.intersection({"country", "from", "home", "native", "origin"}))
+
+
+def _requests_children_name_inventory(raw_tokens: set[str]) -> bool:
+    return bool(
+        raw_tokens.intersection({"child", "children", "kid", "kids"})
+        and raw_tokens.intersection({"name", "names", "called", "named"})
+    )
+
+
+def _requests_childhood_possession_inventory(raw_tokens: set[str]) -> bool:
+    if not raw_tokens.intersection({"child", "childhood", "kid", "kids", "younger"}):
+        return False
+    return bool(
+        raw_tokens.intersection({"item", "items", "object", "objects", "having", "had"})
+    )
+
+
+def _requests_repeated_test_attempt(raw_tokens: set[str]) -> bool:
+    if raw_tokens.intersection(_TEST_ATTEMPT_TECHNICAL_TERMS):
+        return False
+    if not raw_tokens.intersection({"test", "tests", "exam", "assessment"}):
+        return False
+    return bool(
+        raw_tokens.intersection(
+            {"multiple", "again", "retake", "retook", "repeated", "several"}
+        )
+    )
+
+
+def _requests_family_hardship_support(raw_tokens: set[str]) -> bool:
+    if not raw_tokens.intersection({"family", "parent", "parents"}):
+        return False
+    if not raw_tokens.intersection({"money", "financial", "help", "helped", "support"}):
+        return False
+    return bool(
+        raw_tokens.intersection({"younger", "hardship", "struggling", "struggle", "tough"})
+    )
+
+
+def _requests_outdoor_activity_inventory(raw_tokens: set[str]) -> bool:
+    return "outdoor" in raw_tokens and bool(
+        raw_tokens.intersection(
+            {
+                "activity",
+                "activities",
+                "camp",
+                "camping",
+                "hike",
+                "hiking",
+                "mountain",
+                "mountains",
+                "park",
+                "trail",
+            }
+        )
+    )
 
 
 def _requests_post_event_emotion(raw_tokens: set[str]) -> bool:
@@ -586,6 +764,8 @@ def identity_terms_for_expansion(
         "store_promotion_inventory_bridge",
     }:
         return ()
+    if reason == "nickname_bridge" and len(identity_terms) > 1:
+        return identity_terms[:1]
     if reason == "travel_country_inventory_bridge":
         return tuple(
             term
