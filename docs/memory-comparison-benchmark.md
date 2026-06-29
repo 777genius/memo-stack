@@ -71,6 +71,10 @@ Use deterministic answer/judge for a no-paid dry run by omitting
 - Optional mem0 OSS API key is read from `MEM0_API_KEY` by default and sent as
   `X-API-Key` when present. Leave it unset only for explicitly auth-disabled
   local mem0 servers.
+- By default the runner deletes the isolated mem0 `user_id` / `run_id` before
+  ingest. That mem0 endpoint requires an admin-capable key or `AUTH_DISABLED=true`.
+  If you only have a non-admin API key, pass `--mem0-skip-reset` and use a fresh
+  `--run-id` so the run still uses isolated state.
 - Token cost reporting uses explicit USD-per-1M-token rates from CLI flags or
   `MEMORY_COMPARISON_*_USD_PER_1M` env vars. The runner does not hardcode
   provider prices.

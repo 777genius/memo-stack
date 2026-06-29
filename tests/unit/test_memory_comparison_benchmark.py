@@ -629,6 +629,7 @@ def test_memory_comparison_cli_closes_live_backend_clients(
             "--mem0-url",
             "http://mem0.example",
             "--allow-live",
+            "--mem0-skip-reset",
             "--capability",
             "single-hop",
             "--capability",
@@ -647,7 +648,11 @@ def test_memory_comparison_cli_closes_live_backend_clients(
     captured = capsys.readouterr()
     assert closed == ["memo-stack", "mem0"]
     assert mem0_backend_kwargs == [
-        {"base_url": "http://mem0.example", "api_key": "mem0-unit-key"}
+        {
+            "base_url": "http://mem0.example",
+            "api_key": "mem0-unit-key",
+            "reset_user_on_start": False,
+        }
     ]
     assert "mem0-unit-key" not in captured.out
     assert "mem0-unit-key" not in captured.err

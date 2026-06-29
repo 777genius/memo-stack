@@ -2457,6 +2457,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             "X-API-Key value."
         ),
     )
+    memory_comparison.add_argument(
+        "--mem0-skip-reset",
+        action="store_true",
+        help=(
+            "Do not delete the isolated mem0 user/run at startup. Use only with a "
+            "fresh run id when the mem0 API key cannot call admin reset endpoints."
+        ),
+    )
     memory_comparison.add_argument("--benchmark", default="locomo")
     memory_comparison.add_argument("--min-accuracy", type=float, default=0.0)
     memory_comparison.add_argument("--max-cases", type=int, default=None)
@@ -2670,6 +2678,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 Mem0HttpComparisonBackend(
                     base_url=args.mem0_url,
                     api_key=os.getenv(str(args.mem0_api_key_env)) or None,
+                    reset_user_on_start=not args.mem0_skip_reset,
                 ),
             )
             try:
