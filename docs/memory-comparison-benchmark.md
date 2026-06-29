@@ -83,6 +83,8 @@ The JSON report includes:
 - retrieved memory count, retrieval recall and missing expected terms;
 - ingest/search/generation/judge latency averages;
 - context token estimates, answerer/judge token usage and configured token cost;
+- memo-stack vs mem0 deltas for accuracy, retrieval recall, retrieved count,
+  latency, context tokens and token cost;
 - top-k cutoff metrics;
 - per-case failure analysis with backend, group, score, retrieval recall and
   missing terms;

@@ -648,10 +648,42 @@ def _backend_comparison(
     if ranked:
         comparison["winner_by_accuracy"] = ranked[0][0]
     if "memo-stack" in backend_metrics and "mem0" in backend_metrics:
-        comparison["memo_stack_vs_mem0_accuracy_delta"] = round(
-            float(backend_metrics["memo-stack"].get("accuracy", 0.0))
-            - float(backend_metrics["mem0"].get("accuracy", 0.0)),
-            4,
+        memo_metrics = backend_metrics["memo-stack"]
+        mem0_metrics = backend_metrics["mem0"]
+        comparison["memo_stack_vs_mem0_accuracy_delta"] = _metric_delta(
+            memo_metrics,
+            mem0_metrics,
+            "accuracy",
+        )
+        comparison["memo_stack_vs_mem0_expected_term_recall_delta"] = _metric_delta(
+            memo_metrics,
+            mem0_metrics,
+            "expected_term_recall",
+        )
+        comparison["memo_stack_vs_mem0_avg_retrieved_count_delta"] = _metric_delta(
+            memo_metrics,
+            mem0_metrics,
+            "avg_retrieved_count",
+        )
+        comparison["memo_stack_vs_mem0_avg_context_tokens_delta"] = _metric_delta(
+            memo_metrics,
+            mem0_metrics,
+            "avg_context_tokens",
+        )
+        comparison["memo_stack_vs_mem0_latency_delta_ms"] = {
+            "ingest": _metric_delta(memo_metrics, mem0_metrics, "avg_ingest_latency_ms"),
+            "search": _metric_delta(memo_metrics, mem0_metrics, "avg_search_latency_ms"),
+            "generation": _metric_delta(
+                memo_metrics,
+                mem0_metrics,
+                "avg_generation_latency_ms",
+            ),
+            "judge": _metric_delta(memo_metrics, mem0_metrics, "avg_judge_latency_ms"),
+        }
+        comparison["memo_stack_vs_mem0_token_cost_total_usd_delta"] = round(
+            _nested_float(memo_metrics, "token_cost", "total_usd")
+            - _nested_float(mem0_metrics, "token_cost", "total_usd"),
+            8,
         )
     return comparison
 
@@ -882,6 +914,26 @@ def _context_tokens(item: Mapping[str, object]) -> float:
 
 def _retrieval_recall(item: Mapping[str, object]) -> float:
     return float(_mapping(item.get("retrieval_quality")).get("expected_term_recall", 0.0))
+
+
+def _metric_delta(
+    left: Mapping[str, object],
+    right: Mapping[str, object],
+    key: str,
+) -> float:
+    return round(float(left.get(key, 0.0)) - float(right.get(key, 0.0)), 4)
+
+
+def _nested_float(item: Mapping[str, object], *keys: str) -> float:
+    current: object = item
+    for key in keys:
+        current = _mapping(current).get(key)
+    if isinstance(current, bool):
+        return 0.0
+    try:
+        return float(current)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _token_usage_summary(items: Sequence[Mapping[str, object]]) -> dict[str, object]:

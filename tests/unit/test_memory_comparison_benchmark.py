@@ -138,6 +138,17 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     assert result["backend_metrics"]["memo-stack"]["accuracy"] == 1.0
     assert result["backend_metrics"]["mem0"]["accuracy"] == 0.0
     assert result["backend_comparison"]["memo_stack_vs_mem0_accuracy_delta"] == 1.0
+    assert (
+        result["backend_comparison"]["memo_stack_vs_mem0_expected_term_recall_delta"]
+        == 1.0
+    )
+    assert result["backend_comparison"]["memo_stack_vs_mem0_avg_retrieved_count_delta"] == 0.0
+    assert result["backend_comparison"]["memo_stack_vs_mem0_latency_delta_ms"] == {
+        "ingest": 0.0,
+        "search": 0.0,
+        "generation": 0.0,
+        "judge": 0.0,
+    }
     assert result["backend_metrics"]["memo-stack"]["expected_term_recall"] == 1.0
     assert result["backend_metrics"]["mem0"]["expected_term_recall"] == 0.0
     assert result["backend_metrics"]["memo-stack"]["by_group"]["single-hop"]["total"] == 1
@@ -169,6 +180,14 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     assert token_cost["total_usd"] == round(
         expected_answerer_cost + expected_judge_cost,
         8,
+    )
+    assert (
+        result["backend_comparison"]["memo_stack_vs_mem0_token_cost_total_usd_delta"]
+        == round(
+            result["backend_metrics"]["memo-stack"]["token_cost"]["total_usd"]
+            - result["backend_metrics"]["mem0"]["token_cost"]["total_usd"],
+            8,
+        )
     )
 
 
