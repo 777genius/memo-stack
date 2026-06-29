@@ -6,6 +6,7 @@ import time
 from collections.abc import Mapping, Sequence
 
 import httpx
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 
 from infinity_context_server.memory_comparison_llm import approximate_token_count
 from infinity_context_server.memory_comparison_models import (
@@ -33,11 +34,13 @@ class InfinityContextHttpComparisonBackend:
         auth_token: str,
         space_slug_prefix: str = "memory-comparison",
         timeout_seconds: float = 60.0,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout_seconds,
             headers={"Authorization": f"Bearer {auth_token}"},
+            transport=transport,
         )
         self._space_slug_prefix = space_slug_prefix
 
@@ -144,6 +147,7 @@ class InfinityContextHttpComparisonBackend:
             latency_ms=_elapsed_ms(started),
             memory=memory.text[:240],
             item_id=source_id,
+            metadata=_response_metadata(response),
         )
 
     def _post_document(
@@ -177,6 +181,7 @@ class InfinityContextHttpComparisonBackend:
             latency_ms=_elapsed_ms(started),
             memory=document.text[:240],
             item_id=source_id,
+            metadata=_response_metadata(response),
         )
 
     def _run_space_slug(self, run_id: str) -> str:
@@ -194,8 +199,13 @@ class Mem0HttpComparisonBackend:
         base_url: str,
         timeout_seconds: float = 60.0,
         reset_user_on_start: bool = True,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout_seconds)
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=timeout_seconds,
+            transport=transport,
+        )
         self._reset_user_on_start = reset_user_on_start
 
     def reset(self, *, run_id: str) -> None:
@@ -242,7 +252,7 @@ class Mem0HttpComparisonBackend:
                     success=response.status_code < 400,
                     latency_ms=_elapsed_ms(op_started),
                     memory=_messages_preview(messages),
-                    metadata={"status_code": response.status_code},
+                    metadata=_response_metadata(response),
                 )
             )
         failed = sum(1 for operation in operations if not operation.success)
@@ -354,6 +364,17 @@ def _response_data(payload: object) -> Mapping[str, object]:
     if isinstance(payload, Mapping) and isinstance(payload.get("data"), Mapping):
         return payload["data"]
     return payload if isinstance(payload, Mapping) else {}
+
+
+def _response_metadata(response: httpx.Response) -> dict[str, object]:
+    metadata: dict[str, object] = {"status_code": response.status_code}
+    if response.reason_phrase:
+        metadata["reason_phrase"] = response.reason_phrase
+    if response.status_code >= 400:
+        preview = redact_sensitive_text(response.text.strip())[:500]
+        if preview:
+            metadata["error_preview"] = preview
+    return metadata
 
 
 def _memory_scope_ref(case: PublicBenchmarkCase) -> str:

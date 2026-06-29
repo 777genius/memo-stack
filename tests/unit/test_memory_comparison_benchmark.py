@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import infinity_context_server.memory_comparison_http as http_module
 import pytest
 from infinity_context_server import eval as eval_module
@@ -26,6 +28,7 @@ from infinity_context_server.memory_comparison_models import (
 )
 from infinity_context_server.public_benchmark_models import (
     BenchmarkDocumentInput,
+    BenchmarkMemoryInput,
     BenchmarkValidationError,
     PublicBenchmarkCase,
 )
@@ -638,6 +641,93 @@ def test_memory_comparison_cli_closes_live_backend_clients(
     assert closed == ["memo-stack", "mem0"]
 
 
+def test_infinity_context_http_ingest_uses_isolated_state_and_redacts_errors() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    seen_payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_payloads.append(json.loads(request.content))
+        if request.url.path == "/v1/facts":
+            return httpx.Response(503, text=f"upstream leaked Bearer {raw_secret}")
+        return httpx.Response(201, json={"data": {"id": "doc-1"}})
+
+    backend = http_module.InfinityContextHttpComparisonBackend(
+        base_url="http://memo.test",
+        auth_token="unit-token",
+        transport=httpx.MockTransport(handler),
+    )
+    case = _case_with_memory_and_document()
+
+    try:
+        result = backend.ingest(case, run_id="Run 42", corpus_key="corpus-a")
+    finally:
+        backend.close()
+
+    assert result.items_processed == 2
+    assert result.items_failed == 1
+    failed_metadata = result.operations[0].metadata
+    assert failed_metadata["status_code"] == 503
+    assert raw_secret not in str(failed_metadata["error_preview"])
+    assert "[redacted]" in str(failed_metadata["error_preview"])
+    assert {payload["space_slug"] for payload in seen_payloads} == {
+        "memory-comparison-run-42"
+    }
+    assert {payload["memory_scope_external_ref"] for payload in seen_payloads} == {
+        "locomo-conv-1"
+    }
+    assert {payload["thread_external_ref"] for payload in seen_payloads} == {
+        "locomo-conv-1"
+    }
+
+
+def test_mem0_http_ingest_uses_run_isolated_user_and_redacts_errors() -> None:
+    raw_secret = "sk-proj-secretvalue1234567890"
+    seen_requests: list[tuple[str, dict[str, object] | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            seen_requests.append((str(request.url), None))
+            return httpx.Response(204)
+        payload = json.loads(request.content)
+        seen_requests.append((str(request.url), payload))
+        return httpx.Response(502, text=f"provider token={raw_secret} failed")
+
+    backend = http_module.Mem0HttpComparisonBackend(
+        base_url="http://mem0.test",
+        transport=httpx.MockTransport(handler),
+    )
+    case = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+    )
+
+    try:
+        backend.reset(run_id="Run 42")
+        result = backend.ingest(case, run_id="Run 42", corpus_key="corpus-a")
+    finally:
+        backend.close()
+
+    assert "user_id=memo-stack-comparison-run-42" in seen_requests[0][0]
+    assert "run_id=Run+42" in seen_requests[0][0]
+    assert result.items_processed == 1
+    assert result.items_failed == 1
+    failed_metadata = result.operations[0].metadata
+    assert failed_metadata["status_code"] == 502
+    assert raw_secret not in str(failed_metadata["error_preview"])
+    assert "[redacted]" in str(failed_metadata["error_preview"])
+    posted_payload = seen_requests[1][1]
+    assert posted_payload is not None
+    assert posted_payload["user_id"] == "memo-stack-comparison-run-42"
+    assert posted_payload["run_id"] == "Run 42"
+    assert posted_payload["metadata"] == {
+        "benchmark": "locomo",
+        "case_id": "conv-1:qa:1",
+        "corpus_key": "corpus-a",
+    }
+
+
 def test_openai_responses_llm_adapters_parse_fake_client() -> None:
     case = _case(
         case_id="conv-1:qa:1",
@@ -710,6 +800,31 @@ def _case(
         memory_scope_external_ref="locomo-conv-1",
         thread_external_ref="locomo-conv-1",
         metadata={"category": category, "answer_preview": answer},
+    )
+
+
+def _case_with_memory_and_document() -> PublicBenchmarkCase:
+    return PublicBenchmarkCase(
+        benchmark="locomo",
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        memories=(
+            BenchmarkMemoryInput(
+                text="Morgan kept the checklist in the blue notebook.",
+                source_external_id="memory-1",
+            ),
+        ),
+        documents=(
+            BenchmarkDocumentInput(
+                title="Conversation",
+                text="Morgan repeated that the checklist is in the blue notebook.",
+                source_external_id="document-1",
+            ),
+        ),
+        memory_scope_external_ref="locomo-conv-1",
+        thread_external_ref="locomo-conv-1",
+        metadata={"category": 4},
     )
 
 

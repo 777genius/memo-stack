@@ -96,3 +96,5 @@ The JSON report includes:
   missing terms;
 - backend reset/ingest/search/answer/judge exceptions as scored stage failures with
   redacted error metadata.
+- failed HTTP ingest operations include status code, reason phrase and a short
+  redacted response preview when the backend returns one.
