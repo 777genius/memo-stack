@@ -810,6 +810,68 @@ def test_infinity_context_http_ingest_bounds_source_ids_for_public_api() -> None
     assert document_headers["idempotency-key"] == document_source_id
 
 
+def test_infinity_context_http_search_uses_isolated_context_payload() -> None:
+    seen_payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "items": [
+                        {
+                            "item_id": "fact-1",
+                            "item_type": "fact",
+                            "text": "Morgan kept the checklist in the blue notebook.",
+                            "score": 0.91,
+                            "source_refs": [
+                                {
+                                    "source_id": "memory-1",
+                                    "source_type": "memory_comparison_benchmark",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+        )
+
+    backend = http_module.InfinityContextHttpComparisonBackend(
+        base_url="http://memo.test",
+        auth_token="unit-token",
+        transport=httpx.MockTransport(handler),
+    )
+    case = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+    )
+
+    try:
+        result = backend.search(case, run_id="Run 42", top_k=7)
+    finally:
+        backend.close()
+
+    assert seen_payloads == [
+        {
+            "space_slug": "memory-comparison-run-42",
+            "memory_scope_external_ref": "locomo-conv-1",
+            "thread_external_ref": "locomo-conv-1",
+            "query": "Where is the checklist?",
+            "token_budget": 2048,
+            "max_facts": 7,
+            "max_chunks": 7,
+        }
+    ]
+    assert result.total_results == 1
+    assert result.memories[0].item_id == "fact-1"
+    assert result.memories[0].source_refs == ("memory-1",)
+    assert result.context_token_count is not None
+    assert result.context_token_count > 0
+
+
 def test_mem0_http_ingest_uses_run_isolated_user_and_redacts_errors() -> None:
     raw_secret = "sk-proj-secretvalue1234567890"
     seen_requests: list[tuple[str, dict[str, object] | None]] = []
