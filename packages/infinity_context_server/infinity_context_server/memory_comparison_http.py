@@ -45,6 +45,9 @@ class InfinityContextHttpComparisonBackend:
         # Isolation is by run-specific space slug; no destructive reset needed.
         self._run_space_slug(run_id)
 
+    def close(self) -> None:
+        self._client.close()
+
     def ingest(
         self,
         case: PublicBenchmarkCase,
@@ -204,6 +207,9 @@ class Mem0HttpComparisonBackend:
         )
         if response.status_code not in {200, 204, 404}:
             response.raise_for_status()
+
+    def close(self) -> None:
+        self._client.close()
 
     def ingest(
         self,

@@ -2612,6 +2612,13 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         try:
             answerer, judge = _memory_comparison_llms_from_args(args)
+            backends = (
+                InfinityContextHttpComparisonBackend(
+                    base_url=args.memo_api_url,
+                    auth_token=auth_token,
+                ),
+                Mem0HttpComparisonBackend(base_url=args.mem0_url),
+            )
             try:
                 result = run_memory_comparison_benchmark(
                     dataset_path=args.dataset,
@@ -2625,16 +2632,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                     report_out=args.report_out,
                     answerer=answerer,
                     judge=judge,
-                    backends=(
-                        InfinityContextHttpComparisonBackend(
-                            base_url=args.memo_api_url,
-                            auth_token=auth_token,
-                        ),
-                        Mem0HttpComparisonBackend(base_url=args.mem0_url),
-                    ),
+                    backends=backends,
                 )
             finally:
-                _close_memory_comparison_llms(answerer, judge)
+                _close_memory_comparison_clients(answerer, judge, *backends)
         except ValueError as exc:
             raise SystemExit(_safe_cli_error(exc)) from exc
     else:
@@ -2705,7 +2706,7 @@ def _memory_comparison_model_from_args(
     return model
 
 
-def _close_memory_comparison_llms(*clients: object | None) -> None:
+def _close_memory_comparison_clients(*clients: object | None) -> None:
     for client in clients:
         close = getattr(client, "close", None)
         if callable(close):

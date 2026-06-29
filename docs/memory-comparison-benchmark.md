@@ -58,6 +58,8 @@ Use deterministic answer/judge for a no-paid dry run by omitting
 - The memo-stack backend isolates state with a run-specific benchmark space.
 - The mem0 backend uses a run-specific `user_id` / `run_id` and deletes that
   isolated user/run at startup by default.
+- Corpus reuse is keyed by memory scope, thread and source content fingerprint;
+  failed ingests are not cached for later questions in the same conversation.
 
 ## Report Shape
 
@@ -70,4 +72,6 @@ The JSON report includes:
 - context token estimates and answerer/judge token usage;
 - top-k cutoff metrics;
 - per-case failure analysis with backend, group, score, retrieval recall and
-  missing terms.
+  missing terms;
+- backend ingest/search/answer/judge exceptions as scored stage failures with
+  redacted error metadata.

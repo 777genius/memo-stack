@@ -7,12 +7,15 @@ pipeline: ingest -> search -> answer -> judge.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from hashlib import sha256
 from pathlib import Path
 
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.reporting import with_report_provenance
 
 from infinity_context_server.memory_comparison_llm import (
@@ -21,7 +24,10 @@ from infinity_context_server.memory_comparison_llm import (
     approximate_token_count,
 )
 from infinity_context_server.memory_comparison_models import (
+    AnswerResult,
     BackendIngestResult,
+    BackendSearchResult,
+    JudgeResult,
     MemoryComparisonAnswererPort,
     MemoryComparisonBackendPort,
     MemoryComparisonJudgePort,
@@ -96,8 +102,6 @@ def run_memory_comparison_benchmark(
     if not backends:
         raise BenchmarkValidationError("at least one comparison backend is required")
     backend_names = _unique_backend_names(backends)
-    if len(backend_names) != len(backends):
-        raise BenchmarkValidationError("comparison backend names must be unique")
     validate_artifact_paths_do_not_overwrite_dataset(
         dataset_path=dataset_path,
         error_factory=BenchmarkValidationError,
@@ -165,8 +169,7 @@ def run_memory_comparison_benchmark(
 
     for case in cases:
         corpus_key = _case_corpus_key(case)
-        for backend in backends:
-            backend_name = backend.name
+        for backend, backend_name in zip(backends, backend_names, strict=True):
             if corpus_key in ingested_corpus_by_backend[backend_name]:
                 ingest_result = BackendIngestResult(
                     items_processed=0,
@@ -174,8 +177,33 @@ def run_memory_comparison_benchmark(
                     metadata={"corpus_key": corpus_key},
                 )
             else:
-                ingest_result = backend.ingest(case, run_id=run_id, corpus_key=corpus_key)
-                ingested_corpus_by_backend[backend_name].add(corpus_key)
+                try:
+                    ingest_result = backend.ingest(
+                        case,
+                        run_id=run_id,
+                        corpus_key=corpus_key,
+                    )
+                except Exception as exc:
+                    evaluation = _stage_failure_evaluation(
+                        case,
+                        backend_name=backend_name,
+                        stage="ingest",
+                        reason=_safe_error_reason(exc),
+                        ingest_result=BackendIngestResult(
+                            items_processed=0,
+                            items_failed=1,
+                            metadata={"corpus_key": corpus_key},
+                        ),
+                        answerer_model=answerer.model,
+                        judge_model=judge.model,
+                    )
+                    evaluations.append(evaluation)
+                    failure = _failure_analysis_entry(evaluation)
+                    if failure is not None:
+                        failures.append(failure)
+                    continue
+                if ingest_result.items_failed == 0:
+                    ingested_corpus_by_backend[backend_name].add(corpus_key)
             evaluation = _run_backend_case(
                 case,
                 backend=backend,
@@ -267,21 +295,61 @@ def _run_backend_case(
     cutoffs: Sequence[int],
     primary_cutoff: int,
 ) -> dict[str, object]:
-    search_result = backend.search(case, run_id=run_id, top_k=top_k)
+    try:
+        search_result = backend.search(case, run_id=run_id, top_k=top_k)
+    except Exception as exc:
+        return _stage_failure_evaluation(
+            case,
+            backend_name=backend_name,
+            stage="search",
+            reason=_safe_error_reason(exc),
+            ingest_result=ingest_result,
+            answerer_model=answerer.model,
+            judge_model=judge.model,
+        )
     retrieval_quality = _retrieval_quality(case, search_result.memories)
     cutoff_results: dict[str, object] = {}
     primary_answer = None
     primary_judgment = None
     for cutoff in cutoffs:
         sliced = search_result.memories[:cutoff]
-        answer = answerer.answer(case, sliced, backend_name=backend_name, cutoff=cutoff)
-        judgment = judge.judge(
-            case,
-            answer,
-            sliced,
-            backend_name=backend_name,
-            cutoff=cutoff,
-        )
+        try:
+            answer = answerer.answer(case, sliced, backend_name=backend_name, cutoff=cutoff)
+        except Exception as exc:
+            return _stage_failure_evaluation(
+                case,
+                backend_name=backend_name,
+                stage="answer",
+                reason=_safe_error_reason(exc),
+                ingest_result=ingest_result,
+                search_result=search_result,
+                retrieval_quality=retrieval_quality,
+                answerer_model=answerer.model,
+                judge_model=judge.model,
+                cutoff=cutoff,
+            )
+        try:
+            judgment = judge.judge(
+                case,
+                answer,
+                sliced,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            )
+        except Exception as exc:
+            return _stage_failure_evaluation(
+                case,
+                backend_name=backend_name,
+                stage="judge",
+                reason=_safe_error_reason(exc),
+                ingest_result=ingest_result,
+                search_result=search_result,
+                retrieval_quality=retrieval_quality,
+                answer=answer,
+                answerer_model=answerer.model,
+                judge_model=judge.model,
+                cutoff=cutoff,
+            )
         cutoff_payload = {
             "generation": answer_payload(answer),
             "judgment": judge_payload(judgment),
@@ -310,6 +378,71 @@ def _run_backend_case(
         "retrieval_quality": retrieval_quality,
         "generation": answer_payload(primary_answer),
         "judgment": judge_payload(primary_judgment),
+        "cutoff_results": cutoff_results,
+    }
+
+
+def _stage_failure_evaluation(
+    case: PublicBenchmarkCase,
+    *,
+    backend_name: str,
+    stage: str,
+    reason: str,
+    ingest_result: BackendIngestResult,
+    answerer_model: str,
+    judge_model: str,
+    search_result: BackendSearchResult | None = None,
+    retrieval_quality: Mapping[str, object] | None = None,
+    answer: AnswerResult | None = None,
+    cutoff: int | None = None,
+) -> dict[str, object]:
+    search_result = search_result or BackendSearchResult(
+        query=case.question,
+        memories=(),
+        total_results=0,
+        context_token_count=0,
+        metadata={"stage": stage, "error": reason},
+    )
+    retrieval_quality = retrieval_quality or _retrieval_quality(case, search_result.memories)
+    error_metadata: dict[str, object] = {"stage": stage, "error": reason}
+    if cutoff is not None:
+        error_metadata["cutoff"] = cutoff
+    answer = answer or AnswerResult(
+        answer="",
+        model=answerer_model,
+        metadata=error_metadata,
+    )
+    judgment = JudgeResult(
+        verdict="error",
+        score=0.0,
+        reason=f"{stage}_failed",
+        model=judge_model,
+        metadata=error_metadata,
+    )
+    cutoff_results = {}
+    if cutoff is not None:
+        cutoff_results[str(cutoff)] = {
+            "generation": answer_payload(answer),
+            "judgment": judge_payload(judgment),
+            "memories_evaluated": len(search_result.memories[:cutoff]),
+        }
+    return {
+        "id": f"{backend_name}:{case.benchmark}:{case.case_id}",
+        "backend": backend_name,
+        "benchmark": case.benchmark,
+        "case_id": case.case_id,
+        "group": _case_group(case),
+        "capability": _case_capability(case),
+        "scored": _case_is_scored(case),
+        "question": case.question,
+        "ground_truth": _case_ground_truth(case),
+        "expected_terms": list(case.expected_terms),
+        "forbidden_terms": list(case.forbidden_terms),
+        "ingestion": ingestion_payload(ingest_result),
+        "retrieval": search_payload(search_result),
+        "retrieval_quality": retrieval_quality,
+        "generation": answer_payload(answer),
+        "judgment": judge_payload(judgment),
         "cutoff_results": cutoff_results,
     }
 
@@ -552,13 +685,64 @@ def _normalize_top_k_cutoffs(*, top_k: int, values: Sequence[int]) -> tuple[int,
 
 
 def _unique_backend_names(backends: Sequence[MemoryComparisonBackendPort]) -> tuple[str, ...]:
-    return tuple(str(backend.name).strip() for backend in backends)
+    names: list[str] = []
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for index, backend in enumerate(backends, start=1):
+        name = str(backend.name).strip()
+        if not name:
+            raise BenchmarkValidationError(
+                f"comparison backend at position {index} must have a non-empty name"
+            )
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+        names.append(name)
+    if duplicates:
+        duplicate_names = ", ".join(sorted(duplicates))
+        raise BenchmarkValidationError(
+            f"comparison backend names must be unique: {duplicate_names}"
+        )
+    return tuple(names)
 
 
 def _case_corpus_key(case: PublicBenchmarkCase) -> str:
     memory_scope = case.memory_scope_external_ref or case.case_id
     thread = case.thread_external_ref or case.case_id
-    return f"{case.benchmark}:{memory_scope}:{thread}"
+    return f"{case.benchmark}:{memory_scope}:{thread}:{_case_corpus_fingerprint(case)}"
+
+
+def _case_corpus_fingerprint(case: PublicBenchmarkCase) -> str:
+    source_parts: list[dict[str, object]] = []
+    for index, memory in enumerate(case.memories):
+        source_parts.append(
+            {
+                "kind": "memory",
+                "index": index,
+                "memory_kind": memory.kind,
+                "source_external_id": memory.source_external_id,
+                "text": memory.text,
+            }
+        )
+    for index, document in enumerate(case.documents):
+        source_parts.append(
+            {
+                "kind": "document",
+                "index": index,
+                "title": document.title,
+                "source_type": document.source_type,
+                "classification": document.classification,
+                "source_external_id": document.source_external_id,
+                "text": document.text,
+            }
+        )
+    encoded = json.dumps(
+        source_parts,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def _case_group(case: PublicBenchmarkCase) -> str:
@@ -674,6 +858,11 @@ def _normalize_text(value: str) -> str:
 
 def _mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _safe_error_reason(exc: Exception) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    return redact_sensitive_text(f"{exc.__class__.__name__}: {message}")[:500]
 
 
 def _elapsed_ms(started: float) -> float:
