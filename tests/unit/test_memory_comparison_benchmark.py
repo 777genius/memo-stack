@@ -574,16 +574,23 @@ def test_memory_comparison_cli_closes_live_backend_clients(
     dataset = tmp_path / "dataset.json"
     dataset.write_text("[]", encoding="utf-8")
     closed: list[str] = []
+    mem0_backend_kwargs: list[dict[str, object]] = []
     monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "unit-token")
+    monkeypatch.setenv("MEM0_API_KEY", "mem0-unit-key")
     monkeypatch.setattr(
         http_module,
         "InfinityContextHttpComparisonBackend",
         lambda **_: _ClosableBackend("memo-stack", closed),
     )
+
+    def fake_mem0_backend(**kwargs: object) -> _ClosableBackend:
+        mem0_backend_kwargs.append(dict(kwargs))
+        return _ClosableBackend("mem0", closed)
+
     monkeypatch.setattr(
         http_module,
         "Mem0HttpComparisonBackend",
-        lambda **_: _ClosableBackend("mem0", closed),
+        fake_mem0_backend,
     )
 
     def fake_run_memory_comparison_benchmark(**kwargs: object) -> dict[str, object]:
@@ -637,8 +644,13 @@ def test_memory_comparison_cli_closes_live_backend_clients(
         ]
     )
 
-    capsys.readouterr()
+    captured = capsys.readouterr()
     assert closed == ["memo-stack", "mem0"]
+    assert mem0_backend_kwargs == [
+        {"base_url": "http://mem0.example", "api_key": "mem0-unit-key"}
+    ]
+    assert "mem0-unit-key" not in captured.out
+    assert "mem0-unit-key" not in captured.err
 
 
 def test_infinity_context_http_ingest_uses_isolated_state_and_redacts_errors() -> None:
@@ -730,9 +742,11 @@ def test_mem0_http_ingest_uses_run_isolated_user_and_redacts_errors() -> None:
 
 def test_mem0_http_search_uses_current_filters_and_top_k_payload() -> None:
     seen_payloads: list[dict[str, object]] = []
+    seen_api_keys: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_payloads.append(json.loads(request.content))
+        seen_api_keys.append(request.headers.get("X-API-Key"))
         return httpx.Response(
             200,
             json={
@@ -749,6 +763,7 @@ def test_mem0_http_search_uses_current_filters_and_top_k_payload() -> None:
 
     backend = http_module.Mem0HttpComparisonBackend(
         base_url="http://mem0.test",
+        api_key="mem0-unit-key",
         transport=httpx.MockTransport(handler),
     )
     case = _case(
@@ -773,6 +788,7 @@ def test_mem0_http_search_uses_current_filters_and_top_k_payload() -> None:
             "top_k": 7,
         }
     ]
+    assert seen_api_keys == ["mem0-unit-key"]
     assert result.total_results == 1
     assert result.memories[0].text == "The checklist is in the blue notebook."
 

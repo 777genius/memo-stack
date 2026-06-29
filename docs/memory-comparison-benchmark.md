@@ -16,6 +16,7 @@ failure analysis.
 
 ```sh
 MEMORY_SERVICE_TOKEN=... \
+MEM0_API_KEY=... \
 MEMORY_OPENAI_API_KEY=... \
 MEMORY_COMPARISON_ANSWERER_MODEL=... \
 MEMORY_COMPARISON_JUDGE_MODEL=... \
@@ -27,6 +28,7 @@ python -m infinity_context_server.eval memory-comparison-benchmark \
   --dataset ./datasets/locomo10.json \
   --memo-api-url http://127.0.0.1:8000 \
   --mem0-url http://127.0.0.1:8888 \
+  --mem0-api-key-env MEM0_API_KEY \
   --benchmark locomo \
   --max-cases 20 \
   --capability single-hop \
@@ -66,6 +68,9 @@ Use deterministic answer/judge for a no-paid dry run by omitting
 - OpenAI key is read from `MEMORY_OPENAI_API_KEY` by default, with
   `OPENAI_API_KEY` as fallback. Do not commit keys or generated raw provider
   payloads.
+- Optional mem0 OSS API key is read from `MEM0_API_KEY` by default and sent as
+  `X-API-Key` when present. Leave it unset only for explicitly auth-disabled
+  local mem0 servers.
 - Token cost reporting uses explicit USD-per-1M-token rates from CLI flags or
   `MEMORY_COMPARISON_*_USD_PER_1M` env vars. The runner does not hardcode
   provider prices.

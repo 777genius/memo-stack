@@ -2449,6 +2449,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     memory_comparison.add_argument("--dataset", type=Path, required=True)
     memory_comparison.add_argument("--memo-api-url", required=True)
     memory_comparison.add_argument("--mem0-url", required=True)
+    memory_comparison.add_argument(
+        "--mem0-api-key-env",
+        default="MEM0_API_KEY",
+        help=(
+            "Optional environment variable containing the self-hosted mem0 OSS "
+            "X-API-Key value."
+        ),
+    )
     memory_comparison.add_argument("--benchmark", default="locomo")
     memory_comparison.add_argument("--min-accuracy", type=float, default=0.0)
     memory_comparison.add_argument("--max-cases", type=int, default=None)
@@ -2659,7 +2667,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                     base_url=args.memo_api_url,
                     auth_token=auth_token,
                 ),
-                Mem0HttpComparisonBackend(base_url=args.mem0_url),
+                Mem0HttpComparisonBackend(
+                    base_url=args.mem0_url,
+                    api_key=os.getenv(str(args.mem0_api_key_env)) or None,
+                ),
             )
             try:
                 result = run_memory_comparison_benchmark(

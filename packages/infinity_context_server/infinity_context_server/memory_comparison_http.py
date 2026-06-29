@@ -197,6 +197,7 @@ class Mem0HttpComparisonBackend:
         self,
         *,
         base_url: str,
+        api_key: str | None = None,
         timeout_seconds: float = 60.0,
         reset_user_on_start: bool = True,
         transport: httpx.BaseTransport | None = None,
@@ -204,6 +205,7 @@ class Mem0HttpComparisonBackend:
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout_seconds,
+            headers={"X-API-Key": api_key} if api_key else None,
             transport=transport,
         )
         self._reset_user_on_start = reset_user_on_start
