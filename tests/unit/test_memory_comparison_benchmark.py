@@ -141,6 +141,8 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     assert result["backend_metrics"]["memo-stack"]["expected_term_recall"] == 1.0
     assert result["backend_metrics"]["mem0"]["expected_term_recall"] == 0.0
     assert result["backend_metrics"]["memo-stack"]["by_group"]["single-hop"]["total"] == 1
+    assert result["backend_metrics"]["memo-stack"]["by_category"]["4:single-hop"]["total"] == 1
+    assert result["evaluations"][0]["category"] == "4:single-hop"
     assert result["failure_analysis"][0]["backend"] == "mem0"
     assert result["evaluations"][0]["cutoff_results"]["1"]["judgment"]["score"] == 1.0
     token_usage = result["backend_metrics"]["memo-stack"]["token_usage"]["by_stage"]
@@ -212,6 +214,51 @@ def test_memory_comparison_benchmark_reuses_ingested_corpus(
     assert result["backend_metrics"]["memo-stack"]["accuracy"] == 1.0
     assert sum(backend.ingest_calls.values()) == 1
     assert result["evaluations"][1]["ingestion"]["reused"] is True
+
+
+def test_memory_comparison_benchmark_reports_category_five_as_unscored(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "unused.json"
+    dataset.write_text("[]", encoding="utf-8")
+    scored = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+        category=4,
+    )
+    unscored = _case(
+        case_id="conv-1:qa:adversarial",
+        question="What color was never mentioned?",
+        expected_terms=("purple binder",),
+        answer="purple binder",
+        category=5,
+    )
+    backend = _StaticBackend(
+        "memo-stack",
+        {
+            scored.case_id: (RetrievedMemory(text="blue notebook", rank=1),),
+            unscored.case_id: (RetrievedMemory(text="purple binder", rank=1),),
+        },
+    )
+
+    result = run_memory_comparison_benchmark(
+        dataset_path=dataset,
+        backends=(backend,),
+        top_k=1,
+        top_k_cutoffs=(1,),
+        run_id="unit-run",
+        cases_override=(scored, unscored),
+    )
+
+    metrics = result["backend_metrics"]["memo-stack"]
+    assert metrics["total"] == 1
+    assert metrics["unscored"] == 1
+    assert metrics["by_category"]["4:single-hop"]["total"] == 1
+    assert metrics["by_category"]["5:adversarial"]["total"] == 1
+    assert result["evaluations"][1]["scored"] is False
+    assert result["evaluations"][1]["category"] == "5:adversarial"
 
 
 def test_memory_comparison_benchmark_does_not_reuse_changed_corpus(
@@ -561,6 +608,7 @@ def _case(
     expected_terms: tuple[str, ...],
     answer: str,
     document_text: str | None = None,
+    category: int = 4,
 ) -> PublicBenchmarkCase:
     return PublicBenchmarkCase(
         benchmark="locomo",
@@ -576,7 +624,7 @@ def _case(
         ),
         memory_scope_external_ref="locomo-conv-1",
         thread_external_ref="locomo-conv-1",
-        metadata={"category": 4, "answer_preview": answer},
+        metadata={"category": category, "answer_preview": answer},
     )
 
 

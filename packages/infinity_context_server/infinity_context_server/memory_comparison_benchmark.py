@@ -405,6 +405,7 @@ def _run_backend_case(
         "backend": backend_name,
         "benchmark": case.benchmark,
         "case_id": case.case_id,
+        "category": _case_category_label(case),
         "group": _case_group(case),
         "capability": _case_capability(case),
         "scored": _case_is_scored(case),
@@ -470,6 +471,7 @@ def _stage_failure_evaluation(
         "backend": backend_name,
         "benchmark": case.benchmark,
         "case_id": case.case_id,
+        "category": _case_category_label(case),
         "group": _case_group(case),
         "capability": _case_capability(case),
         "scored": _case_is_scored(case),
@@ -503,6 +505,10 @@ def _backend_metrics(
         group: _bucket_metrics(items)
         for group, items in sorted(_group_by(scored, key="group").items())
     }
+    by_category = {
+        category: _bucket_metrics(items)
+        for category, items in sorted(_group_by(backend_items, key="category").items())
+    }
     return {
         "ok": accuracy >= min_accuracy and bool(scored),
         "total": len(scored),
@@ -528,6 +534,7 @@ def _backend_metrics(
             answerer_token_cost_rate=answerer_token_cost_rate,
             judge_token_cost_rate=judge_token_cost_rate,
         ),
+        "by_category": by_category,
         "by_group": by_group,
         "by_cutoff": _cutoff_metrics(backend_items, primary_cutoff=primary_cutoff),
     }
@@ -796,6 +803,17 @@ def _case_group(case: PublicBenchmarkCase) -> str:
     if case.benchmark == LOCOMO_BENCHMARK_SUITE and category in _LOCOMO_CATEGORY_NAMES:
         return _LOCOMO_CATEGORY_NAMES[int(category)]
     return _case_capability(case)
+
+
+def _case_category_label(case: PublicBenchmarkCase) -> str:
+    category = _case_category(case)
+    if category is None:
+        return "uncategorized"
+    if case.benchmark == LOCOMO_BENCHMARK_SUITE:
+        name = _LOCOMO_CATEGORY_NAMES.get(category)
+        if name:
+            return f"{category}:{name}"
+    return str(category)
 
 
 def _case_is_scored(case: PublicBenchmarkCase) -> bool:
