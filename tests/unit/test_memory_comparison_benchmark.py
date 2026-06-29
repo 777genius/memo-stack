@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,8 +23,10 @@ from infinity_context_server.memory_comparison_llm import (
     OpenAIResponsesJudge,
 )
 from infinity_context_server.memory_comparison_models import (
+    AnswerResult,
     BackendIngestResult,
     BackendSearchResult,
+    JudgeResult,
     RetrievedMemory,
     TokenCostRate,
 )
@@ -83,6 +87,60 @@ class _StaticBackend:
         )
 
 
+class _FixedLatencyAnswerer:
+    model = "deterministic"
+
+    def __init__(self, latency_ms: float = 5.0) -> None:
+        self._delegate = EvidenceOnlyAnswerer()
+        self._latency_ms = latency_ms
+
+    def answer(
+        self,
+        case: PublicBenchmarkCase,
+        memories: Sequence[RetrievedMemory],
+        *,
+        backend_name: str,
+        cutoff: int,
+    ) -> AnswerResult:
+        return replace(
+            self._delegate.answer(
+                case,
+                memories,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            ),
+            latency_ms=self._latency_ms,
+        )
+
+
+class _FixedLatencyJudge:
+    model = "deterministic"
+
+    def __init__(self, latency_ms: float = 2.0) -> None:
+        self._delegate = ExpectedTermsJudge()
+        self._latency_ms = latency_ms
+
+    def judge(
+        self,
+        case: PublicBenchmarkCase,
+        answer: AnswerResult,
+        memories: Sequence[RetrievedMemory],
+        *,
+        backend_name: str,
+        cutoff: int,
+    ) -> JudgeResult:
+        return replace(
+            self._delegate.judge(
+                case,
+                answer,
+                memories,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            ),
+            latency_ms=self._latency_ms,
+        )
+
+
 def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     tmp_path: Path,
 ) -> None:
@@ -124,8 +182,8 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     result = run_memory_comparison_benchmark(
         dataset_path=dataset,
         backends=(memo_backend, mem0_backend),
-        answerer=EvidenceOnlyAnswerer(),
-        judge=ExpectedTermsJudge(),
+        answerer=_FixedLatencyAnswerer(),
+        judge=_FixedLatencyJudge(),
         top_k=2,
         top_k_cutoffs=(1, 2),
         run_id="unit-run",
@@ -798,6 +856,36 @@ def test_mem0_http_ingest_uses_run_isolated_user_and_redacts_errors() -> None:
         "case_id": "conv-1:qa:1",
         "corpus_key": "corpus-a",
     }
+
+
+def test_mem0_http_ingest_reports_created_memory_count_from_results() -> None:
+    response_results = [
+        [{"id": "m1", "memory": "Checklist in blue notebook."}, {"id": "m2"}],
+        [{"id": "m3", "memory": "Morgan repeated the location."}],
+    ]
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": response_results.pop(0)})
+
+    backend = http_module.Mem0HttpComparisonBackend(
+        base_url="http://mem0.test",
+        reset_user_on_start=False,
+        transport=httpx.MockTransport(handler),
+    )
+    case = _case_with_memory_and_document()
+
+    try:
+        result = backend.ingest(case, run_id="Run 42", corpus_key="corpus-a")
+    finally:
+        backend.close()
+
+    assert result.items_processed == 2
+    assert result.items_failed == 0
+    assert result.total_memories_created == 3
+    assert [operation.metadata["created_memory_count"] for operation in result.operations] == [
+        2,
+        1,
+    ]
 
 
 def test_mem0_http_search_uses_current_filters_and_top_k_payload() -> None:

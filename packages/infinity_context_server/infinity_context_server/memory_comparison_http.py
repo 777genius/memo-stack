@@ -239,6 +239,7 @@ class Mem0HttpComparisonBackend:
     ) -> BackendIngestResult:
         started = time.perf_counter()
         operations: list[IngestionOperation] = []
+        total_memories_created = 0
         for step, messages in enumerate(_case_messages(case), start=1):
             op_started = time.perf_counter()
             response = self._client.post(
@@ -254,6 +255,13 @@ class Mem0HttpComparisonBackend:
                     },
                 },
             )
+            metadata = _response_metadata(response)
+            created_count = (
+                _mem0_created_memory_count(response) if response.status_code < 400 else 0
+            )
+            if response.status_code < 400:
+                total_memories_created += created_count
+                metadata["created_memory_count"] = created_count
             operations.append(
                 IngestionOperation(
                     step=step,
@@ -261,14 +269,14 @@ class Mem0HttpComparisonBackend:
                     success=response.status_code < 400,
                     latency_ms=_elapsed_ms(op_started),
                     memory=_messages_preview(messages),
-                    metadata=_response_metadata(response),
+                    metadata=metadata,
                 )
             )
         failed = sum(1 for operation in operations if not operation.success)
         return BackendIngestResult(
             items_processed=len(operations),
             items_failed=failed,
-            total_memories_created=len(operations) - failed,
+            total_memories_created=total_memories_created,
             latency_ms=_elapsed_ms(started),
             operations=tuple(operations),
             metadata={"corpus_key": corpus_key},
@@ -353,6 +361,19 @@ def _mem0_memories(payload: object) -> list[RetrievedMemory]:
             )
         )
     return memories
+
+
+def _mem0_created_memory_count(response: httpx.Response) -> int:
+    try:
+        payload = response.json()
+    except ValueError:
+        return 0
+    if not isinstance(payload, Mapping):
+        return 0
+    results = payload.get("results")
+    if isinstance(results, Sequence) and not isinstance(results, str | bytes):
+        return len(results)
+    return 0
 
 
 def _case_messages(case: PublicBenchmarkCase) -> tuple[tuple[dict[str, str], ...], ...]:
