@@ -1,14 +1,19 @@
 from math import inf, nan
 
 from infinity_context_core.application.context_diagnostics import context_rank_key
+from infinity_context_core.application.context_food_inventory_exact_turns import (
+    exact_food_inventory_turn_candidates,
+)
 from infinity_context_core.application.context_packer import (
     ContextPacker,
     _answer_support_diversity_candidates,
     _answer_support_diversity_family,
     _answer_support_family_item_key,
+    _answer_support_family_item_key_for_query,
+    _answer_support_item_limit,
     _book_reading_answer_content_rank,
-    _is_exact_precise_content_answer_support_item,
     _is_exact_inventory_answer_family,
+    _is_exact_precise_content_answer_support_item,
     _is_exact_temporal_query_object_family,
     _ordered_answer_support_families,
     _ordered_answer_support_families_for_query,
@@ -207,6 +212,64 @@ def test_inventory_answer_support_families_distinguish_list_event_slots() -> Non
     assert tournament != setup
 
 
+def test_context_packer_exact_inventory_keeps_named_board_game_turns() -> None:
+    generic_convention = _answer_support_item(
+        "generic_convention",
+        "D4:1 Nate went to a game convention and met people who liked games.",
+        query_reason="board_game_inventory_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:1:turn",
+    )
+    strategy_game = _answer_support_item(
+        "strategy_game",
+        "D4:7 Nate: We played this game Azul - it is a great strategy game.",
+        query_reason="board_game_inventory_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:7:turn",
+    )
+    casual_game = _answer_support_item(
+        "casual_game",
+        "D2:3 Nate: The party was a success, and we played some Carcassonne afterward.",
+        query_reason="board_game_inventory_bridge",
+        source_id="locomo:conv-fixture:session_2:D2:3:turn",
+    )
+    high_score_noise = tuple(
+        _answer_support_item(
+            f"noise_{index}",
+            f"D{index}:1 Nate talked about gaming gear and conventions.",
+            query_reason="board_game_inventory_bridge",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:1:turn",
+        )
+        for index in range(10, 18)
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_convention, strategy_game, casual_game]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What board games has Nate played?",
+    )
+
+    assert _is_exact_inventory_answer_family(strategy_game)
+    assert _is_exact_inventory_answer_family(casual_game)
+    assert not _is_exact_inventory_answer_family(generic_convention)
+    assert "game-named" in _answer_support_diversity_family(strategy_game)
+    assert candidates[ordered[0]].item_id in {
+        strategy_game.item_id,
+        casual_game.item_id,
+    }
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_named_board_games",
+        items=(*high_score_noise, generic_convention, strategy_game, casual_game),
+        token_budget=220,
+        query="What board games has Nate played?",
+        max_rendered_chars=900,
+    )
+
+    assert "played this game Azul" in result.bundle.rendered_text
+    assert "played some Carcassonne" in result.bundle.rendered_text
+
+
 def test_inventory_answer_support_families_distinguish_animal_activity_slots() -> None:
     feeding = _answer_support_diversity_family(
         _answer_support_item(
@@ -237,6 +300,165 @@ def test_inventory_answer_support_families_distinguish_animal_activity_slots() -
     assert "animal-activity-holding" in holding
     assert "animal-activity-bath" in bath
     assert len({feeding, holding, bath}) == 3
+
+
+def test_animal_evidence_answer_support_families_distinguish_career_support_roles() -> None:
+    care = _answer_support_item(
+        "care",
+        (
+            "D4:8 Sam: Keeping their area clean, feeding them properly, "
+            "and making sure they get enough light is part of caring for turtles."
+        ),
+        query_reason="animal_care_instruction_bridge",
+        source_id="locomo:conv-fixture:session_4:D4:8:turn",
+    )
+    habitat = _answer_support_item(
+        "habitat",
+        (
+            "D9:3 Sam: My little turtles got a new tank with room to swim, "
+            "and they look relaxed in their habitat."
+        ),
+        query_reason="animal_habitat_setup_bridge",
+        source_id="locomo:conv-fixture:session_9:D9:3:turn",
+    )
+    diet = _answer_support_item(
+        "diet",
+        (
+            "D12:19 Sam: The turtles eat vegetables, fruits, and insects, "
+            "so they have a varied diet."
+        ),
+        query_reason="animal_diet_evidence_bridge",
+        source_id="locomo:conv-fixture:session_12:D12:19:turn",
+    )
+    acquisition = _answer_support_item(
+        "acquisition",
+        (
+            "D14:25 Sam: Turtles bring me joy, so when I saw another at a "
+            "pet store I got a third turtle and made sure the tank was big "
+            "enough for three."
+        ),
+        query_reason="animal_affinity_pet_store_bridge",
+        source_id="locomo:conv-fixture:session_14:D14:25:turn",
+    )
+    generic_animal_context = _answer_support_item(
+        "generic_animal_context",
+        "D2:10 Sam: Reptiles and animals came up in another unrelated chat.",
+        query_reason="animal_affinity_pet_store_bridge",
+        source_id="locomo:conv-fixture:session_2:D2:10:turn",
+        score=0.99,
+    )
+
+    families = {
+        item.item_id: _answer_support_diversity_family(item)
+        for item in (care, habitat, diet, acquisition)
+    }
+    assert "animal-care" in families["care"]
+    assert "animal-habitat" in families["habitat"]
+    assert "animal-diet" in families["diet"]
+    assert "animal-pet-acquisition" in families["acquisition"]
+    assert len(set(families.values())) == 4
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_animal_context, acquisition, habitat, care, diet]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What alternative career could Sam consider after gaming?",
+    )
+    leading_item_ids = {candidates[family].item_id for family in ordered[:4]}
+
+    assert leading_item_ids == {"care", "diet", "habitat", "acquisition"}
+
+
+def test_animal_activity_answer_support_promotes_holding_turn_from_hobby_reason() -> None:
+    broad_affinity = _answer_support_item(
+        "broad_affinity",
+        (
+            "D7:5 Sam: Pets bring peace and joy, and turtles are great "
+            "companions after a long day."
+        ),
+        query_reason="hobby_interest_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:5:turn",
+        score=0.99,
+    )
+    feeding = _answer_support_item(
+        "feeding",
+        "D7:7 Sam: I love seeing the turtles eat fruit and strawberries.",
+        query_reason="animal_activity_inventory_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:7:turn",
+    )
+    holding = _answer_support_item(
+        "holding",
+        (
+            "D7:9 Sam: Watching them enjoy snacks is fun, and I also like "
+            "holding the turtles gently."
+        ),
+        query_reason="hobby_interest_bridge",
+        source_id="locomo:conv-fixture:session_7:D7:9:turn",
+    )
+
+    holding_family = _answer_support_diversity_family(holding)
+    broad_family = _answer_support_diversity_family(broad_affinity)
+    assert "animal-activity-holding" in holding_family
+    assert "animal-affinity" in broad_family
+
+    candidates = _answer_support_diversity_candidates(
+        [broad_affinity, feeding, holding]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What activities does Sam do with the turtles?",
+    )
+    ordered_item_ids = [candidates[family].item_id for family in ordered]
+
+    assert ordered_item_ids.index("holding") < ordered_item_ids.index("broad_affinity")
+    assert {"feeding", "holding"}.issubset(set(ordered_item_ids[:2]))
+
+
+def test_pet_inventory_answer_support_prefers_identity_and_acquisition_roles() -> None:
+    named_pet = _answer_support_item(
+        "named_pet",
+        "D3:3 Sam: This is Max, the new dog I adopted as a pet.",
+        query_reason="pet_inventory_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:3:turn",
+    )
+    turtle_acquisition = _answer_support_item(
+        "turtle_acquisition",
+        (
+            "D8:23 Sam: These little critters bring me joy, and I got them "
+            "a new friend after seeing another pet turtle."
+        ),
+        query_reason="pet_inventory_bridge",
+        source_id="locomo:conv-fixture:session_8:D8:23:turn",
+    )
+    diet_context = _answer_support_item(
+        "diet_context",
+        "D9:19 Sam: The turtles eat vegetables, fruits, and insects.",
+        query_reason="pet_inventory_bridge",
+        source_id="locomo:conv-fixture:session_9:D9:19:turn",
+        score=0.99,
+    )
+    habitat_context = _answer_support_item(
+        "habitat_context",
+        "D10:3 Sam: The turtles got a new tank with room to swim.",
+        query_reason="pet_inventory_bridge",
+        source_id="locomo:conv-fixture:session_10:D10:3:turn",
+        score=0.99,
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [diet_context, habitat_context, named_pet, turtle_acquisition]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What pets does Sam have?",
+    )
+    ordered_item_ids = [candidates[family].item_id for family in ordered]
+
+    assert ordered_item_ids[:2] == ["named_pet", "turtle_acquisition"]
+    assert ordered_item_ids.index("turtle_acquisition") < ordered_item_ids.index(
+        "diet_context"
+    )
 
 
 def test_support_origin_answer_support_prefers_journey_support_evidence() -> None:
@@ -1039,6 +1261,142 @@ def test_context_packer_preserves_source_sibling_turn_as_answer_support_before_c
 
     rendered = result.bundle.rendered_text
     assert "EXACT_D24_3_MARKER" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 1
+    assert result.bundle.diagnostics["dropped_by_char_cap"] > 0
+
+
+def test_context_packer_preserves_direct_inspiration_turn_before_char_cap() -> None:
+    broad_items = tuple(
+        ContextItem(
+            item_id=f"inspiration_broad_{index}",
+            item_type="chunk",
+            text=(
+                f"INSPIRATION_BROAD_{index} "
+                + ("creative writing progress validation generic context " * 18)
+            ),
+            score=0.995 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="document",
+                    source_id=f"locomo:conv-fixture:session_{index}:observation",
+                    chunk_id=f"inspiration_broad_{index}",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "retrieval_source": "keyword_chunks",
+                "query_expansion_reason": "inspiration_source_bridge",
+            },
+        )
+        for index in range(1, 6)
+    )
+    question_only_turn = ContextItem(
+        item_id="question_only",
+        item_type="chunk",
+        text="D24:5 Nate: What inspired you to write that story?",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_24:D24:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+            "query_expansion_reason": "inspiration_source_bridge",
+        },
+    )
+    direct_turn = ContextItem(
+        item_id="direct_inspiration",
+        item_type="chunk",
+        text=(
+            "D26:7 Joanna: I was inspired by stories about finding courage "
+            "and taking risks."
+        ),
+        score=0.94,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_26:D26:7:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_chunks",
+            "query_expansion_reason": "inspiration_source_bridge",
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_inspiration_answer_support",
+        items=(*broad_items, question_only_turn, direct_turn),
+        query="What is Joanna inspired by?",
+        token_budget=2000,
+        max_rendered_chars=820,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert _is_exact_precise_content_answer_support_item(direct_turn)
+    assert not _is_exact_precise_content_answer_support_item(question_only_turn)
+    assert "D26:7 Joanna: I was inspired by stories" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 1
+    assert result.bundle.diagnostics["dropped_by_char_cap"] > 0
+
+
+def test_context_packer_preserves_original_query_inspiration_idea_source_turn() -> None:
+    broad_items = tuple(
+        ContextItem(
+            item_id=f"idea_source_broad_{index}",
+            item_type="chunk",
+            text=f"IDEA_SOURCE_BROAD_{index} " + ("creative writing context " * 24),
+            score=0.995 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="document",
+                    source_id=f"locomo:conv-fixture:session_{index}:summary",
+                    chunk_id=f"idea_source_broad_{index}",
+                ),
+            ),
+            diagnostics={
+                "memory_scope_id": "memory_scope_default",
+                "retrieval_source": "keyword_chunks",
+                "query_expansion_reason": "original_query",
+            },
+        )
+        for index in range(1, 6)
+    )
+    idea_source_turn = ContextItem(
+        item_id="idea_source_turn",
+        item_type="chunk",
+        text=(
+            "D25:10 Joanna: I got ideas from everywhere: people I know, "
+            "stuff I saw, even what I imagined."
+        ),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_25:D25:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "query_expansion_reason": "original_query",
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_original_query_inspiration_idea_source",
+        items=(*broad_items, idea_source_turn),
+        query="What is Joanna inspired by?",
+        token_budget=2000,
+        max_rendered_chars=820,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D25:10 Joanna: I got ideas from everywhere" in rendered
     assert result.bundle.diagnostics["answer_support_items_used"] >= 1
     assert result.bundle.diagnostics["dropped_by_char_cap"] > 0
 
@@ -2252,6 +2610,98 @@ def test_answer_support_prioritizes_degree_completion_for_temporal_degree_query(
     )
 
 
+def test_answer_support_prioritizes_visual_certificate_for_recognition_query() -> None:
+    query = "What did Maria receive a certificate for?"
+    visual_certificate = ContextItem(
+        item_id="visual_certificate_completion",
+        item_type="chunk",
+        text=(
+            "D9:2 John: Hey Maria! Since we spoke last, I've had quite the adventure.\n"
+            "image caption: a photo of a certificate of completion of a university degree\n"
+            "visual query: diploma university"
+        ),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:2:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "recognition_award_bridge",
+                "source_sibling_answer_evidence": 1,
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+    generic_graduation = ContextItem(
+        item_id="generic_graduation_text",
+        item_type="chunk",
+        text="D9:4 John: Thanks, Maria! It was worth it. I graduated last week!",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_9:D9:4:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "recognition_award_bridge",
+                "source_sibling_answer_evidence": 1,
+                "phrase_bigram_hits": 1,
+                "distinctive_term_hits": 3,
+            },
+        },
+    )
+    shelter_medal = ContextItem(
+        item_id="shelter_medal_distractor",
+        item_type="chunk",
+        text=(
+            "D29:1 Maria: I volunteered at the homeless shelter and they gave "
+            "me a medal. It was humbling."
+        ),
+        score=0.97,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_29:D29:1:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "recognition_award_bridge",
+                "source_sibling_answer_evidence": 1,
+                "phrase_bigram_hits": 2,
+                "distinctive_term_hits": 5,
+            },
+        },
+    )
+
+    assert _answer_support_family_item_key_for_query(
+        visual_certificate,
+        query=query,
+    ) < _answer_support_family_item_key_for_query(generic_graduation, query=query)
+    assert _answer_support_family_item_key_for_query(
+        visual_certificate,
+        query=query,
+    ) < _answer_support_family_item_key_for_query(shelter_medal, query=query)
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_graduation, shelter_medal, visual_certificate],
+        query=query,
+    )
+    ordered = _ordered_answer_support_families_for_query(candidates, query=query)
+
+    assert any(
+        candidate.item_id == "visual_certificate_completion"
+        for candidate in candidates.values()
+    )
+    assert candidates[ordered[0]].item_id == "visual_certificate_completion"
+
+
 def test_answer_support_family_splits_exercise_activity_slots() -> None:
     kickboxing = ContextItem(
         item_id="exercise_kickboxing",
@@ -2350,6 +2800,37 @@ def test_answer_support_family_splits_exercise_activity_slots() -> None:
     )
 
 
+def test_exercise_activity_answer_support_prefers_performed_martial_art_turn() -> None:
+    performed = _answer_support_item(
+        "performed_taekwondo",
+        "D2:28 John: I'm off to do some taekwondo!",
+        query_reason="exercise_activity_inventory_bridge",
+        source_id="locomo:conv-41:session_2:D2:28:turn",
+    )
+    menu_noise = _answer_support_item(
+        "studio_menu",
+        (
+            "D25:13 John: The yoga studio John attends offers a variety of "
+            "classes including yoga, kickboxing, and circuit training."
+        ),
+        query_reason="exercise_activity_inventory_bridge",
+        source_id="locomo:conv-41:session_25:D25:13:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates([menu_noise, performed])
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What martial arts has John done?",
+    )
+
+    assert _is_exact_inventory_answer_family(performed)
+    assert not _is_exact_inventory_answer_family(menu_noise)
+    assert candidates[ordered[0]].item_id == performed.item_id
+    assert _answer_support_family_item_key(performed) < _answer_support_family_item_key(
+        menu_noise
+    )
+
+
 def test_answer_support_family_splits_business_commonality_slots() -> None:
     jon_loss = ContextItem(
         item_id="jon_job_loss",
@@ -2445,6 +2926,122 @@ def test_answer_support_family_splits_business_start_reason_slots() -> None:
     assert first_two_ids == {"jon_dance_reason", "gina_fashion_reason"}
     assert _is_exact_precise_content_answer_support_item(jon_reason)
     assert _is_exact_precise_content_answer_support_item(gina_reason)
+
+
+def test_answer_support_business_start_prefers_direct_reason_source_turns() -> None:
+    jon_direct = _answer_support_item(
+        "jon_direct_reason",
+        "D1:4 Jon: I'm starting a dance studio because I'm passionate about dancing.",
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_1:D1:4:turn",
+    )
+    gina_direct = _answer_support_item(
+        "gina_direct_reason",
+        (
+            "D6:8 Gina: I'm passionate about fashion trends and finding unique "
+            "pieces. I wanted to blend my love for dance and fashion."
+        ),
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_6:D6:8:turn",
+    )
+    later_progress = _answer_support_item(
+        "later_business_progress",
+        "D14:8 Gina: I opened an online clothing store and being my own boss is great.",
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_14:D14:8:turn",
+    )
+    third_person_direct = _answer_support_item(
+        "third_person_direct_reason",
+        "D1:4 Jon: Jon is starting his own dance studio due to his passion for dancing.",
+        query_reason="business_start_reason_bridge",
+        source_id="locomo:conv-30:session_1:D1:4:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [later_progress, gina_direct, jon_direct, third_person_direct]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Do Jon and Gina start businesses out of what they love?",
+    )
+    first_two_ids = {candidates[ordered[index]].item_id for index in range(2)}
+
+    assert _precise_answer_content_rank(
+        jon_direct,
+        query_reason="business_start_reason_bridge",
+    ) == 0
+    assert _precise_answer_content_rank(
+        gina_direct,
+        query_reason="business_start_reason_bridge",
+    ) == 0
+    assert _precise_answer_content_rank(
+        third_person_direct,
+        query_reason="business_start_reason_bridge",
+    ) == 0
+    assert _precise_answer_content_rank(
+        later_progress,
+        query_reason="business_start_reason_bridge",
+    ) > 0
+    assert first_two_ids == {"jon_direct_reason", "gina_direct_reason"}
+
+
+def test_answer_support_business_start_prefers_marker_observation_over_summary() -> None:
+    summary = ContextItem(
+        item_id="session_summary",
+        item_type="chunk",
+        text=(
+            "Gina and Jon met in January. Jon lost his job as a banker and "
+            "planned to start a dance studio because of his passion for dancing."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_summary",
+                source_id="locomo:conv-30:session_1:summary",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "business_start_reason_bridge",
+            },
+        },
+    )
+    observation = ContextItem(
+        item_id="session_observation",
+        item_type="chunk",
+        text=(
+            "D1:4 Jon: Jon is starting his own dance studio due to his passion "
+            "for dancing. Related turns: D1:6 D1:14."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_observation",
+                source_id="locomo:conv-30:session_1:observation",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-30:session_1:D1:4:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "source_type": "locomo_observation",
+            "score_signals": {
+                "query_expansion_reason": "business_start_reason_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates([summary, observation])
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Do Jon and Gina start businesses out of what they love?",
+    )
+
+    assert candidates[ordered[0]].item_id == "session_observation"
 
 
 def test_answer_support_business_job_loss_stays_in_career_slot() -> None:
@@ -2557,28 +3154,38 @@ def test_answer_support_family_splits_item_purchase_object_slots() -> None:
 
 
 def test_answer_support_family_splits_charity_brand_sponsorship_slots() -> None:
-    nike_gatorade = ContextItem(
-        item_id="nike_gatorade",
+    brand_deal = ContextItem(
+        item_id="brand_deal",
         item_type="chunk",
         text=(
-            "D3:13 John signed up Nike for a basketball shoe and gear deal "
-            "and is in talks with Gatorade about sponsorship."
+            "D3:13 Jordan signed up TrailCore for a basketball shoe and "
+            "gear deal and is in talks with HydraFuel about sponsorship."
         ),
         score=0.98,
-        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D3:13:turn"),),
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:13:turn",
+            ),
+        ),
         diagnostics={
             "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
         },
     )
-    under_armour = ContextItem(
-        item_id="under_armour",
+    partner_affinity = ContextItem(
+        item_id="partner_affinity",
         item_type="chunk",
         text=(
-            "D3:15 John likes Under Armour and thinks working with them "
-            "would be really cool."
+            "D3:15 Jordan has always liked SummitGear and thinks working "
+            "with them would be really cool."
         ),
         score=0.98,
-        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D3:15:turn"),),
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:15:turn",
+            ),
+        ),
         diagnostics={
             "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
         },
@@ -2587,26 +3194,260 @@ def test_answer_support_family_splits_charity_brand_sponsorship_slots() -> None:
         item_id="charity_intent",
         item_type="chunk",
         text=(
-            "D6:15 John wants to make a difference through charity, inspire "
+            "D6:15 Jordan wants to make a difference through charity, inspire "
             "people, and give something back."
         ),
         score=0.98,
-        source_refs=(SourceRef(source_type="locomo_turn", source_id="doc:D6:15:turn"),),
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_6:D6:15:turn",
+            ),
+        ),
         diagnostics={
             "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
         },
     )
 
     families = {
-        _answer_support_diversity_family(nike_gatorade),
-        _answer_support_diversity_family(under_armour),
+        _answer_support_diversity_family(brand_deal),
+        _answer_support_diversity_family(partner_affinity),
         _answer_support_diversity_family(charity_intent),
     }
 
     assert len(families) == 3
-    assert any(family.endswith(":nike-gatorade-deals") for family in families)
-    assert any(family.endswith(":under-armour-interest") for family in families)
-    assert any(family.endswith(":charity-intent") for family in families)
+    assert any(":brand-sponsorship-deal:" in family for family in families)
+    assert any(":partner-affinity-fit:" in family for family in families)
+    assert any(":charity-intent:" in family for family in families)
+
+
+def test_answer_support_family_does_not_treat_generic_basketball_goals_as_brand_deal() -> None:
+    career_goal_turn = ContextItem(
+        item_id="career_goal_turn",
+        item_type="chunk",
+        text=(
+            "D6:14 Sam asked if Jordan had any big goals for a basketball career. "
+            "D6:15 Jordan wants to make a difference through charity and inspire people."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_6:D6:15:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    family = _answer_support_diversity_family(career_goal_turn)
+
+    assert ":brand-sponsorship-deal:" not in family
+    assert ":charity-intent:" in family
+
+
+def test_answer_support_family_does_not_treat_autographed_basketball_as_brand_deal() -> None:
+    autograph_turn = ContextItem(
+        item_id="autograph_turn",
+        item_type="chunk",
+        text=(
+            "D4:7 visual query: basketball signed by favorite basketball player. "
+            "D4:8 Jordan said the player inspired him to work hard."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_4:D4:7:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    family = _answer_support_diversity_family(autograph_turn)
+
+    assert ":brand-sponsorship-deal:" not in family
+
+
+def test_answer_support_family_prefers_exact_partner_fit_turn_over_broad_chunk() -> None:
+    query = "What prominent charity organization might Jordan work with and why?"
+    exact_turn = ContextItem(
+        item_id="exact_partner_fit",
+        item_type="chunk",
+        text=(
+            "session_3 turn D3:15\n"
+            "D3:15 Jordan has always liked SummitGear and working with them "
+            "would be really cool."
+        ),
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:15:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+    broad_chunk = ContextItem(
+        item_id="broad_partner_fit",
+        item_type="chunk",
+        text=(
+            "D3:12 Alex asked about endorsements. D3:13 Jordan signed a "
+            "basketball gear deal. D3:15 Jordan has always liked SummitGear "
+            "and working with them would be really cool."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(source_type="locomo_session", source_id="locomo:synthetic:session_3"),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:13:turn",
+            ),
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:15:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [broad_chunk, exact_turn],
+        query=query,
+    )
+    ordered = _ordered_answer_support_families_for_query(candidates, query=query)
+
+    assert candidates[ordered[0]].item_id == "exact_partner_fit"
+
+
+def test_answer_support_family_prefers_concrete_sponsorship_deal_over_exploration() -> None:
+    query = "What prominent organization might Jordan work with and why?"
+    exploration = ContextItem(
+        item_id="exploration",
+        item_type="chunk",
+        text=(
+            "D2:2 Jordan is exploring endorsement opportunities and thinking "
+            "about a prominent sportswear brand."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_2:D2:2:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+    concrete = ContextItem(
+        item_id="concrete",
+        item_type="chunk",
+        text=(
+            "D3:13 Jordan signed up TrailCore for a basketball shoe and gear "
+            "deal and is in talks with HydraFuel about sponsorship."
+        ),
+        score=0.95,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:13:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    exploration_family = _answer_support_diversity_family(exploration)
+    assert ":brand-sponsorship-deal:" not in exploration_family
+    assert ":sports-brand-generic:" in exploration_family
+
+    candidates = _answer_support_diversity_candidates([exploration, concrete], query=query)
+    ordered = _ordered_answer_support_families_for_query(candidates, query=query)
+
+    assert candidates[ordered[0]].item_id == "concrete"
+
+
+def test_answer_support_family_treats_brand_preference_after_deal_as_partner_fit() -> None:
+    partner_turn = ContextItem(
+        item_id="partner_after_deal",
+        item_type="chunk",
+        text=(
+            "D3:15 Jordan is excited about the existing shoe and gear deals, "
+            "and has always liked SummitGear; working with them would be cool."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:15:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    family = _answer_support_diversity_family(partner_turn)
+
+    assert ":partner-affinity-fit:" in family
+    assert ":brand-sponsorship-deal:" not in family
+
+
+def test_answer_support_family_keeps_distinct_exact_career_slot_markers() -> None:
+    first_turn = ContextItem(
+        item_id="sponsor_deal_first",
+        item_type="chunk",
+        text=(
+            "D3:13 Jordan signed up TrailCore for a basketball shoe and "
+            "gear deal. Related turns: D3:15."
+        ),
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:13:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+    related_turn = ContextItem(
+        item_id="sponsor_deal_related",
+        item_type="chunk",
+        text=(
+            "D3:13 Jordan signed up TrailCore for a basketball shoe and "
+            "gear deal. Related turns: D3:15."
+        ),
+        score=0.97,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:synthetic:session_3:D3:15:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {"query_expansion_reason": "charity_brand_sponsorship_bridge"},
+        },
+    )
+
+    families = {
+        _answer_support_diversity_family(first_turn),
+        _answer_support_diversity_family(related_turn),
+    }
+
+    assert len(families) == 2
+    assert any(":d3-13:" in family for family in families)
+    assert any(":d3-15:" in family for family in families)
 
 
 def test_answer_support_family_prefers_exact_turn_for_animal_care_instruction() -> None:
@@ -4281,6 +5122,761 @@ def test_answer_support_family_splits_dessert_inventory_slots() -> None:
     assert first_two_ids == {"dessert_cobbler", "dessert_sundae"}
 
 
+def test_context_packer_keeps_multiple_same_slot_dessert_recipe_turns() -> None:
+    filler_items = tuple(
+        _answer_support_item(
+            f"dessert_filler_{index}",
+            f"D{index}:2 Riley talked about dessert recipes in general.",
+            query_reason="decomposition_inventory_list",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:2:turn",
+            score=0.99 - index * 0.001,
+        )
+        for index in range(5, 11)
+    )
+    early_ice_cream = _answer_support_item(
+        "early_ice_cream",
+        (
+            "D3:4 Riley: I discovered that I can make coconut milk "
+            "icecream and gave it a try."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_3:D3:4:turn",
+        score=0.82,
+    )
+    later_swirl = _answer_support_item(
+        "later_swirl",
+        (
+            "D4:3 Riley: I whipped up some chocolate and vanilla swirl. "
+            "image caption: a photo of an ice cream cone. "
+            "visual query: coconut milk ice cream chocolate swirls"
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_4:D4:3:turn",
+        score=0.81,
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_dessert_recipe_inventory",
+        items=(*filler_items, later_swirl, early_ice_cream),
+        query="What recipes has Riley made?",
+        token_budget=900,
+        max_rendered_chars=3500,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D3:4 Riley: I discovered that I can make coconut milk" in rendered
+    assert "D4:3 Riley: I whipped up some chocolate and vanilla swirl" in rendered
+
+
+def test_food_inventory_exact_turns_keep_self_made_original_query_answers() -> None:
+    self_made = _answer_support_item(
+        "self_made",
+        (
+            "D10:9 Riley: I have been testing out dairy-free dessert recipes "
+            "for friends and made this cake recently."
+        ),
+        query_reason="original_query",
+        source_id="locomo:conv-fixture:session_10:D10:9:turn",
+        score=0.72,
+    )
+    addressee_made = _answer_support_item(
+        "addressee_made",
+        (
+            "D18:9 Riley: Yum, Nate! I love it when you make coconut milk "
+            "icecream."
+        ),
+        query_reason="original_query",
+        source_id="locomo:conv-fixture:session_18:D18:9:turn",
+        score=0.99,
+    )
+
+    selected = exact_food_inventory_turn_candidates(
+        (addressee_made, self_made),
+        query="What recipes has Riley made?",
+        limit=4,
+    )
+
+    assert [item.item_id for item in selected] == ["self_made"]
+
+
+def test_context_packer_keeps_named_favorite_dessert_answers_before_prompts() -> None:
+    filler_items = tuple(
+        _answer_support_item(
+            f"dessert_prompt_{index}",
+            (
+                f"D{index}:9 Morgan: Yum, got any favorite flavors for "
+                "dairy-free desserts?"
+            ),
+            query_reason="decomposition_inventory_list",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:9:turn",
+            score=0.99 - index * 0.001,
+        )
+        for index in range(5, 12)
+    )
+    other_person_favorite = _answer_support_item(
+        "other_person_favorite",
+        (
+            "D12:10 Morgan: Coconut milk ice cream is one of my favorites, "
+            "and I also love a dairy-free chocolate mousse."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_12:D12:10:turn",
+        score=0.98,
+    )
+    early_ice_cream = _answer_support_item(
+        "early_ice_cream",
+        (
+            "D3:4 Riley: I discovered that I can make coconut milk "
+            "icecream and gave it a try."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_3:D3:4:turn",
+        score=0.82,
+    )
+    favorite_flavors = _answer_support_item(
+        "favorite_flavors",
+        "D3:10 Riley: I love coconut milk, but I also enjoy chocolate and mixed berry flavors.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_3:D3:10:turn",
+        score=0.81,
+    )
+    dairy_free_cake = _answer_support_item(
+        "dairy_free_cake",
+        "D3:12 Riley: I also made a dairy-free chocolate cake with berries on it.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_3:D3:12:turn",
+        score=0.8,
+    )
+    later_favorite = _answer_support_item(
+        "later_favorite",
+        (
+            "D21:10 Riley: Coconut milk ice cream is one of my favorites, "
+            "and I also love a dairy-free chocolate mousse."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_21:D21:10:turn",
+        score=0.79,
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_favorite_dessert_inventory",
+        items=(
+            *filler_items,
+            other_person_favorite,
+            early_ice_cream,
+            favorite_flavors,
+            dairy_free_cake,
+            later_favorite,
+        ),
+        query="What are Riley's favorite desserts?",
+        token_budget=900,
+        max_rendered_chars=1800,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D3:4 Riley: I discovered that I can make coconut milk" in rendered
+    assert "D3:10 Riley: I love coconut milk" in rendered
+    assert "D3:12 Riley: I also made a dairy-free chocolate cake" in rendered
+    assert "D21:10 Riley: Coconut milk ice cream is one of my favorites" in rendered
+    assert "D12:10 Morgan" not in rendered
+    assert "got any favorite flavors" not in rendered
+
+
+def test_context_packer_keeps_recipe_sharing_answer_turns() -> None:
+    filler_items = tuple(
+        _answer_support_item(
+            f"recipe_filler_{index}",
+            f"D{index}:2 Riley mentioned dairy-free desserts in passing.",
+            query_reason="decomposition_inventory_list",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:2:turn",
+            score=0.99 - index * 0.001,
+        )
+        for index in range(7, 13)
+    )
+    teaching_turn = ContextItem(
+        item_id="teaching_turn",
+        item_type="chunk",
+        text=(
+            "D18:8 Riley: I started teaching people how to make this. "
+            "Sharing my love for dairy-free desserts has been rewarding."
+        ),
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_18:D18:8:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"source_sibling_answer_evidence": 1},
+        },
+    )
+    cooking_show = ContextItem(
+        item_id="cooking_show",
+        item_type="chunk",
+        text=(
+            "D21:4 Riley: I got to teach people vegan ice cream recipes "
+            "on my own cooking show."
+        ),
+        score=0.81,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_21:D21:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"source_sibling_answer_evidence": 1},
+        },
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_recipe_sharing_inventory",
+        items=(*filler_items, cooking_show, teaching_turn),
+        query="How has Riley tried to distribute her vegan ice-cream recipes?",
+        token_budget=900,
+        max_rendered_chars=1400,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D18:8 Riley: I started teaching people how to make this" in rendered
+    assert "D21:4 Riley: I got to teach people vegan ice cream recipes" in rendered
+
+
+def test_answer_support_common_interest_exact_markers_do_not_collapse_same_slot() -> None:
+    joanna_movies = ContextItem(
+        item_id="joanna_movies",
+        item_type="chunk",
+        text=(
+            "D1:10 Joanna: Besides writing, I also enjoy reading, "
+            "watching movies, and exploring nature."
+        ),
+        score=0.9,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_1:D1:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    nate_movies = ContextItem(
+        item_id="nate_movies",
+        item_type="chunk",
+        text="D1:11 Nate: Playing video games and watching movies are my main hobbies.",
+        score=0.89,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_1:D1:11:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [joanna_movies, nate_movies],
+        query="What kind of interests do Joanna and Nate share?",
+    )
+
+    assert {item.item_id for item in candidates.values()} == {
+        "joanna_movies",
+        "nate_movies",
+    }
+    assert all("common-interest-movies" in family for family in candidates)
+
+
+def test_answer_support_common_interest_prefers_direct_movie_and_dessert_slots() -> None:
+    movie_turn = ContextItem(
+        item_id="movie_turn",
+        item_type="chunk",
+        text=(
+            "D1:10 Joanna: Besides writing, I also enjoy reading, "
+            "watching movies, and exploring nature."
+        ),
+        score=0.87,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_1:D1:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    dessert_turn = ContextItem(
+        item_id="dessert_turn",
+        item_type="chunk",
+        text=(
+            "D10:9 Joanna: I have been testing out dairy-free dessert "
+            "recipes for friends and family."
+        ),
+        score=0.86,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_10:D10:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    generic_interest = ContextItem(
+        item_id="generic_interest",
+        item_type="chunk",
+        text=(
+            "D23:4 Joanna: I'm glad you met people who share your "
+            "interests; that definitely makes experiences more fun."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_23:D23:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_interest, dessert_turn, movie_turn],
+        query="What kind of interests do Joanna and Nate share?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What kind of interests do Joanna and Nate share?",
+    )
+    first_two_ids = {candidates[family].item_id for family in ordered[:2]}
+
+    assert any("common-interest-movies" in family for family in candidates)
+    assert any("common-interest-dessert-recipe" in family for family in candidates)
+    assert first_two_ids == {"movie_turn", "dessert_turn"}
+
+
+def test_answer_support_hobby_query_keeps_personal_social_writing_turn() -> None:
+    social_writing = ContextItem(
+        item_id="social_writing",
+        item_type="chunk",
+        text=(
+            "D2:25 Joanna: Writing and hanging with friends! That way I "
+            "can express myself through stories, or just have a good time "
+            "with people."
+        ),
+        score=0.82,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_2:D2:25:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    dessert_noise = ContextItem(
+        item_id="dessert_noise",
+        item_type="chunk",
+        text="D20:11 Nate: Do you have any more yummy dessert recipes?",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_20:D20:11:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [dessert_noise, social_writing],
+        query="What are Joanna's hobbies?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What are Joanna's hobbies?",
+    )
+    result = ContextPacker().pack(
+        bundle_id="ctx_hobby_personal_social_writing",
+        items=(dessert_noise, social_writing),
+        query="What are Joanna's hobbies?",
+        token_budget=700,
+        max_rendered_chars=620,
+    )
+
+    assert any("common-interest-personal-hobby" in family for family in candidates)
+    assert candidates[ordered[0]].item_id == "social_writing"
+    assert "D2:25 Joanna: Writing and hanging with friends" in result.bundle.rendered_text
+
+
+def test_answer_support_common_interest_prefers_earlier_same_slot_turns() -> None:
+    early_recipe = ContextItem(
+        item_id="early_recipe",
+        item_type="chunk",
+        text="D20:2 Joanna: I just revised one of my old recipes and made this cake.",
+        score=0.84,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_20:D20:2:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    late_recipe = ContextItem(
+        item_id="late_recipe",
+        item_type="chunk",
+        text=(
+            "D20:12 Joanna: I am experimenting with dessert recipes to "
+            "make them yummier and more accessible."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_20:D20:12:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [late_recipe, early_recipe],
+        query="What kind of interests do Joanna and Nate share?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What kind of interests do Joanna and Nate share?",
+    )
+
+    assert candidates[ordered[0]].item_id == "early_recipe"
+
+
+def test_answer_support_common_interest_prefers_shared_dessert_bridge_turn() -> None:
+    adjacent_request = ContextItem(
+        item_id="adjacent_request",
+        item_type="chunk",
+        text="D4:4 Morgan: I cannot have dairy; do you have a dairy-free recipe?",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    shared_bridge = ContextItem(
+        item_id="shared_bridge",
+        item_type="chunk",
+        text="D4:9 Riley: Thanks, it means a lot that you enjoy the desserts I bake.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [adjacent_request, shared_bridge],
+        query="What kind of interests do Morgan and Riley share?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What kind of interests do Morgan and Riley share?",
+    )
+
+    assert candidates[ordered[0]].item_id == "shared_bridge"
+
+
+def test_answer_support_common_interest_prefers_recipe_work_over_preference_noise() -> None:
+    concrete_recipe_work = ContextItem(
+        item_id="concrete_recipe_work",
+        item_type="chunk",
+        text="D20:2 Morgan: I just revised one of my old recipes and made this.",
+        score=0.84,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_20:D20:2:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    personal_preference = ContextItem(
+        item_id="personal_preference",
+        item_type="chunk",
+        text=(
+            "D21:10 Riley: Coconut milk ice cream is one of my favorites, "
+            "and I also love dairy-free chocolate mousse."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_21:D21:10:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+    recipe_offer = ContextItem(
+        item_id="recipe_offer",
+        item_type="chunk",
+        text="D4:5 Riley: I know one recipe using coconut milk. Want me to send it to you?",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_4:D4:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "hobby_interest_bridge"},
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [personal_preference, recipe_offer, concrete_recipe_work],
+        query="What kind of interests do Morgan and Riley share?",
+    )
+    ordered_ids = [
+        candidates[family].item_id
+        for family in _ordered_answer_support_families_for_query(
+            candidates,
+            query="What kind of interests do Morgan and Riley share?",
+        )
+    ]
+
+    assert ordered_ids.index("concrete_recipe_work") < ordered_ids.index(
+        "personal_preference"
+    )
+    assert ordered_ids.index("concrete_recipe_work") < ordered_ids.index("recipe_offer")
+
+
+def test_answer_support_common_interest_expands_limit_for_many_exact_evidence_families() -> None:
+    items = tuple(
+        _answer_support_item(
+            f"shared_interest_{index}",
+            f"D{index + 1}:2 Morgan: I tested dairy-free dessert recipes for friends.",
+            query_reason="hobby_interest_bridge",
+            source_id=f"locomo:conv-fixture:session_{index + 1}:D{index + 1}:2:turn",
+        )
+        for index in range(9)
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        items,
+        query="What kind of interests do Morgan and Riley share?",
+    )
+
+    assert _answer_support_item_limit(candidates) == 12
+
+
+def test_context_packer_common_interest_keeps_early_exact_shared_turns() -> None:
+    items = (
+        _answer_support_item(
+            "movie_one",
+            "D1:10 Morgan: Besides writing, I enjoy watching movies and reading.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_1:D1:10:turn",
+        ),
+        _answer_support_item(
+            "movie_two",
+            "D1:11 Riley: Watching movies and playing games are my main hobbies.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_1:D1:11:turn",
+        ),
+        _answer_support_item(
+            "movie_bridge",
+            "D1:12 Morgan: Cool, so we both have similar interests in movies.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_1:D1:12:turn",
+        ),
+        _answer_support_item(
+            "early_ice_cream",
+            (
+                "D3:4 Riley: I discovered that I can make coconut milk "
+                "icecream and gave it a try."
+            ),
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_3:D3:4:turn",
+        ),
+        _answer_support_item(
+            "early_dairy_free",
+            "D10:9 Morgan: I have been testing dairy-free dessert recipes.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_10:D10:9:turn",
+        ),
+        _answer_support_item(
+            "early_recipe",
+            "D20:2 Morgan: I revised one of my old recipes and made a cake.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_20:D20:2:turn",
+        ),
+        _answer_support_item(
+            "baking_bridge",
+            "D4:9 Riley: Thanks, it means a lot that you enjoy the desserts I bake.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_4:D4:9:turn",
+        ),
+        _answer_support_item(
+            "later_dessert",
+            "D21:12 Riley: That chocolate cake looks amazing; I should try baking it.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_21:D21:12:turn",
+        ),
+        _answer_support_item(
+            "generic_interest_noise",
+            "D23:4 Morgan: It is great to meet people who share your interests.",
+            query_reason="hobby_interest_bridge",
+            source_id="locomo:conv-fixture:session_23:D23:4:turn",
+        ),
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_common_interest_exact_turns",
+        items=items,
+        query="What kind of interests do Morgan and Riley share?",
+        token_budget=900,
+        max_rendered_chars=3000,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D3:4 Riley: I discovered" in rendered
+    assert "D10:9 Morgan: I have been testing dairy-free dessert recipes" in rendered
+    assert "D20:2 Morgan: I revised one of my old recipes" in rendered
+    assert "D4:9 Riley: Thanks" in rendered
+    assert "people who share your interests" not in rendered
+
+
+def test_context_packer_keeps_shared_volunteering_service_turns_before_repeated_decoys() -> None:
+    maria_decoys = tuple(
+        _answer_support_item(
+            f"maria_later_{index}",
+            (
+                f"D{index}:2 Maria: I volunteered at the homeless shelter again "
+                "this week and it felt rewarding to support the community."
+            ),
+            query_reason="volunteering_inventory_bridge",
+            source_id=f"locomo:conv-fixture:session_{index}:D{index}:2:turn",
+            score=0.995 - index * 0.001,
+        )
+        for index in range(7, 13)
+    )
+    maria_anchor = _answer_support_item(
+        "maria_shelter_anchor",
+        (
+            "D2:1 Maria: I donated my old car to a homeless shelter I "
+            "volunteer at yesterday."
+        ),
+        query_reason="volunteering_inventory_bridge",
+        source_id="locomo:conv-fixture:session_2:D2:1:turn",
+        score=0.91,
+    )
+    john_service = _answer_support_item(
+        "john_shelter_service",
+        (
+            "D3:5 John: We went to a homeless shelter to give out food "
+            "and supplies during the volunteer event."
+        ),
+        query_reason="volunteering_inventory_bridge",
+        source_id="locomo:conv-fixture:session_3:D3:5:turn",
+        score=0.9,
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_shared_volunteering",
+        items=(*maria_decoys, john_service, maria_anchor),
+        query="What type of volunteering have John and Maria both done?",
+        token_budget=900,
+        max_rendered_chars=1600,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "D2:1 Maria: I donated my old car to a homeless shelter" in rendered
+    assert "D3:5 John: We went to a homeless shelter to give out food" in rendered
+    assert result.bundle.diagnostics["answer_support_items_used"] >= 2
+
+
+def test_answer_support_screenplay_count_prefers_exact_rejection_turns() -> None:
+    first_rejection = _answer_support_item(
+        "first_rejection",
+        "D14:1 Joanna: I received a generic rejection letter for my screenplay.",
+        query_reason="screenplay_count_bridge",
+        source_id="locomo:conv-fixture:session_14:D14:1:turn",
+    )
+    later_rejection = _answer_support_item(
+        "later_rejection",
+        (
+            "D24:12 Joanna: I had another rejection from a production "
+            "company for one of my scripts."
+        ),
+        query_reason="screenplay_count_bridge",
+        source_id="locomo:conv-fixture:session_24:D24:12:turn",
+    )
+    writing_context = _answer_support_item(
+        "writing_context",
+        "D27:6 Joanna: I am writing another movie script and hoping to finish it.",
+        query_reason="screenplay_count_bridge",
+        source_id="locomo:conv-fixture:session_27:D27:6:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [writing_context, later_rejection, first_rejection],
+        query="How many times have Joanna's scripts been rejected?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="How many times have Joanna's scripts been rejected?",
+    )
+    first_two_ids = {candidates[family].item_id for family in ordered[:2]}
+
+    assert _is_exact_precise_content_answer_support_item(first_rejection)
+    assert _is_exact_precise_content_answer_support_item(later_rejection)
+    assert not _is_exact_precise_content_answer_support_item(writing_context)
+    assert first_two_ids == {"first_rejection", "later_rejection"}
+
+
 def test_context_packer_caps_answer_support_source_group_repairs_per_reason() -> None:
     items = tuple(
         ContextItem(
@@ -4598,6 +6194,38 @@ def test_answer_support_prioritizes_shelter_service_activity_inventory_slot() ->
     )
 
     candidates = _answer_support_diversity_candidates([generic, service_activity])
+    ordered = _ordered_answer_support_families(candidates)
+
+    assert "shelter-service-activity" in ordered[0]
+    assert candidates[ordered[0]].item_id == "shelter_service"
+
+
+def test_answer_support_prioritizes_decomposition_shelter_service_activity_slot() -> None:
+    service_activity = _answer_support_item(
+        "shelter_service",
+        (
+            "D4:2 Riley volunteered at a homeless shelter to give out food "
+            "and supplies, then organized a toy drive for kids in need."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_4:D4:2:turn",
+    )
+    generic_shelter = _answer_support_item(
+        "generic_shelter",
+        "D5:1 Riley volunteers at a neighborhood shelter on weekends.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_5:D5:1:turn",
+    )
+    animal_shelter = _answer_support_item(
+        "animal_shelter",
+        "D6:1 Riley adopted a puppy from the local animal shelter.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_6:D6:1:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_shelter, animal_shelter, service_activity]
+    )
     ordered = _ordered_answer_support_families(candidates)
 
     assert "shelter-service-activity" in ordered[0]
@@ -5214,13 +6842,57 @@ def test_answer_support_family_splits_travel_country_inventory_slot() -> None:
             "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
         },
     )
+    state_place_noise = ContextItem(
+        item_id="d18_oregon",
+        item_type="chunk",
+        text="D18:3 Maria went on a road trip to Oregon and saw a canyon.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_18:D18:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
+        },
+    )
+    place_noise = ContextItem(
+        item_id="d3_shelter",
+        item_type="chunk",
+        text="D3:5 Maria went to a homeless shelter to volunteer.",
+        score=0.98,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-41:session_3:D3:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "score_signals": {"query_expansion_reason": "travel_country_inventory_bridge"},
+        },
+    )
 
-    candidates = _answer_support_diversity_candidates([unrelated, spain, england])
+    candidates = _answer_support_diversity_candidates(
+        [state_place_noise, place_noise, unrelated, spain, england]
+    )
     ordered = _ordered_answer_support_families(candidates)
+    ordered_for_query = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What European countries has Maria been to?",
+    )
     families = set(candidates)
 
     assert any(":country:" in family for family in families)
+    assert not any(":state_oregon:" in family for family in families)
+    assert not any(":shelter:" in family for family in families)
     assert {candidates[ordered[index]].item_id for index in range(2)} == {
+        "d8_england",
+        "d13_spain",
+    }
+    assert {candidates[ordered_for_query[index]].item_id for index in range(2)} == {
         "d8_england",
         "d13_spain",
     }
@@ -5426,6 +7098,80 @@ def test_answer_support_place_area_inventory_splits_broad_regions() -> None:
 
     assert ":state-pacific-northwest:" in _answer_support_diversity_family(northwest)
     assert ":state-east-coast:" in _answer_support_diversity_family(east)
+
+
+def test_answer_support_place_area_prefers_direct_state_trip_turns() -> None:
+    florida_vacation = _answer_support_item(
+        "florida_vacation",
+        (
+            "D19:23 Maria: I have a picture from a vacation in Florida "
+            "with my family."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_19:D19:23:turn",
+    )
+    oregon_road_trip = _answer_support_item(
+        "oregon_road_trip",
+        (
+            "D18:3 Maria: When I was younger, my family and I went on a "
+            "road trip to Oregon."
+        ),
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_18:D18:3:turn",
+    )
+    pacific_northwest_region = _answer_support_item(
+        "pacific_northwest_region",
+        "D11:5 Maria: We explored the coast up in the Pacific Northwest.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_11:D11:5:turn",
+    )
+    future_east_coast = _answer_support_item(
+        "future_east_coast",
+        "D12:17 Maria: I am planning a trip to the East Coast someday.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_12:D12:17:turn",
+    )
+    place_noise = _answer_support_item(
+        "place_noise",
+        "D3:5 Maria: I went to a shelter to volunteer.",
+        query_reason="decomposition_inventory_list",
+        source_id="locomo:conv-fixture:session_3:D3:5:turn",
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [
+            place_noise,
+            pacific_northwest_region,
+            future_east_coast,
+            florida_vacation,
+            oregon_road_trip,
+        ],
+        query="What states has Maria vacationed at?",
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="What states has Maria vacationed at?",
+    )
+    first_two_ids = {candidates[family].item_id for family in ordered[:2]}
+
+    assert first_two_ids == {"florida_vacation", "oregon_road_trip"}
+    result = ContextPacker().pack(
+        bundle_id="ctx_place_area_states",
+        items=(
+            place_noise,
+            pacific_northwest_region,
+            future_east_coast,
+            florida_vacation,
+            oregon_road_trip,
+        ),
+        query="What states has Maria vacationed at?",
+        token_budget=450,
+        max_rendered_chars=850,
+    )
+    rendered = result.bundle.rendered_text
+    assert "D19:23 Maria: I have a picture from a vacation in Florida" in rendered
+    assert "D18:3 Maria: When I was younger" in rendered
+    assert candidates[ordered[-1]].item_id == "place_noise"
 
 
 def test_answer_support_music_event_date_turn_keeps_temporal_support_family() -> None:
@@ -6380,6 +8126,107 @@ def test_context_packer_allows_broad_book_suggestion_turns_from_same_source_grou
     assert result.bundle.diagnostics["answer_support_families_used"] >= 3
 
 
+def test_context_packer_prioritizes_book_author_preference_world_turns_under_noise() -> None:
+    query = "Would Tim enjoy reading books by C. S. Lewis or John Greene?"
+    world_items = (
+        ContextItem(
+            item_id="book_author_world_project",
+            item_type="chunk",
+            text=(
+                "D1:14 Tim talked to a friend who is a fan of Harry Potter "
+                "and got lost in that magical world."
+            ),
+            score=0.93,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:14:turn",
+                ),
+            ),
+            diagnostics={
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "book_author_preference_world_evidence": 3.0,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="book_author_world_universe",
+            item_type="chunk",
+            text=(
+                "D1:16 Tim discussed the Harry Potter universe, characters, "
+                "spells, and magical creatures."
+            ),
+            score=0.94,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:16:turn",
+                ),
+            ),
+            diagnostics={
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "book_author_preference_world_evidence": 3.0,
+                },
+            },
+        ),
+        ContextItem(
+            item_id="book_author_world_places",
+            item_type="chunk",
+            text="D1:18 Tim visited places like walking into a Harry Potter movie.",
+            score=0.92,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id="locomo:conv-43:session_1:D1:18:turn",
+                ),
+            ),
+            diagnostics={
+                "score_signals": {
+                    "query_expansion_reason": "book_suggestion_bridge",
+                    "book_author_preference_world_evidence": 3.0,
+                },
+            },
+        ),
+    )
+    generic_reading_items = tuple(
+        ContextItem(
+            item_id=f"generic_book_reading_{index}",
+            item_type="chunk",
+            text=(
+                f"D11:{20 + index} Tim read a fantasy novel and enjoyed the author, "
+                "but this does not show the specific world preference needed here."
+            ),
+            score=0.99 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-43:session_11:D11:{20 + index}:turn",
+                ),
+            ),
+            diagnostics={
+                "score_signals": {
+                    "query_expansion_reason": "book_reading_list_bridge",
+                    "distinctive_term_hits": 20,
+                },
+            },
+        )
+        for index in range(8)
+    )
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_book_author_preference_world_noise",
+        items=(*generic_reading_items, *world_items),
+        query=query,
+        token_budget=155,
+    )
+
+    assert "D1:14" in result.bundle.rendered_text
+    assert "D1:16" in result.bundle.rendered_text
+    assert "D1:18" in result.bundle.rendered_text
+
+
 def test_context_packer_prefers_birdwatching_exact_turn_evidence_over_broad_window() -> None:
     broad = ContextItem(
         item_id="birdwatching_broad_session",
@@ -6762,6 +8609,88 @@ def test_exact_query_object_prepass_skips_event_participation_help_reason() -> N
     )
 
     assert "EVENT_HELP_EXACT_MARKER" in result.bundle.rendered_text
+    assert result.bundle.diagnostics["exact_query_object_turn_items_used"] == 0
+
+
+def test_event_participation_help_preserves_school_talk_reflection() -> None:
+    school_talk = ContextItem(
+        item_id="school_talk",
+        item_type="chunk",
+        text=(
+            "SCHOOL_TALK_MARKER D3:1 Riley: I talked about my transgender "
+            "journey at a school event and encouraged students to support "
+            "the LGBTQ community."
+        ),
+        score=0.91,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_3:D3:1:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "event_participation_help_bridge",
+            },
+        },
+    )
+    reflection = ContextItem(
+        item_id="school_talk_reflection",
+        item_type="chunk",
+        text=(
+            "AUDIENCE_REFLECTION_MARKER D3:3 Riley: Thanks, Mel! Your backing "
+            "means a lot. I felt powerful giving my talk. I shared my own "
+            "journey, the struggles I had and how much I've developed since "
+            "coming out. It was wonderful to see how the audience related."
+        ),
+        score=0.90,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_3:D3:3:turn",
+            ),
+        ),
+        diagnostics={
+            "score_signals": {
+                "query_expansion_reason": "event_participation_help_bridge",
+            },
+        },
+    )
+    noise_items = tuple(
+        ContextItem(
+            item_id=f"high_score_noise_{index}",
+            item_type="chunk",
+            text=f"NOISE_{index} Riley discussed unrelated community plans. "
+            + ("filler " * 20),
+            score=0.99 - index * 0.001,
+            source_refs=(
+                SourceRef(
+                    source_type="locomo_turn",
+                    source_id=f"locomo:conv-fixture:session_8:D8:{index}:turn",
+                ),
+            ),
+            diagnostics={"score_signals": {"query_expansion_reason": "original_query"}},
+        )
+        for index in range(1, 8)
+    )
+
+    assert _precise_answer_content_rank(
+        reflection,
+        query_reason="event_participation_help_bridge",
+    ) == 0
+    assert _is_exact_precise_content_answer_support_item(reflection)
+
+    result = ContextPacker().pack(
+        bundle_id="ctx_event_help_school_talk_reflection",
+        items=(*noise_items, school_talk, reflection),
+        token_budget=1200,
+        query="What events has Riley participated in to help children?",
+        max_rendered_chars=1400,
+    )
+
+    rendered = result.bundle.rendered_text
+    assert "SCHOOL_TALK_MARKER" in rendered
+    assert "AUDIENCE_REFLECTION_MARKER" in rendered
     assert result.bundle.diagnostics["exact_query_object_turn_items_used"] == 0
 
 
@@ -7853,12 +9782,13 @@ def _answer_support_item(
     *,
     query_reason: str,
     source_id: str,
+    score: float = 0.95,
 ) -> ContextItem:
     return ContextItem(
         item_id=item_id,
         item_type="chunk",
         text=text,
-        score=0.95,
+        score=score,
         source_refs=(
             SourceRef(
                 source_type="locomo_turn",

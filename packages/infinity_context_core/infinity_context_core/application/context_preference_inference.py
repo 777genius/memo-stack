@@ -109,9 +109,10 @@ _CLASSICAL_MUSIC_TEXT_TERMS = frozenset(
 def preference_inference_signal(*, query: str, text: str) -> AnswerEvidenceSignal:
     """Return preference answer-evidence signal, if the query asks for it."""
 
-    query_tokens = _term_set(query)
-    if not query_tokens & _PREFERENCE_QUERY_TERMS:
+    raw_query_tokens = _raw_token_set(query)
+    if not raw_query_tokens & _PREFERENCE_QUERY_TERMS:
         return AnswerEvidenceSignal()
+    query_tokens = _term_set(query)
     text_tokens = _term_set(text)
     if query_tokens & _MUSIC_QUERY_TERMS:
         return _classical_music_preference_signal(text=text, text_tokens=text_tokens)
@@ -202,3 +203,11 @@ def _term_set(text: str) -> frozenset[str]:
         if len(token) >= 2:
             terms.add(token)
     return frozenset(terms)
+
+
+def _raw_token_set(text: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for match in _TOKEN_RE.finditer(text)
+        if len(token := match.group(0).casefold().strip("_")) >= 2
+    )

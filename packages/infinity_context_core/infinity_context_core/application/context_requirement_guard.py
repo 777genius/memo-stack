@@ -5,12 +5,24 @@ from __future__ import annotations
 import re
 
 from infinity_context_core.application.context_diagnostics import diagnostic_retrieval_sources
+from infinity_context_core.application.context_food_inventory_exact_turns import (
+    food_inventory_answer_support_applies,
+    food_inventory_answer_support_rank,
+    food_inventory_role_alignment_rank,
+)
+from infinity_context_core.application.context_packer_answer_support_patterns import (
+    _RECOGNITION_CERTIFICATE_QUERY_RE,
+    _RECOGNITION_CERTIFICATE_VISUAL_ANSWER_RE,
+)
 from infinity_context_core.application.context_query_intent import QueryAnchorIntent
 from infinity_context_core.application.context_requirement_coverage import (
     context_requirement_coverage,
 )
 from infinity_context_core.application.context_source_sibling_answer_evidence_repair import (
     _score_signal_truthy,
+)
+from infinity_context_core.application.context_source_sibling_place_evidence import (
+    country_destination_answer_support_rank,
 )
 from infinity_context_core.application.dto import ContextItem
 
@@ -70,6 +82,42 @@ _ACTIVITY_COMPANION_SUPPORT_RE = re.compile(
     r"))",
     re.IGNORECASE | re.DOTALL,
 )
+_CONTENT_TOKEN_RE = re.compile(r"[^\W_]{3,}", re.UNICODE)
+_COUNT_SOURCE_SIBLING_QUERY_STOP_TERMS = frozenset(
+    {
+        "are",
+        "count",
+        "did",
+        "does",
+        "for",
+        "had",
+        "has",
+        "have",
+        "her",
+        "him",
+        "his",
+        "how",
+        "many",
+        "much",
+        "number",
+        "she",
+        "the",
+        "their",
+        "them",
+        "they",
+        "times",
+        "total",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    }
+)
 
 
 def _provenance(diagnostics: dict[str, object]) -> dict[str, object]:
@@ -126,11 +174,29 @@ def _apply_explicit_requirement_guard(
             item,
             requested_answer_shapes=requested_answer_shapes,
         )
+        or _is_precise_food_inventory_exact_turn_support(
+            item,
+            query=query,
+            requested_answer_shapes=requested_answer_shapes,
+        )
+        or _is_precise_country_destination_source_sibling_answer_support(
+            item,
+            query=query,
+        )
         or _is_precise_temporal_source_sibling_answer_support(
             item,
             requested_answer_shapes=requested_answer_shapes,
         )
+        or _is_precise_count_source_sibling_answer_support(
+            item,
+            requested_answer_shapes=requested_answer_shapes,
+            query=query,
+        )
         or _is_precise_activity_companion_source_sibling_answer_support(
+            item,
+            query=query,
+        )
+        or _is_precise_visual_certificate_source_sibling_answer_support(
             item,
             query=query,
         )
@@ -158,6 +224,7 @@ def _apply_explicit_requirement_guard(
             return (), diagnostics
     diagnostics["requirement_guard_status"] = "satisfied"
     return items, diagnostics
+
 
 def _has_object_kind_mismatch(item: ContextItem) -> bool:
     reasons = _deterministic_rerank_reasons(item)
@@ -199,6 +266,71 @@ def _is_precise_list_source_sibling_answer_support(
     )
 
 
+def _is_precise_food_inventory_exact_turn_support(
+    item: ContextItem,
+    *,
+    query: str,
+    requested_answer_shapes: set[str],
+) -> bool:
+    del requested_answer_shapes
+    if not query:
+        return False
+    query_reason = _item_query_reason(item)
+    if not food_inventory_answer_support_applies(query=query, query_reason=query_reason):
+        return False
+    if not any(str(ref.source_id).casefold().endswith(":turn") for ref in item.source_refs):
+        return False
+    if food_inventory_role_alignment_rank(
+        text=item.text,
+        query=query,
+        query_reason=query_reason,
+    ) > 1:
+        return False
+    return (
+        food_inventory_answer_support_rank(
+            text=item.text,
+            query=query,
+            query_reason=query_reason,
+            has_exact_turn=True,
+        )
+        <= 1
+    )
+
+
+def _is_precise_country_destination_source_sibling_answer_support(
+    item: ContextItem,
+    *,
+    query: str,
+) -> bool:
+    if not query:
+        return False
+    if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
+        return False
+    if not any(str(ref.source_id).casefold().endswith(":turn") for ref in item.source_refs):
+        return False
+    if not _score_signal_truthy(item, "source_sibling_answer_evidence"):
+        return False
+    return (
+        country_destination_answer_support_rank(
+            expansion_query=query,
+            text=item.text,
+            has_exact_turn=True,
+        )
+        == 0
+    )
+
+
+def _item_query_reason(item: ContextItem) -> str:
+    diagnostics = item.diagnostics or {}
+    reason = str(diagnostics.get("query_expansion_reason") or "")
+    if reason:
+        return reason
+    score_signals = diagnostics.get("score_signals")
+    if isinstance(score_signals, dict):
+        return str(score_signals.get("query_expansion_reason") or "")
+    return ""
+
+
 def _is_precise_temporal_source_sibling_answer_support(
     item: ContextItem,
     *,
@@ -224,6 +356,62 @@ def _is_precise_temporal_source_sibling_answer_support(
     )
 
 
+def _is_precise_count_source_sibling_answer_support(
+    item: ContextItem,
+    *,
+    requested_answer_shapes: set[str],
+    query: str,
+) -> bool:
+    if "count" not in requested_answer_shapes:
+        return False
+    if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
+        return False
+    if not any(str(ref.source_id).casefold().endswith(":turn") for ref in item.source_refs):
+        return False
+    if not (
+        _score_signal_truthy(item, "source_sibling_answer_evidence")
+        or _has_strong_count_source_sibling_signals(item)
+    ):
+        return False
+    return _count_query_object_overlap(query, item.text) >= 2
+
+
+def _has_strong_count_source_sibling_signals(item: ContextItem) -> bool:
+    score_signals = item.diagnostics.get("score_signals") if item.diagnostics else None
+    if not isinstance(score_signals, dict):
+        return False
+    return (
+        _numeric_score_signal(score_signals.get("query_expansion_reason_priority")) >= 3
+        and _numeric_score_signal(score_signals.get("distinctive_term_hits")) >= 3
+        and _numeric_score_signal(score_signals.get("unique_term_hits")) >= 3
+    )
+
+
+def _count_query_object_overlap(query: str, text: str) -> int:
+    query_terms = _count_source_sibling_content_terms(query)
+    if not query_terms:
+        return 0
+    text_terms = _count_source_sibling_content_terms(text)
+    return len(query_terms.intersection(text_terms))
+
+
+def _count_source_sibling_content_terms(text: str) -> frozenset[str]:
+    terms: set[str] = set()
+    for token in _CONTENT_TOKEN_RE.findall(text.casefold()):
+        term = _normalized_count_source_sibling_term(token)
+        if term and term not in _COUNT_SOURCE_SIBLING_QUERY_STOP_TERMS:
+            terms.add(term)
+    return frozenset(terms)
+
+
+def _normalized_count_source_sibling_term(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return f"{token[:-3]}y"
+    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
 def _is_precise_activity_companion_source_sibling_answer_support(
     item: ContextItem,
     *,
@@ -238,6 +426,23 @@ def _is_precise_activity_companion_source_sibling_answer_support(
     return (
         _score_signal_truthy(item, "source_sibling_answer_evidence")
         and _ACTIVITY_COMPANION_SUPPORT_RE.search(item.text) is not None
+    )
+
+
+def _is_precise_visual_certificate_source_sibling_answer_support(
+    item: ContextItem,
+    *,
+    query: str,
+) -> bool:
+    if _RECOGNITION_CERTIFICATE_QUERY_RE.search(query) is None:
+        return False
+    if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
+        return False
+    if not any(str(ref.source_id).casefold().endswith(":turn") for ref in item.source_refs):
+        return False
+    return (
+        _score_signal_truthy(item, "source_sibling_answer_evidence")
+        and _RECOGNITION_CERTIFICATE_VISUAL_ANSWER_RE.search(item.text) is not None
     )
 
 

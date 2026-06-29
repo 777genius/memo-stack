@@ -177,6 +177,33 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             "motivation_reason_bridge",
         ),
     (
+            frozenset({"office", "again"}),
+            (
+                "running office again run for office campaign public office politics "
+                "after last run impact community make difference positive changes "
+                "better future rewarding enthusiasm excited zeal"
+            ),
+            "public_office_service_bridge",
+        ),
+    (
+            frozenset({"recognition"}),
+            (
+                "recognition award medal certificate honor honour honored honoured "
+                "received receive got given gave earned won trophy prize appreciation "
+                "volunteer shelter homeless helped help humbling glad could help"
+            ),
+            "recognition_award_bridge",
+        ),
+    (
+            frozenset({"certificate"}),
+            (
+                "recognition award medal certificate honor honour honored honoured "
+                "received receive got given gave earned won trophy prize appreciation "
+                "completion completed diploma degree volunteer shelter homeless helped help"
+            ),
+            "recognition_award_bridge",
+        ),
+    (
             frozenset({"почему"}),
             (
                 "почему причина потому что мотивация объясняет показывает доказательство "
@@ -262,21 +289,25 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             ),
             "shelter_comfort_reason_bridge",
         ),
-    (
+        (
             frozenset({"charity", "organization"}),
             (
-                "charity organization sponsorship brand Nike Gatorade Under Armour "
-                "basketball shoe gear deal work with prominent make difference away "
-                "from court give back inspire people youth sports disadvantaged kids"
+                "charity organization sponsorship brand endorsement athletic partner "
+                "company basketball shoe gear equipment deal work with prominent make "
+                "difference away from court give back inspire people always liked "
+                "working with them cool dream brand youth sports disadvantaged "
+                "underserved kids"
             ),
             "charity_brand_sponsorship_bridge",
         ),
-    (
+        (
             frozenset({"charity", "why"}),
             (
-                "charity organization sponsorship brand Nike Gatorade Under Armour "
-                "basketball shoe gear deal work with prominent make difference away "
-                "from court give back inspire people youth sports disadvantaged kids"
+                "charity organization sponsorship brand endorsement athletic partner "
+                "company basketball shoe gear equipment deal work with prominent make "
+                "difference away from court give back inspire people always liked "
+                "working with them cool dream brand youth sports disadvantaged "
+                "underserved kids"
             ),
             "charity_brand_sponsorship_bridge",
         ),
@@ -336,6 +367,93 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
                 "guide motivate discover journey passion career option interest"
             ),
             "creative_writing_career_bridge",
+        ),
+    (
+            frozenset({"submitted", "work"}),
+            (
+                "submit submitted submitting submission work project screenplay script "
+                "film festivals film festival contest competition producers directors "
+                "check out places destinations"
+            ),
+            "creative_work_submission_bridge",
+        ),
+    (
+            frozenset({"submit", "work"}),
+            (
+                "submit submitted submitting submission work project screenplay script "
+                "film festivals film festival contest competition producers directors "
+                "check out places destinations"
+            ),
+            "creative_work_submission_bridge",
+        ),
+    (
+            frozenset({"submit", "project"}),
+            (
+                "submit submitted submitting submission work project screenplay script "
+                "film festivals film festival contest competition producers directors "
+                "check out places destinations"
+            ),
+            "creative_work_submission_bridge",
+        ),
+    (
+            frozenset({"submit", "screenplay"}),
+            (
+                "submit submitted submitting submission work project screenplay script "
+                "film festivals film festival contest competition producers directors "
+                "check out places destinations"
+            ),
+            "creative_work_submission_bridge",
+        ),
+    (
+            frozenset({"kind", "writing"}),
+            (
+                "writing writings screenplay screenplays script scripts book books "
+                "journal online blog post story stories projects wrote started "
+                "finished full screenplay work working made"
+            ),
+            "creative_writing_inventory_bridge",
+        ),
+    (
+            frozenset({"kind", "writings"}),
+            (
+                "writing writings screenplay screenplays script scripts book books "
+                "journal online blog post story stories projects wrote started "
+                "finished full screenplay work working made"
+            ),
+            "creative_writing_inventory_bridge",
+        ),
+    (
+            frozenset({"type", "writing"}),
+            (
+                "writing writings screenplay screenplays script scripts book books "
+                "journal online blog post story stories projects wrote started "
+                "finished full screenplay work working made"
+            ),
+            "creative_writing_inventory_bridge",
+        ),
+    (
+            frozenset({"types", "writing"}),
+            (
+                "writing writings screenplay screenplays script scripts book books "
+                "journal online blog post story stories projects wrote started "
+                "finished full screenplay work working made"
+            ),
+            "creative_writing_inventory_bridge",
+        ),
+    (
+            frozenset({"hobby", "travel"}),
+            _terms._TRAVEL_HOBBY_WRITING_EXPANSION,
+            "travel_hobby_writing_bridge",
+        ),
+    (
+            frozenset({"hobby", "dream"}),
+            _terms._TRAVEL_HOBBY_WRITING_EXPANSION,
+            "travel_hobby_writing_bridge",
+        ),
+    (
+            frozenset({"hobbies", "travel"}),
+            _terms._TRAVEL_HOBBY_WRITING_EXPANSION,
+            "travel_hobby_writing_bridge",
         ),
     (
             frozenset({"career", "want"}),
@@ -458,6 +576,24 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
                 "from by source owner recipient grandma grandmother grandpa grandfather "
                 "mother father mom dad family relative necklace pendant ring book camera "
                 "photo picture"
+            ),
+            "possession_gift_object_bridge",
+        ),
+    (
+            frozenset({"gave", "joy"}),
+            (
+                "gift present keepsake object item possession received gave gifted "
+                "from by source owner recipient named stuffed animal toy dog brings joy "
+                "happiness happy comfort focus cherish reminder good vibes"
+            ),
+            "possession_gift_object_bridge",
+        ),
+    (
+            frozenset({"give", "joy"}),
+            (
+                "gift present keepsake object item possession received gave gifted "
+                "from by source owner recipient named stuffed animal toy dog brings joy "
+                "happiness happy comfort focus cherish reminder good vibes"
             ),
             "possession_gift_object_bridge",
         ),
@@ -830,7 +966,8 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"hobby"}),
             (
                 "hobbies interests writing reading watching movies exploring nature "
-                "hanging friends video games desserts recipes baking"
+                "hanging with friends hanging friends express myself stories good "
+                "time people video games desserts recipes baking"
             ),
             "hobby_interest_bridge",
         ),
@@ -856,9 +993,26 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"interest", "share"}),
             (
                 "hobbies interests writing reading watching movies exploring nature "
-                "hanging friends video games desserts recipes baking shared both similar"
+                "hanging friends video games desserts recipes baking cakes icecream "
+                "coconut milk dairy-free sweet treats revised old recipes made "
+                "enjoy desserts bake baked shared both similar"
             ),
             "hobby_interest_bridge",
+        ),
+    (
+            frozenset({"animal", "both", "like"}),
+            _terms._COMMONALITY_ANIMAL_AFFINITY_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"animal", "both", "love"}),
+            _terms._COMMONALITY_ANIMAL_AFFINITY_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"animal", "both", "enjoy"}),
+            _terms._COMMONALITY_ANIMAL_AFFINITY_EXPANSION,
+            "commonality_interest_bridge",
         ),
     (
             frozenset({"common", "hobby"}),
@@ -878,6 +1032,24 @@ EXPANSION_RULES_PART_1: tuple[tuple[frozenset[str], str, str], ...] = (
     (
             frozenset({"both", "like"}),
             _terms._COMMONALITY_INTEREST_EXPANSION,
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"movie", "seen"}),
+            (
+                _terms._COMMONALITY_INTEREST_EXPANSION
+                + " watched saw seen recently recommendation recommended movie film "
+                "trilogy dvd acting story captivating favorite good enjoyed"
+            ),
+            "commonality_interest_bridge",
+        ),
+    (
+            frozenset({"movies", "seen"}),
+            (
+                _terms._COMMONALITY_INTEREST_EXPANSION
+                + " watched saw seen recently recommendation recommended movie film "
+                "trilogy dvd acting story captivating favorite good enjoyed"
+            ),
             "commonality_interest_bridge",
         ),
     (

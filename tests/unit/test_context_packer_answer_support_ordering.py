@@ -2,6 +2,9 @@ from infinity_context_core.application.context_packer import (
     _answer_support_diversity_candidates,
     _ordered_answer_support_families_for_query,
 )
+from infinity_context_core.application.context_packer_answer_support import (
+    _is_relationship_status_direct_answer_support_item,
+)
 from infinity_context_core.application.dto import ContextItem
 from infinity_context_core.domain.entities import SourceRef
 
@@ -65,6 +68,74 @@ def test_music_event_query_promotes_temporal_direct_event_turn() -> None:
     assert candidates[ordered[0]].item_id == "violin_concert"
 
 
+def test_relationship_status_query_promotes_direct_self_disclosure() -> None:
+    question_only_context = ContextItem(
+        item_id="question_only_context",
+        item_type="chunk",
+        text=(
+            "D7:6 Avery: Aw, that's wonderful! How long have you been married? "
+            "D7:7 Morgan: We're not married yet but we have been together "
+            "for three years."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_7:D7:6:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_relationship_status",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    direct_status = ContextItem(
+        item_id="direct_status",
+        item_type="chunk",
+        text=(
+            "D19:11 Avery: Reminds me of when I used to play games with my "
+            "husband. We took turns and made great memories together."
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_19:D19:11:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_relationship_status",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [question_only_context, direct_status]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Is Avery married?",
+    )
+
+    assert not _is_relationship_status_direct_answer_support_item(
+        question_only_context,
+        query="Is Avery married?",
+    )
+    assert _is_relationship_status_direct_answer_support_item(
+        direct_status,
+        query="Is Avery married?",
+    )
+    assert candidates[ordered[0]].item_id == "direct_status"
+
+
 def test_exact_outdoor_nature_memory_turn_precedes_broad_outdoor_support() -> None:
     broad_camping_context = ContextItem(
         item_id="broad_camping_context",
@@ -123,6 +194,355 @@ def test_exact_outdoor_nature_memory_turn_precedes_broad_outdoor_support() -> No
     )
 
     assert candidates[ordered[0]].item_id == "exact_meteor_memory"
+
+
+def test_exact_named_preference_turn_precedes_generic_inference_support() -> None:
+    generic_trip_support = ContextItem(
+        item_id="generic_trip_support",
+        item_type="chunk",
+        text=(
+            "D8:4 Avery: I visited several coastal towns during the trip and "
+            "liked the old stone streets."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_8:D8:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "original_query",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    named_preference = ContextItem(
+        item_id="named_preference",
+        item_type="chunk",
+        text=(
+            "D12:5 Avery: Definitely Aurora Quest! It is my favorite and "
+            "never gets old."
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_12:D12:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "original_query",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_trip_support, named_preference]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Which Aurora Quest locations would Avery enjoy visiting?",
+    )
+
+    assert candidates[ordered[0]].item_id == "named_preference"
+
+
+def test_exact_themed_location_turn_precedes_generic_inference_support() -> None:
+    generic_trip_support = ContextItem(
+        item_id="generic_trip_support",
+        item_type="chunk",
+        text="D8:4 Avery: I visited several coastal towns during the trip.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_8:D8:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inference_support",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    themed_location = ContextItem(
+        item_id="themed_location",
+        item_type="chunk",
+        text=(
+            "D4:9 Avery: I went to a real fantasy movie place last year. "
+            "The tour was amazing, and I would love to explore more places "
+            "like that."
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_4:D4:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inference_support",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_trip_support, themed_location]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Which Aurora Quest locations would Avery enjoy visiting?",
+    )
+
+    assert candidates[ordered[0]].item_id == "themed_location"
+
+
+def test_themed_location_query_preserves_preference_place_and_destination_evidence() -> None:
+    themed_place = ContextItem(
+        item_id="themed_place",
+        item_type="chunk",
+        text=(
+            "D4:9 Avery: I went to a real fantasy movie place last year. "
+            "The tour was amazing, and I would love to explore more places "
+            "like that."
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_4:D4:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inference_support",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    named_preference = ContextItem(
+        item_id="named_preference",
+        item_type="chunk",
+        text=(
+            "D12:5 Avery: Definitely Aurora Quest! It is my favorite and "
+            "never gets old."
+        ),
+        score=0.73,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_12:D12:5:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inference_support",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    destination = ContextItem(
+        item_id="destination",
+        item_type="chunk",
+        text="D28:1 Avery: Next month, I'm off to Ireland for a semester.",
+        score=0.74,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_28:D28:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "trip_destination_bridge"},
+        },
+    )
+    generic_place = ContextItem(
+        item_id="generic_place",
+        item_type="chunk",
+        text="D8:4 Avery: I visited several coastal towns during the trip.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_8:D8:4:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "decomposition_inference_support"},
+        },
+    )
+    generic_destination_mention = ContextItem(
+        item_id="generic_destination_mention",
+        item_type="chunk",
+        text=(
+            "D8:6 Avery: I read an article about Ireland's coastal towns, "
+            "but I have not made any plans to go there."
+        ),
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_8:D8:6:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {"query_expansion_reason": "trip_destination_bridge"},
+        },
+    )
+
+    query = "Which Aurora Quest-related locations would Avery enjoy during a visit to Ireland?"
+    candidates = _answer_support_diversity_candidates(
+        [
+            generic_place,
+            generic_destination_mention,
+            destination,
+            named_preference,
+            themed_place,
+        ],
+        query=query,
+    )
+    ordered = _ordered_answer_support_families_for_query(candidates, query=query)
+    first_three_ids = {candidates[family].item_id for family in ordered[:3]}
+
+    assert candidates[ordered[0]].item_id == "destination"
+    assert first_three_ids == {"themed_place", "named_preference", "destination"}
+
+
+def test_exact_map_trail_place_turn_precedes_generic_park_context() -> None:
+    generic_park_context = ContextItem(
+        item_id="generic_park_context",
+        item_type="chunk",
+        text="D5:8 Dana: We took a road trip to a beautiful national park.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_5:D5:8:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "national_park_inference_bridge",
+            },
+        },
+    )
+    map_trail = ContextItem(
+        item_id="map_trail",
+        item_type="chunk",
+        text=(
+            "D11:9 Dana: Let's get planning for next month. Here's the map "
+            "for the trail. image caption: a photo of a map of a park with "
+            "a lot of trees. visual query: hiking trails map perfect spot"
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_11:D11:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "national_park_inference_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_park_context, map_trail]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Which national park could Riley and Dana be referring to?",
+    )
+
+    assert candidates[ordered[0]].item_id == "map_trail"
+
+
+def test_exact_landmark_place_turn_precedes_generic_trip_context() -> None:
+    generic_trip_context = ContextItem(
+        item_id="generic_trip_context",
+        item_type="chunk",
+        text="D23:1 Riley: We returned from an awesome trip to a coastal city.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_23:D23:1:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "trip_destination_bridge",
+            },
+        },
+    )
+    landmark_visit = ContextItem(
+        item_id="landmark_visit",
+        item_type="chunk",
+        text=(
+            "D13:15 Riley: Here's an example of how I spent yesterday "
+            "morning, yoga on top of Mount Aurora. image caption: a photo "
+            "of a person standing on a rock"
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-42:session_13:D13:15:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "trip_destination_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    candidates = _answer_support_diversity_candidates(
+        [generic_trip_context, landmark_visit]
+    )
+    ordered = _ordered_answer_support_families_for_query(
+        candidates,
+        query="Which US state did Riley visit during her internship?",
+    )
+
+    assert candidates[ordered[0]].item_id == "landmark_visit"
 
 
 def test_exact_visual_activity_turn_precedes_broad_activity_support() -> None:
@@ -527,6 +947,62 @@ def test_beach_or_mountains_query_promotes_beach_visual_evidence() -> None:
     )
 
     assert candidates[ordered[0]].item_id == "beach_walk"
+
+
+def test_state_residence_query_promotes_exact_geo_map_evidence() -> None:
+    generic_park = ContextItem(
+        item_id="generic_park",
+        item_type="chunk",
+        text="D7:3 Andrew: I took the dog to a local park after work.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_7:D7:3:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "state_residence_inference_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+    trail_map = ContextItem(
+        item_id="trail_map",
+        item_type="chunk",
+        text=(
+            "D11:9 Andrew: Here is the map for the trail. image caption: "
+            "a photo of a map of a park with trees. visual query: hiking "
+            "trails map perfect spot."
+        ),
+        score=0.72,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_11:D11:9:turn",
+            ),
+        ),
+        diagnostics={
+            "memory_scope_id": "memory_scope_default",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "state_residence_inference_bridge",
+                "source_sibling_answer_evidence": 1,
+            },
+        },
+    )
+
+    query = "Which US state do Riley and Casey potentially live in?"
+    candidates = _answer_support_diversity_candidates(
+        [generic_park, trail_map],
+        query=query,
+    )
+    ordered = _ordered_answer_support_families_for_query(candidates, query=query)
+
+    assert candidates[ordered[0]].item_id == "trail_map"
 
 
 def test_family_activity_query_promotes_concrete_family_activity_turns() -> None:

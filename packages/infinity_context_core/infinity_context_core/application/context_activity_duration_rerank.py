@@ -21,8 +21,12 @@ _ACTIVITY_DURATION_EXACT_RE = re.compile(
     r"several|many|a\s+couple\s+of)\s+"
     r"(?:years?|months?|weeks?|days?)|"
     r"since\s+(?:\d{4}|[A-Z][a-z]+\s+\d{4}|childhood|college|school)|"
+    r"since\s+(?:(?:the\s+)?age\s+of\s+|i\s+was\s+)?"
+    r"(?:\d{1,2}|one|two|three|four|five|six|"
+    r"seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+    r"sixteen|seventeen|eighteen)(?:\s+or\s+so)?|"
     r"(?:started|began)\s+(?:volunteering|working|living|using|playing|"
-    r"running|training|practicing)\s+(?:in|during|around)\s+"
+    r"running|training|practicing|creating|painting|drawing)\s+(?:in|during|around)\s+"
     r"(?:\d{4}|[A-Z][a-z]+)|"
     r"has\s+been\s+(?:volunteering|working|living|using|playing|running|"
     r"training|practicing)\s+for)\b|"
@@ -38,7 +42,8 @@ _ACTIVITY_DURATION_EXACT_RE = re.compile(
 _ACTIVITY_DURATION_WEAK_TOPIC_RE = re.compile(
     r"\b(?:volunteer(?:s|ed|ing)?|work(?:s|ed|ing)?|live(?:s|d|ing)?|"
     r"use(?:s|d|ing)?|play(?:s|ed|ing)?|run(?:s|ning)?|practice(?:s|d|ing)?|"
-    r"train(?:s|ed|ing)?)\b|"
+    r"train(?:s|ed|ing)?|art|creat(?:e|ed|ing)|paint(?:s|ed|ing)?|"
+    r"draw(?:s|ing)?|have|has|had|own(?:s|ed)?|pets?|snakes?|dogs?|cats?)\b|"
     r"\b(?:волонтер\w*|работ\w*|жив[её]т|жил\w*|использ\w*|игра\w*)\b",
     re.IGNORECASE,
 )
@@ -70,6 +75,15 @@ def activity_duration_rerank_signal(
             reason="activity_duration_weak_evidence",
         )
     return DomainRerankSignal()
+
+
+def is_activity_duration_evidence_text(text: str) -> bool:
+    """Return true when text carries both an activity/state and an explicit duration."""
+
+    return (
+        _ACTIVITY_DURATION_EXACT_RE.search(text) is not None
+        and _ACTIVITY_DURATION_WEAK_TOPIC_RE.search(text) is not None
+    )
 
 
 def _is_activity_duration_candidate(*, query_reason: str, item: ContextItem) -> bool:

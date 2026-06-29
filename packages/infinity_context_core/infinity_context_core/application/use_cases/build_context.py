@@ -8,16 +8,16 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from time import perf_counter
 
-from infinity_context_core.application.context_anchor_relations import (
-    related_anchor_context_items,
-)
 from infinity_context_core.application.context_aggregation_evidence_text import (
-    _StrictQueryTermVariants,
-    _WeightedAggregationQueryVariants,
     _aggregation_evidence_text,
     _strict_query_window_match_counts,
     _strict_token_variants,
+    _StrictQueryTermVariants,
     _weighted_aggregation_query_variant_sets,
+    _WeightedAggregationQueryVariants,
+)
+from infinity_context_core.application.context_anchor_relations import (
+    related_anchor_context_items,
 )
 from infinity_context_core.application.context_anchors import (
     anchor_context_item,
@@ -77,6 +77,9 @@ from infinity_context_core.application.context_ranking import (
 from infinity_context_core.application.context_ranking_reason_policy import (
     ACTIVITY_OBSERVATION_SOURCE_REASONS as _ACTIVITY_OBSERVATION_SOURCE_REASONS,
 )
+from infinity_context_core.application.context_relationship_status_evidence import (
+    is_relationship_status_reason as _is_relationship_status_reason,
+)
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     has_project_identity_mismatch,
@@ -91,11 +94,6 @@ from infinity_context_core.application.context_requirement_coverage import (
 from infinity_context_core.application.context_requirement_guard import (
     _apply_explicit_requirement_guard,
 )
-from infinity_context_core.application.context_source_sibling_answer_evidence_repair import (
-    _pre_pack_candidate_source_ref_diagnostics,
-    _restore_exact_source_sibling_answer_evidence_items,
-    _source_sibling_answer_evidence_stage_diagnostics,
-)
 from infinity_context_core.application.context_review_items import (
     pending_review_suggestion_item,
     stale_review_item,
@@ -106,6 +104,16 @@ from infinity_context_core.application.context_snippets import (
     query_snippet_diagnostics,
     query_snippet_score_signals,
     source_refs_with_query_snippet,
+)
+from infinity_context_core.application.context_source_sibling_answer_evidence_repair import (
+    _focused_exact_source_repair_text,
+    _pre_pack_candidate_source_ref_diagnostics,
+    _restore_exact_source_sibling_answer_evidence_items,
+    _source_sibling_answer_continuation_hydration_requests,
+    _source_sibling_answer_evidence_stage_diagnostics,
+)
+from infinity_context_core.application.context_source_sibling_place_evidence import (
+    country_destination_answer_support_rank as _country_destination_answer_support_rank,
 )
 from infinity_context_core.application.context_source_siblings import (
     _SourceSiblingRank,
@@ -138,10 +146,13 @@ from infinity_context_core.application.context_source_siblings import (
     source_sibling_answer_evidence as _source_sibling_answer_evidence,
 )
 from infinity_context_core.application.context_source_siblings import (
-    source_sibling_candidate_rank_key as _source_sibling_candidate_rank_key,
+    source_sibling_answer_evidence_role_rank as _source_sibling_answer_evidence_role_rank,
 )
 from infinity_context_core.application.context_source_siblings import (
     source_sibling_candidate_limit as _source_sibling_candidate_limit,
+)
+from infinity_context_core.application.context_source_siblings import (
+    source_sibling_candidate_rank_key as _source_sibling_candidate_rank_key,
 )
 from infinity_context_core.application.context_source_siblings import (
     source_sibling_companion_extra_item_limit as _source_sibling_companion_extra_item_limit,
@@ -162,7 +173,13 @@ from infinity_context_core.application.context_source_siblings import (
     source_sibling_marker_coverage_count as _source_sibling_marker_coverage_count,
 )
 from infinity_context_core.application.context_source_siblings import (
+    source_sibling_max_candidate_limit as _source_sibling_max_candidate_limit,
+)
+from infinity_context_core.application.context_source_siblings import (
     source_sibling_rank as _source_sibling_rank,
+)
+from infinity_context_core.application.context_source_siblings import (
+    source_sibling_related_turn_anchor_evidence as _related_turn_anchor_evidence,
 )
 from infinity_context_core.application.context_source_siblings import (
     source_sibling_relevance_allowed as _source_sibling_relevance_allowed,
@@ -242,6 +259,19 @@ _WHERE_LIST_AGGREGATION_QUERY_RE = re.compile(
     r"посещали|познакомил|познакомила|познакомили)\b)",
     re.IGNORECASE | re.DOTALL,
 )
+_EN_PLACE_LIST_SOURCE_SIBLING_QUERY_RE = re.compile(
+    r"\b(?:cities|city|countries|country|states?|places?|locations?|"
+    r"destinations?|areas?)\b",
+    re.IGNORECASE,
+)
+_EN_NAMED_PREFERENCE_SOURCE_SIBLING_QUERY_RE = re.compile(
+    r"\b(?:would|enjoy|enjoys?|prefer|prefers?|favorite|favourite|"
+    r"related|recommend|interested)\b",
+    re.IGNORECASE,
+)
+_EN_NAMED_ENTITY_PHRASE_RE = re.compile(
+    r"\b[A-Z][A-Za-z0-9'-]+(?:[-\s]+[A-Z][A-Za-z0-9'-]+)+\b"
+)
 _MAX_EXTRA_ACTIVITY_PROMPT_KEYWORD_ITEMS = 80
 _MAX_EXTRA_INVENTORY_PROMPT_KEYWORD_ITEMS = 16
 _MIN_CHUNK_LIMIT_FOR_EXTRA_ACTIVITY_PROMPT_ITEMS = 8
@@ -249,6 +279,7 @@ _MIN_CHUNK_LIMIT_FOR_EXTRA_INVENTORY_PROMPT_ITEMS = 8
 _MIN_EXTRA_INVENTORY_PROMPT_DISTINCTIVE_HITS = 4
 _LIST_SOURCE_SIBLING_GROUP_LIMIT = 32
 _LIST_SOURCE_SIBLING_ITEM_LIMIT = 48
+_LIST_SOURCE_SIBLING_GROUP_BACKFILL_LIMIT = 96
 _EXTRA_INVENTORY_PROMPT_REASONS = frozenset(
     {
         "decomposition_inventory_list",
@@ -548,6 +579,7 @@ class BuildContextUseCase:
         query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]] = {}
         strict_query_term_variants = _strict_query_term_variant_sets(query=query.query)
         used_keyword_chunks: list[MemoryChunk] = []
+        sibling_anchor_chunks: list[MemoryChunk] = []
         scored_keyword_chunks: list[tuple[int, int, int, float, float, int, MemoryChunk]] = []
         scored_keyword_items: list[_ScoredKeywordPromptItem] = []
         stage_started_at = perf_counter()
@@ -583,6 +615,17 @@ class BuildContextUseCase:
                 text=chunk_text,
                 relevance=relevance,
             ):
+                if (
+                    _related_turn_anchor_evidence(relevance=relevance, text=chunk_text)
+                    or _source_sibling_answer_evidence_query_match(
+                    query_plan=query_expansion_plan,
+                    text=chunk_text,
+                    preferred_query=expansion_query,
+                    preferred_reason=expansion_reason,
+                    )
+                    is not None
+                ):
+                    sibling_anchor_chunks.append(chunk)
                 diagnostics["keyword_chunks_dropped_by_relevance"] = (
                     int(diagnostics["keyword_chunks_dropped_by_relevance"]) + 1
                 )
@@ -667,6 +710,7 @@ class BuildContextUseCase:
         )
         sibling_seed_chunks = _dedupe_chunks_by_id(
             (
+                *sibling_anchor_chunks,
                 *_prioritized_chunks_for_source_groups(
                     tuple(used_keyword_chunks),
                     source_groups=aggregation_source_groups,
@@ -686,6 +730,19 @@ class BuildContextUseCase:
         _record_stage_timing(diagnostics, "keyword_source_siblings", stage_started_at)
         diagnostics.update(sibling_diagnostics)
         items.extend(sibling_items)
+        stage_started_at = perf_counter()
+        exact_source_ref_items, exact_source_ref_diagnostics = (
+            await self._exact_source_ref_hydration_items(
+                query=query,
+                query_plan=query_expansion_plan,
+                memory_scope_ids=memory_scope_ids,
+                source_items=tuple(items),
+                query_relevance_cache=query_relevance_cache,
+            )
+        )
+        _record_stage_timing(diagnostics, "exact_source_ref_hydration", stage_started_at)
+        diagnostics.update(exact_source_ref_diagnostics)
+        items.extend(exact_source_ref_items)
         for chunk in vector_chunks:
             chunk_text = document_chunk_retrieval_text(
                 text=chunk.text,
@@ -1085,6 +1142,9 @@ class BuildContextUseCase:
             "keyword_source_sibling_group_count": 0,
             "keyword_source_sibling_candidate_limit": 0,
             "keyword_source_sibling_companion_extra_used": 0,
+            "keyword_source_sibling_named_preference_answer_diversity": False,
+            "keyword_source_sibling_group_backfill_limit": 0,
+            "keyword_source_sibling_group_backfill_chunks_used": 0,
             "keyword_source_sibling_groups_sample": [],
             "keyword_source_sibling_selected_sources_sample": [],
         }
@@ -1104,12 +1164,32 @@ class BuildContextUseCase:
             query_text=query.query,
             query_plan=query_plan,
         )
-        source_group_limit = _source_sibling_group_limit()
-        if deep_list_coverage:
-            source_group_limit = max(
-                source_group_limit,
-                min(len(source_groups), _LIST_SOURCE_SIBLING_GROUP_LIMIT),
+        place_list_answer_diversity = _query_plan_requests_place_source_sibling_diversity(
+            query_text=query.query,
+            query_plan=query_plan,
+        )
+        named_preference_answer_diversity = (
+            _query_plan_requests_named_preference_source_sibling_diversity(
+                query_text=query.query,
+                query_plan=query_plan,
             )
+        )
+        relationship_status_answer_diversity = (
+            _query_plan_requests_relationship_status_source_sibling_diversity(
+                query_text=query.query,
+                query_plan=query_plan,
+            )
+        )
+        answer_evidence_group_diversity = (
+            place_list_answer_diversity
+            or named_preference_answer_diversity
+            or relationship_status_answer_diversity
+        )
+        source_group_limit = _source_sibling_group_limit_for_request(
+            source_group_count=len(source_groups),
+            deep_list_coverage=deep_list_coverage,
+            answer_evidence_group_diversity=answer_evidence_group_diversity,
+        )
         source_groups = _prioritized_source_sibling_seed_groups(
             source_groups=source_groups,
             seed_chunks=seed_chunks,
@@ -1131,10 +1211,14 @@ class BuildContextUseCase:
             max_items=max_items,
             source_group_count=len(source_groups),
         )
+        if answer_evidence_group_diversity:
+            candidate_limit = max(candidate_limit, _source_sibling_max_candidate_limit())
         items: list[ContextItem] = []
         used_ids: set[str] = set()
         considered = 0
         skipped = 0
+        group_backfill_limit = 0
+        group_backfill_chunks_used = 0
         async with self._uow_factory() as uow:
             list_source_group_chunks = getattr(
                 uow.chunks,
@@ -1151,6 +1235,31 @@ class BuildContextUseCase:
                 exclude_chunk_ids=(),
                 limit=candidate_limit,
             )
+            backfill_groups, group_backfill_limit = _source_sibling_group_backfill_plan(
+                deep_list_coverage=answer_evidence_group_diversity,
+                source_groups=source_groups,
+            )
+            if backfill_groups and group_backfill_limit > 0:
+                candidate_ids = {str(chunk.id) for chunk in candidates}
+                backfill_chunks: list[MemoryChunk] = []
+                for group in backfill_groups:
+                    group_candidates = await list_source_group_chunks(
+                        space_id=str(query.space_id),
+                        memory_scope_ids=memory_scope_ids,
+                        thread_id=str(query.thread_id) if query.thread_id else None,
+                        source_external_id_groups=(group,),
+                        exclude_chunk_ids=(),
+                        limit=group_backfill_limit,
+                    )
+                    for chunk in group_candidates:
+                        chunk_id = str(chunk.id)
+                        if chunk_id in candidate_ids:
+                            continue
+                        candidate_ids.add(chunk_id)
+                        backfill_chunks.append(chunk)
+                if backfill_chunks:
+                    candidates = [*candidates, *backfill_chunks]
+                    group_backfill_chunks_used = len(backfill_chunks)
         ranked_candidates: list[
             tuple[
                 tuple[float | int | str, ...],
@@ -1242,6 +1351,11 @@ class BuildContextUseCase:
                 expansion_reason=expansion_reason,
                 text=chunk_text,
             )
+            answer_evidence_role_rank = _source_sibling_answer_evidence_role_rank(
+                query_text=query.query,
+                expansion_reason=expansion_reason,
+                text=chunk_text,
+            )
             ranked_candidates.append(
                 (
                     _source_sibling_candidate_rank_key(
@@ -1250,6 +1364,7 @@ class BuildContextUseCase:
                         visual_continuation=visual_continuation,
                         observation_companion=observation_companion,
                         answer_evidence=answer_evidence,
+                        answer_evidence_role_rank=answer_evidence_role_rank,
                         marker_coverage=marker_coverage,
                         relevance=relevance,
                         score=score,
@@ -1275,7 +1390,7 @@ class BuildContextUseCase:
         companion_extra_used = 0
         companion_extra_slots: set[str] = set()
         answer_evidence_extra_used = 0
-        answer_evidence_extra_sources: set[str] = set()
+        answer_evidence_extra_counts: dict[str, int] = {}
         answer_evidence_selected_sources: list[str] = []
         precise_support_extra_used = 0
         precise_support_extra_sources: set[str] = set()
@@ -1296,6 +1411,14 @@ class BuildContextUseCase:
             answer_evidence,
         ) in ranked_candidates:
             companion_slot = ""
+            answer_evidence_extra_key = _source_sibling_answer_evidence_extra_key(
+                chunk,
+                deep_list_coverage=answer_evidence_group_diversity,
+            )
+            answer_evidence_extra_limit = 24 if answer_evidence_group_diversity else 12
+            answer_evidence_extra_key_limit = (
+                2 if answer_evidence_group_diversity else 1
+            )
             use_companion_extra_slot = False
             use_answer_evidence_extra_slot = False
             use_precise_support_extra_slot = False
@@ -1313,9 +1436,10 @@ class BuildContextUseCase:
                 )
                 use_answer_evidence_extra_slot = (
                     answer_evidence
-                    and source_external_id
-                    and source_external_id not in answer_evidence_extra_sources
-                    and answer_evidence_extra_used < 8
+                    and answer_evidence_extra_key
+                    and answer_evidence_extra_counts.get(answer_evidence_extra_key, 0)
+                    < answer_evidence_extra_key_limit
+                    and answer_evidence_extra_used < answer_evidence_extra_limit
                 )
                 if (
                     not observation_companion
@@ -1354,7 +1478,9 @@ class BuildContextUseCase:
                 companion_extra_slots.add(companion_slot)
                 companion_extra_used += 1
             if use_answer_evidence_extra_slot:
-                answer_evidence_extra_sources.add(str(chunk.source_external_id or ""))
+                answer_evidence_extra_counts[answer_evidence_extra_key] = (
+                    answer_evidence_extra_counts.get(answer_evidence_extra_key, 0) + 1
+                )
                 answer_evidence_extra_used += 1
             if use_precise_support_extra_slot:
                 precise_support_extra_sources.add(str(chunk.source_external_id or ""))
@@ -1380,6 +1506,7 @@ class BuildContextUseCase:
                     dialogue_visual_reference=dialogue_visual_reference,
                     visual_continuation=visual_continuation,
                     answer_evidence=answer_evidence,
+                    answer_evidence_query=expansion_query if answer_evidence else "",
                 )
             )
 
@@ -1390,7 +1517,15 @@ class BuildContextUseCase:
             "keyword_source_sibling_group_count": len(source_groups),
             "keyword_source_sibling_candidate_limit": candidate_limit,
             "keyword_source_sibling_deep_list_coverage": deep_list_coverage,
+            "keyword_source_sibling_place_list_answer_diversity": (
+                place_list_answer_diversity
+            ),
+            "keyword_source_sibling_named_preference_answer_diversity": (
+                named_preference_answer_diversity
+            ),
             "keyword_source_sibling_companion_extra_used": companion_extra_used,
+            "keyword_source_sibling_group_backfill_limit": group_backfill_limit,
+            "keyword_source_sibling_group_backfill_chunks_used": group_backfill_chunks_used,
             "keyword_source_sibling_answer_evidence_extra_used": answer_evidence_extra_used,
             "keyword_source_sibling_precise_support_extra_used": precise_support_extra_used,
             "keyword_source_sibling_answer_evidence_selected_sources_sample": (
@@ -1402,6 +1537,92 @@ class BuildContextUseCase:
                 chunk.source_external_id for _, _, _, chunk, *_ in ranked_candidates[:80]
             ],
         }
+
+    async def _exact_source_ref_hydration_items(
+        self,
+        *,
+        query: BuildContextQuery,
+        query_plan: QueryExpansionPlan,
+        memory_scope_ids: tuple[str, ...],
+        source_items: tuple[ContextItem, ...],
+        query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]],
+    ) -> tuple[tuple[ContextItem, ...], dict[str, object]]:
+        source_reason_by_id = _exact_turn_source_ref_hydration_requests(source_items)
+        source_ids = tuple(source_reason_by_id)[:_MAX_EXACT_SOURCE_SIBLING_ANSWER_EVIDENCE_REPAIRS]
+        diagnostics: dict[str, object] = {
+            "exact_source_ref_hydration_requested": len(source_ids),
+            "exact_source_ref_hydration_chunks_found": 0,
+            "exact_source_ref_hydration_items_used": 0,
+            "exact_source_ref_hydration_sources_sample": list(source_ids[:24]),
+        }
+        if not source_ids:
+            return (), diagnostics
+        async with self._uow_factory() as uow:
+            list_source_group_chunks = getattr(
+                uow.chunks,
+                "list_by_source_external_id_groups",
+                None,
+            )
+            if list_source_group_chunks is None:
+                return (), diagnostics
+            chunks = await list_source_group_chunks(
+                space_id=str(query.space_id),
+                memory_scope_ids=memory_scope_ids,
+                thread_id=str(query.thread_id) if query.thread_id else None,
+                source_external_id_groups=source_ids,
+                exclude_chunk_ids=(),
+                limit=max(len(source_ids), 1),
+            )
+        chunks_by_source_id: dict[str, MemoryChunk] = {}
+        for chunk in chunks:
+            source_id = str(chunk.source_external_id or "")
+            if source_id in source_reason_by_id and source_id not in chunks_by_source_id:
+                chunks_by_source_id[source_id] = chunk
+        hydrated_items: list[ContextItem] = []
+        for source_id in source_ids:
+            chunk = chunks_by_source_id.get(source_id)
+            if chunk is None:
+                continue
+            reason = source_reason_by_id[source_id] or "original_query"
+            expansion_query = _query_expansion_text_for_reason(
+                query_plan,
+                reason=reason,
+                fallback=query.query,
+            )
+            chunk_text = document_chunk_retrieval_text(
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
+            _, _, relevance = _best_query_relevance_cached(
+                query_plan,
+                text=chunk_text,
+                cache=query_relevance_cache,
+            )
+            answer_evidence = _source_sibling_answer_evidence(
+                expansion_query=expansion_query,
+                expansion_reason=reason,
+                text=chunk_text,
+            )
+            item = _chunk_context_item(
+                chunk=chunk,
+                text=chunk_text,
+                retrieval_source="keyword_source_sibling_chunks",
+                base_score=0.74,
+                score=0.99 if answer_evidence else 0.93,
+                relevance=relevance,
+                query_text=expansion_query,
+                query_expansion_reason=reason,
+                use_query_snippet=False,
+            )
+            hydrated_items.append(
+                _with_exact_source_ref_hydration_signals(
+                    item,
+                    answer_evidence=answer_evidence,
+                )
+            )
+        diagnostics["exact_source_ref_hydration_chunks_found"] = len(chunks_by_source_id)
+        diagnostics["exact_source_ref_hydration_items_used"] = len(hydrated_items)
+        return tuple(hydrated_items), diagnostics
 
     async def _apply_temporal_relation_signals(
         self,
@@ -1918,7 +2139,7 @@ def _prioritized_source_sibling_seed_groups(
         return {}
     if len(source_groups) <= limit:
         return dict(source_groups)
-    answer_evidence_group_rank: dict[str, tuple[int, int, float]] = {}
+    answer_evidence_group_rank: dict[str, tuple[int, int, int, float]] = {}
     for chunk in seed_chunks:
         group = _aggregation_source_group(chunk)
         if not group or group not in source_groups:
@@ -1932,19 +2153,25 @@ def _prioritized_source_sibling_seed_groups(
             text=chunk_text,
             cache=query_relevance_cache,
         )
-        if _source_sibling_answer_evidence(
+        answer_evidence = _source_sibling_answer_evidence(
             expansion_query=expansion_query,
             expansion_reason=expansion_reason,
             text=chunk_text,
-        ):
+        )
+        related_turn_anchor = _related_turn_anchor_evidence(
+            relevance=relevance,
+            text=chunk_text,
+        )
+        if answer_evidence or related_turn_anchor:
             rank = (
+                1 if answer_evidence else 0,
                 relevance.distinctive_term_hits,
                 relevance.unique_term_hits,
                 relevance.hit_ratio,
             )
             answer_evidence_group_rank[group] = max(
                 rank,
-                answer_evidence_group_rank.get(group, (0, 0, 0.0)),
+                answer_evidence_group_rank.get(group, (0, 0, 0, 0.0)),
             )
     ordered_groups = tuple(source_groups.items())
     prioritized = sorted(
@@ -1957,6 +2184,7 @@ def _prioritized_source_sibling_seed_groups(
             -answer_evidence_group_rank[item[0]][0],
             -answer_evidence_group_rank[item[0]][1],
             -answer_evidence_group_rank[item[0]][2],
+            -answer_evidence_group_rank[item[0]][3],
         ),
     )
     prioritized.extend(
@@ -1973,7 +2201,7 @@ def _prioritize_source_sibling_answer_evidence_seed_chunks(
     query_plan: QueryExpansionPlan,
     query_relevance_cache: dict[str, tuple[str, str, QueryRelevance]],
 ) -> tuple[MemoryChunk, ...]:
-    answer_evidence_chunks: list[tuple[int, int, float, int, MemoryChunk]] = []
+    answer_evidence_chunks: list[tuple[int, int, int, float, int, str, MemoryChunk]] = []
     remaining_chunks: list[tuple[int, MemoryChunk]] = []
     for index, chunk in enumerate(seed_chunks):
         chunk_text = document_chunk_retrieval_text(
@@ -1985,17 +2213,25 @@ def _prioritize_source_sibling_answer_evidence_seed_chunks(
             text=chunk_text,
             cache=query_relevance_cache,
         )
-        if _source_sibling_answer_evidence(
-            expansion_query=expansion_query,
-            expansion_reason=expansion_reason,
+        answer_evidence = _source_sibling_answer_evidence_query_match(
+            query_plan=query_plan,
             text=chunk_text,
-        ):
+            preferred_query=expansion_query,
+            preferred_reason=expansion_reason,
+        )
+        related_turn_anchor = _related_turn_anchor_evidence(
+            relevance=relevance,
+            text=chunk_text,
+        )
+        if answer_evidence or related_turn_anchor:
             answer_evidence_chunks.append(
                 (
+                    1 if answer_evidence else 0,
                     relevance.distinctive_term_hits,
                     relevance.unique_term_hits,
                     relevance.hit_ratio,
                     index,
+                    _aggregation_source_group(chunk),
                     chunk,
                 )
             )
@@ -2003,15 +2239,62 @@ def _prioritize_source_sibling_answer_evidence_seed_chunks(
         remaining_chunks.append((index, chunk))
     if not answer_evidence_chunks:
         return seed_chunks
-    prioritized = tuple(
-        chunk
-        for _, _, _, _, chunk in sorted(
-            answer_evidence_chunks,
-            key=lambda item: (-item[0], -item[1], -item[2], item[3]),
-        )
+    ordered_answer_evidence_chunks = sorted(
+        (chunk for chunk in answer_evidence_chunks if chunk[0] > 0),
+        key=lambda item: (-item[1], -item[2], -item[3], item[4]),
     )
+    ordered_related_anchor_chunks = sorted(
+        (chunk for chunk in answer_evidence_chunks if chunk[0] <= 0),
+        key=lambda item: (-item[1], -item[2], -item[3], item[4]),
+    )
+    prioritized_entries = (
+        *_source_group_diverse_answer_evidence_chunks(ordered_answer_evidence_chunks),
+        *_source_group_diverse_answer_evidence_chunks(ordered_related_anchor_chunks),
+    )
+    prioritized = tuple(chunk for *_, chunk in prioritized_entries)
     remaining = tuple(chunk for _, chunk in remaining_chunks)
     return (*prioritized, *remaining)
+
+
+def _source_group_diverse_answer_evidence_chunks(
+    chunks: list[tuple[int, int, int, float, int, str, MemoryChunk]],
+) -> tuple[tuple[int, int, int, float, int, str, MemoryChunk], ...]:
+    primary: list[tuple[int, int, int, float, int, str, MemoryChunk]] = []
+    extra: list[tuple[int, int, int, float, int, str, MemoryChunk]] = []
+    seen_groups: set[str] = set()
+    for chunk in chunks:
+        source_group = chunk[5]
+        if source_group and source_group not in seen_groups:
+            seen_groups.add(source_group)
+            primary.append(chunk)
+            continue
+        extra.append(chunk)
+    return (*primary, *extra)
+
+
+def _source_sibling_answer_evidence_query_match(
+    *,
+    query_plan: QueryExpansionPlan,
+    text: str,
+    preferred_query: str,
+    preferred_reason: str,
+) -> tuple[str, str] | None:
+    if _source_sibling_answer_evidence(
+        expansion_query=preferred_query,
+        expansion_reason=preferred_reason,
+        text=text,
+    ):
+        return preferred_query, preferred_reason
+    for expansion in query_plan.retrieval_queries:
+        if expansion.query == preferred_query and expansion.reason == preferred_reason:
+            continue
+        if _source_sibling_answer_evidence(
+            expansion_query=expansion.query,
+            expansion_reason=expansion.reason,
+            text=text,
+        ):
+            return expansion.query, expansion.reason
+    return None
 
 
 def _query_plan_requests_list_source_sibling_depth(
@@ -2029,6 +2312,80 @@ def _query_plan_requests_list_source_sibling_depth(
     )
 
 
+def _query_plan_requests_place_source_sibling_diversity(
+    *,
+    query_text: str,
+    query_plan: QueryExpansionPlan,
+) -> bool:
+    if _EN_PLACE_LIST_SOURCE_SIBLING_QUERY_RE.search(query_text) is not None:
+        return True
+    return any(
+        expansion.reason
+        in {
+            "friend_place_inventory_bridge",
+            "friend_place_shelter_inventory_bridge",
+            "friend_place_gym_inventory_bridge",
+            "friend_place_church_inventory_bridge",
+            "place_area_inventory_bridge",
+            "travel_country_inventory_bridge",
+            "trip_destination_bridge",
+        }
+        for expansion in query_plan.retrieval_queries
+    )
+
+
+def _query_plan_requests_named_preference_source_sibling_diversity(
+    *,
+    query_text: str,
+    query_plan: QueryExpansionPlan,
+) -> bool:
+    if _EN_NAMED_PREFERENCE_SOURCE_SIBLING_QUERY_RE.search(query_text) is None:
+        return False
+    if _EN_NAMED_ENTITY_PHRASE_RE.search(query_text) is None:
+        return False
+    return any(
+        expansion.reason == "decomposition_inference_support"
+        for expansion in query_plan.retrieval_queries
+    )
+
+
+def _query_plan_requests_relationship_status_source_sibling_diversity(
+    *,
+    query_text: str,
+    query_plan: QueryExpansionPlan,
+) -> bool:
+    del query_text
+    return any(
+        _is_relationship_status_reason(expansion.reason)
+        for expansion in query_plan.retrieval_queries
+    )
+
+
+def _source_sibling_group_limit_for_request(
+    *,
+    source_group_count: int,
+    deep_list_coverage: bool,
+    answer_evidence_group_diversity: bool,
+) -> int:
+    source_group_limit = _source_sibling_group_limit()
+    if deep_list_coverage or answer_evidence_group_diversity:
+        return max(
+            source_group_limit,
+            min(source_group_count, _LIST_SOURCE_SIBLING_GROUP_LIMIT),
+        )
+    return source_group_limit
+
+
+def _source_sibling_group_backfill_plan(
+    *,
+    deep_list_coverage: bool,
+    source_groups: Mapping[str, object],
+) -> tuple[tuple[str, ...], int]:
+    if not deep_list_coverage or not source_groups:
+        return (), 0
+    return tuple(source_groups), _LIST_SOURCE_SIBLING_GROUP_BACKFILL_LIMIT
+
+
 def _dedupe_chunks_by_id(chunks: tuple[MemoryChunk, ...]) -> tuple[MemoryChunk, ...]:
     selected: list[MemoryChunk] = []
     seen: set[str] = set()
@@ -2039,6 +2396,199 @@ def _dedupe_chunks_by_id(chunks: tuple[MemoryChunk, ...]) -> tuple[MemoryChunk, 
         seen.add(chunk_id)
         selected.append(chunk)
     return tuple(selected)
+
+
+def _exact_turn_source_ref_hydration_requests(
+    items: tuple[ContextItem, ...],
+) -> dict[str, str]:
+    hydrated_source_ids = _exact_turn_source_ids_with_body(items)
+    request_entries: list[tuple[int, int, int, str, str]] = []
+    for item_index, item in enumerate(items):
+        if not _context_item_source_sibling_answer_evidence(item):
+            continue
+        reason = _context_item_query_expansion_reason(item)
+        query = _context_item_source_sibling_answer_evidence_query(item)
+        item_entries: list[tuple[int, int, int, str, str]] = []
+        for ref_index, ref in enumerate(item.source_refs):
+            source_id = str(ref.source_id or "")
+            if (
+                not source_id.casefold().endswith(":turn")
+                or source_id in hydrated_source_ids
+                or not _source_ref_needs_exact_turn_body_hydration(
+                    item,
+                    source_id=source_id,
+                )
+            ):
+                continue
+            rank = _source_ref_country_destination_hydration_rank(
+                item,
+                source_id=source_id,
+                reason=reason,
+                query=query,
+            )
+            item_entries.append((rank, item_index, ref_index, source_id, reason))
+        if _is_country_destination_hydration_scope(reason=reason, query=query):
+            has_supported_source_ref = any(entry[0] < 5 for entry in item_entries)
+            if has_supported_source_ref or _item_has_supported_country_destination_marker(
+                item,
+                query=query,
+            ):
+                item_entries = [entry for entry in item_entries if entry[0] < 5]
+        request_entries.extend(item_entries)
+    requests: dict[str, str] = {}
+    for _, _, _, source_id, reason in sorted(request_entries):
+        requests.setdefault(source_id, reason)
+    for source_id, reason in _source_sibling_answer_continuation_hydration_requests(
+        items,
+        existing_source_ids=hydrated_source_ids,
+    ).items():
+        requests.setdefault(source_id, reason)
+    return requests
+
+
+def _exact_turn_source_ids_with_body(items: tuple[ContextItem, ...]) -> frozenset[str]:
+    source_ids: set[str] = set()
+    for item in items:
+        for ref in item.source_refs:
+            source_id = str(ref.source_id or "")
+            marker = _dialogue_marker_from_source_id(source_id)
+            if marker and _text_has_dialogue_turn_body(item.text, marker=marker):
+                source_ids.add(source_id)
+    return frozenset(source_ids)
+
+
+def _source_ref_needs_exact_turn_body_hydration(
+    item: ContextItem,
+    *,
+    source_id: str,
+) -> bool:
+    marker = _dialogue_marker_from_source_id(source_id)
+    if not marker:
+        return False
+    return not _text_has_dialogue_turn_body(item.text, marker=marker)
+
+
+def _text_has_dialogue_turn_body(text: str, *, marker: str) -> bool:
+    for match in re.finditer(rf"\b{re.escape(marker)}\b", text):
+        following = text[match.end() : match.end() + 64]
+        if re.match(r"\s+(?!\.\.\.)[A-Z][^:\n]{0,40}:", following):
+            return True
+    return False
+
+
+def _dialogue_marker_from_source_id(source_id: str) -> str:
+    match = _DIALOGUE_MARKER_RE.search(str(source_id or ""))
+    return match.group(0) if match is not None else ""
+
+
+def _context_item_source_sibling_answer_evidence(item: ContextItem) -> bool:
+    diagnostics = item.diagnostics or {}
+    score_signals = diagnostics.get("score_signals")
+    if not isinstance(score_signals, dict):
+        return False
+    value = score_signals.get("source_sibling_answer_evidence")
+    return isinstance(value, int | float) and not isinstance(value, bool) and value > 0
+
+
+def _context_item_query_expansion_reason(item: ContextItem) -> str:
+    diagnostics = item.diagnostics or {}
+    reason = str(diagnostics.get("query_expansion_reason") or "")
+    if reason and reason != "original_query":
+        return reason
+    score_signals = diagnostics.get("score_signals")
+    if isinstance(score_signals, dict):
+        signal_reason = str(score_signals.get("query_expansion_reason") or "")
+        if signal_reason:
+            return signal_reason
+    return reason or "original_query"
+
+
+def _context_item_source_sibling_answer_evidence_query(item: ContextItem) -> str:
+    diagnostics = item.diagnostics or {}
+    score_signals = diagnostics.get("score_signals")
+    if isinstance(score_signals, dict):
+        query = str(score_signals.get("source_sibling_answer_evidence_query") or "")
+        if query:
+            return query
+    provenance = diagnostics.get("provenance")
+    if isinstance(provenance, dict):
+        return str(provenance.get("source_sibling_answer_evidence_query") or "")
+    return ""
+
+
+def _source_ref_country_destination_hydration_rank(
+    item: ContextItem,
+    *,
+    source_id: str,
+    reason: str,
+    query: str,
+) -> int:
+    if not _is_country_destination_hydration_scope(reason=reason, query=query):
+        return 5
+    return _country_destination_answer_support_rank(
+        expansion_query=query,
+        text=_focused_exact_source_repair_text(text=item.text, source_id=source_id),
+        has_exact_turn=True,
+    )
+
+
+def _item_has_supported_country_destination_marker(
+    item: ContextItem,
+    *,
+    query: str,
+) -> bool:
+    for marker in dict.fromkeys(_DIALOGUE_MARKER_RE.findall(item.text)):
+        if (
+            _country_destination_answer_support_rank(
+                expansion_query=query,
+                text=_focused_exact_source_repair_text(
+                    text=item.text,
+                    source_id=f"synthetic:{marker}:turn",
+                ),
+                has_exact_turn=True,
+            )
+            < 5
+        ):
+            return True
+    return False
+
+
+def _is_country_destination_hydration_scope(*, reason: str, query: str) -> bool:
+    return bool(query) and reason.replace("_", "-") == "decomposition-country-destination"
+
+
+def _query_expansion_text_for_reason(
+    plan: QueryExpansionPlan,
+    *,
+    reason: str,
+    fallback: str,
+) -> str:
+    for expansion in plan.expansions:
+        if expansion.reason == reason:
+            return expansion.query
+    return fallback
+
+
+def _with_exact_source_ref_hydration_signals(
+    item: ContextItem,
+    *,
+    answer_evidence: bool,
+) -> ContextItem:
+    diagnostics = dict(item.diagnostics or {})
+    retrieval_sources = list(diagnostic_retrieval_sources(diagnostics))
+    if "exact_source_ref_hydration" not in retrieval_sources:
+        retrieval_sources.append("exact_source_ref_hydration")
+    diagnostics["retrieval_sources"] = retrieval_sources
+    score_signals = diagnostics.get("score_signals")
+    score_signal_dict = dict(score_signals) if isinstance(score_signals, dict) else {}
+    score_signal_dict["exact_source_ref_hydration"] = 1
+    if answer_evidence:
+        score_signal_dict["source_sibling_answer_evidence"] = 1
+    diagnostics["score_signals"] = score_signal_dict
+    diagnostics["ranking_reason"] = (
+        "hydrated exact source turn referenced by answer-evidence source group"
+    )
+    return replace(item, diagnostics=diagnostics)
 
 
 def _strict_query_term_hits(*, query: str, text: str) -> int:
@@ -2361,6 +2911,17 @@ def _aggregation_source_group(chunk: MemoryChunk) -> str:
     if len(parts) >= 4 and parts[-1] in _SOURCE_GROUP_SUFFIXES:
         return ":".join(parts[:-1])
     return source_id or str(chunk.document_id or chunk.id)
+
+
+def _source_sibling_answer_evidence_extra_key(
+    chunk: MemoryChunk,
+    *,
+    deep_list_coverage: bool,
+) -> str:
+    source_id = str(chunk.source_external_id or "")
+    if not deep_list_coverage:
+        return source_id
+    return _aggregation_source_group(chunk) or source_id
 
 
 def _aggregation_source_kind_rank(chunk: MemoryChunk) -> int:

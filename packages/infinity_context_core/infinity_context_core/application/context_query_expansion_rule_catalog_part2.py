@@ -81,6 +81,41 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "travel_country_inventory_bridge",
         ),
     (
+            frozenset({"items", "collect"}),
+            _terms._ITEM_COLLECTION_INVENTORY_EXPANSION,
+            "item_purchase_bridge",
+        ),
+    (
+            frozenset({"item", "collect"}),
+            _terms._ITEM_COLLECTION_INVENTORY_EXPANSION,
+            "item_purchase_bridge",
+        ),
+    (
+            frozenset({"collection"}),
+            _terms._ITEM_COLLECTION_INVENTORY_EXPANSION,
+            "item_purchase_bridge",
+        ),
+    (
+            frozenset({"causes", "events"}),
+            (
+                "causes events cause charity run fundraiser food drive community food "
+                "drive toy drive kids in need homeless shelter food supplies veterans "
+                "families domestic abuse victims awareness funds unemployment neighbors "
+                "help out made difference organized worked local organization"
+            ),
+            "cause_event_inventory_bridge",
+        ),
+    (
+            frozenset({"cause", "event"}),
+            (
+                "causes events cause charity run fundraiser food drive community food "
+                "drive toy drive kids in need homeless shelter food supplies veterans "
+                "families domestic abuse victims awareness funds unemployment neighbors "
+                "help out made difference organized worked local organization"
+            ),
+            "cause_event_inventory_bridge",
+        ),
+    (
             frozenset({"causes"}),
             _terms._CAUSE_EDUCATION_INFRASTRUCTURE_EXPANSION,
             "cause_education_infrastructure_inventory_bridge",
@@ -208,12 +243,52 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "trip_destination_bridge",
         ),
     (
+            frozenset({"locations", "been"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"location", "been"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"geographical", "locations"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"geographical", "location"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"places", "been"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"place", "been"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
             frozenset({"place", "visit"}),
             _terms._TRIP_DESTINATION_EXPANSION,
             "trip_destination_bridge",
         ),
     (
             frozenset({"city", "visit"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"city", "been"}),
+            _terms._TRIP_DESTINATION_EXPANSION,
+            "trip_destination_bridge",
+        ),
+    (
+            frozenset({"cities", "been"}),
             _terms._TRIP_DESTINATION_EXPANSION,
             "trip_destination_bridge",
         ),
@@ -430,6 +505,32 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "screenplay_count_bridge",
         ),
     (
+            frozenset({"many", "writing", "screen"}),
+            (
+                "screenplay screenplays script scripts movie film writing wrote "
+                "contributed bits words appeared shown made big screen came alive "
+                "finished first time count"
+            ),
+            "screenplay_count_bridge",
+        ),
+    (
+            frozenset({"writing", "big", "screen"}),
+            (
+                "screenplay screenplays script scripts movie film writing wrote "
+                "contributed bits words appeared shown made big screen came alive "
+                "finished first time count"
+            ),
+            "screenplay_count_bridge",
+        ),
+    (
+            frozenset({"many", "scripts"}),
+            (
+                "rejection rejected rejection letter major company production company "
+                "another rejection bit setback recently count"
+            ),
+            "screenplay_count_bridge",
+        ),
+    (
             frozenset({"many", "letter"}),
             (
                 "letter letters received recieved got rejection letter wrote me letter "
@@ -442,6 +543,22 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             (
                 "pets pet puppy pup dog doggo adopted another dog adopted another pup "
                 "shelter Toby Buddy Coco Shadow turtle turtles new friend critters count"
+            ),
+            "pet_count_bridge",
+        ),
+    (
+            frozenset({"many", "dogs"}),
+            (
+                "pets pet puppy pup dog dogs doggo adopted another dog adopted another "
+                "pup shelter animal shelter dog shelter named new friend count"
+            ),
+            "pet_count_bridge",
+        ),
+    (
+            frozenset({"many", "dog"}),
+            (
+                "pets pet puppy pup dog dogs doggo adopted another dog adopted another "
+                "pup shelter animal shelter dog shelter named new friend count"
             ),
             "pet_count_bridge",
         ),

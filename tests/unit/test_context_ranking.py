@@ -694,7 +694,7 @@ def test_deterministic_rerank_prefers_business_commonality_origin_evidence() -> 
 
 
 def test_deterministic_rerank_treats_charity_brand_deals_as_exact_evidence() -> None:
-    query = "What prominent charity organization might John work with and why?"
+    query = "What prominent charity organization might Jordan work with and why?"
     plan = build_query_expansion_plan(query)
     intent = build_query_anchor_intent(query)
     brand_deals = _item(
@@ -703,9 +703,9 @@ def test_deterministic_rerank_treats_charity_brand_deals_as_exact_evidence() -> 
         retrieval_source="keyword_chunks",
         score_signals={"query_expansion_reason": "charity_brand_sponsorship_bridge"},
         text=(
-            "D3:13 John signed up Nike for a basketball shoe and gear deal "
-            "and is in talks with Gatorade about a potential sponsorship. "
-            "D3:15 John has always liked Under Armour and working with them "
+            "D3:13 Jordan signed up TrailCore for a basketball shoe and gear deal "
+            "and is in talks with HydraFuel about a potential sponsorship. "
+            "D3:15 Jordan has always liked SummitGear and working with them "
             "would be really cool."
         ),
     )
@@ -714,7 +714,7 @@ def test_deterministic_rerank_treats_charity_brand_deals_as_exact_evidence() -> 
         score=0.93,
         retrieval_source="keyword_chunks",
         score_signals={"query_expansion_reason": "charity_brand_sponsorship_bridge"},
-        text="John mentioned a general planning update about basketball brands.",
+        text="Jordan mentioned a general planning update about basketball brands.",
     )
 
     reranked = apply_deterministic_rerank_adjustments(
@@ -2369,11 +2369,11 @@ def test_keyword_chunk_score_boosts_locomo_why_reason_bridges() -> None:
         ),
         (
             build_query_expansion_plan(
-                "What prominent charity organization might John work with and why?"
+                "What prominent charity organization might Jordan work with and why?"
             ),
             (
-                "John had a Nike shoe deal, talked with Gatorade, liked "
-                "Under Armour, and wanted to give back through charity."
+                "Jordan had a TrailCore shoe deal, talked with HydraFuel, liked "
+                "SummitGear, and wanted to give back through charity."
             ),
             "charity_brand_sponsorship_bridge",
         ),
@@ -3417,6 +3417,59 @@ def test_dedupe_rank_items_prefers_strong_exact_source_sibling_body_over_aggrega
     assert "EXACT_D4_6" in merged.text
     assert "keyword_source_sibling_chunks" in merged.diagnostics["retrieval_sources"]
     assert "keyword_aggregation_chunks" in merged.diagnostics["retrieval_sources"]
+
+
+def test_dedupe_rank_items_prefers_exact_turn_body_over_marker_stub() -> None:
+    marker_stub = ContextItem(
+        item_id="same_chunk",
+        item_type="chunk",
+        text="D10:9.",
+        score=0.99,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_10:D10:9:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_source_sibling_chunks",
+            "retrieval_sources": ["keyword_source_sibling_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "source_sibling_answer_evidence": 1,
+                "distinctive_term_hits": 4,
+            },
+        },
+    )
+    exact_body = ContextItem(
+        item_id="same_chunk",
+        item_type="chunk",
+        text=(
+            "D10:9 Riley: I have been testing out dairy-free dessert recipes "
+            "for friends and family. Here's a pic of a cake I made recently!"
+        ),
+        score=0.97,
+        source_refs=(
+            SourceRef(
+                source_type="locomo_turn",
+                source_id="locomo:conv-fixture:session_10:D10:9:turn",
+            ),
+        ),
+        diagnostics={
+            "retrieval_source": "keyword_chunks",
+            "retrieval_sources": ["keyword_chunks"],
+            "score_signals": {
+                "query_expansion_reason": "decomposition_inventory_list",
+                "distinctive_term_hits": 2,
+            },
+        },
+    )
+
+    (merged,) = dedupe_rank_items((marker_stub, exact_body))
+
+    assert "testing out dairy-free dessert recipes" in merged.text
+    assert "keyword_source_sibling_chunks" in merged.diagnostics["retrieval_sources"]
+    assert "keyword_chunks" in merged.diagnostics["retrieval_sources"]
 
 
 def test_dedupe_rank_items_keeps_stronger_score_outside_tolerance() -> None:

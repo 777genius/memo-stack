@@ -60,6 +60,65 @@ def test_query_decomposition_treats_attachments_as_artifacts() -> None:
     assert "decomposition_artifact_evidence" in {item.reason for item in russian.decompositions}
 
 
+def test_query_decomposition_adds_food_recipe_inventory_context() -> None:
+    recipe_plan = build_query_decomposition_plan("What recipes has Riley made?")
+    favorite_plan = build_query_decomposition_plan("What are Riley's favorite desserts?")
+
+    recipe_inventory = next(
+        item
+        for item in recipe_plan.decompositions
+        if item.reason == "decomposition_inventory_list"
+    )
+    favorite_inventory = next(
+        item
+        for item in favorite_plan.decompositions
+        if item.reason == "decomposition_inventory_list"
+    )
+
+    assert "recipes recipe homemade made baked" in recipe_inventory.query
+    assert "coconut milk dairy-free ice cream" in recipe_inventory.query
+    assert "favorite desserts" in favorite_inventory.query
+    assert "icecream" in favorite_inventory.query
+
+
+def test_query_decomposition_adds_sport_activity_inventory_context() -> None:
+    plan = build_query_decomposition_plan("What sports does John like besides basketball?")
+
+    reasons = {item.reason for item in plan.decompositions}
+    participation = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_activity_participation"
+    )
+    inventory = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_inventory_list"
+    )
+
+    assert "decomposition_activity_participation" in reasons
+    assert "decomposition_inventory_list" in reasons
+    assert "sports sport game team court scored surfing surfboard waves" in participation.query
+    assert "position jersey jerseys season opener" in participation.query
+    assert "basketball" in inventory.query
+
+
+def test_query_decomposition_adds_collectible_object_context() -> None:
+    plan = build_query_decomposition_plan(
+        "What similar sports collectible do Tim and John own?"
+    )
+
+    collectible = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_collectible_object"
+    )
+
+    assert "collectible memorabilia keepsake" in collectible.query
+    assert "signed autographed autograph" in collectible.query
+    assert "reminder bond friendship appreciation" in collectible.query
+
+
 def test_query_decomposition_expands_relative_time_queries() -> None:
     plan = build_query_decomposition_plan("What did Alex say two hours ago?")
     future_plan = build_query_decomposition_plan("What action items are due next week?")
@@ -361,6 +420,39 @@ def test_query_decomposition_routes_travel_country_lists_as_inventory_not_reloca
     assert "country countries europe european england spain" in russian_inventory.query
 
 
+def test_query_decomposition_adds_country_destination_context_for_meeting_questions() -> None:
+    plan = build_query_decomposition_plan(
+        "Which country do Calvin and Dave want to meet in?"
+    )
+    destination = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_country_destination"
+    )
+
+    assert "calvin" in destination.query
+    assert "dave" in destination.query
+    assert "country city destination place trip travel visit meet meeting" in (
+        destination.query
+    )
+    assert "show around town flight upcoming plan" in destination.query
+
+
+def test_query_decomposition_preserves_country_destination_month_year_anchor() -> None:
+    plan = build_query_decomposition_plan(
+        "Which country was Avery visiting in May 2023?"
+    )
+    destination = next(
+        item
+        for item in plan.decompositions
+        if item.reason == "decomposition_country_destination"
+    )
+
+    assert "avery" in destination.query
+    assert "may 2023" in destination.query
+    assert "country city destination place trip travel visit" in destination.query
+
+
 def test_query_decomposition_adds_inventory_list_for_broad_list_slots() -> None:
     cases = [
         (
@@ -489,6 +581,8 @@ def test_query_decomposition_adds_recommendation_source_query() -> None:
     assert "melanie" in source.query.casefold()
     assert "caroline" in source.query.casefold()
     assert "source actor recipient to from because of" in source.query
+    assert "recommend it definitely would" in source.query
+    assert "should get should start" in source.query
     assert "caroline" in recipient.query.casefold()
     assert "becoming" in recipient.query.casefold()
     assert "nicole" in recipient.query.casefold()
@@ -1124,7 +1218,8 @@ def test_query_decomposition_adds_relationship_status_query() -> None:
 
     assert relationship.query.casefold().startswith("caroline ")
     assert "relationship status single parent" in relationship.query
-    assert "dating breakup friends family mentors" in relationship.query
+    assert "partner spouse husband wife married marriage wedding" in relationship.query
+    assert "dating breakup divorced separated friends family" in relationship.query
     assert russian_relationship.query.casefold().startswith("алекс мария ")
     assert "отношения статус друзья дружба" in russian_relationship.query
     assert connected_relationship.query.casefold().startswith("алекс марией ")
@@ -1455,6 +1550,22 @@ def test_best_query_relevance_uses_recommendation_source_decomposition() -> None
 
     assert reason == "decomposition_recommendation_source"
     assert relevance.distinctive_term_hits >= 5
+
+
+def test_best_query_relevance_uses_recommendation_advice_list_shapes() -> None:
+    plan = build_query_expansion_plan("What recommendations has Joanna given to Nate?")
+
+    _, reason, relevance = best_query_relevance(
+        plan,
+        text=(
+            "D23:26 Joanna: Sure! For one, you should get a couch that can "
+            "sit multiple people. Also invest in a weighted blanket and "
+            "some dimmable lights."
+        ),
+    )
+
+    assert reason == "decomposition_recommendation_source"
+    assert relevance.distinctive_term_hits >= 3
 
 
 def test_best_query_relevance_uses_conversation_counterparty_decomposition() -> None:

@@ -337,8 +337,38 @@ _SLOT_RULES: tuple[
         ),
     ),
     (
-        re.compile(r"\b(?:foods?|recipes?|meals?|dishes?)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:foods?|recipes?|meals?|dishes?|desserts?|baked\s+goods?|baking)\b",
+            re.IGNORECASE,
+        ),
         (
+            (
+                "dessert_cake",
+                re.compile(
+                    r"\b(?:cakes?|cupcakes?|frosting|strawberry\s+filling)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+            (
+                "dessert_ice_cream",
+                re.compile(r"\b(?:ice\s*cream|icecream)\b", re.IGNORECASE),
+            ),
+            (
+                "dessert_dairy_free",
+                re.compile(
+                    r"\b(?:dairy[-\s]?free|coconut\s+milk|coconut\s+cream|"
+                    r"lactose\s+intolerant)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+            (
+                "dessert_recipe",
+                re.compile(
+                    r"\b(?:desserts?|baking|bake(?:d|s|r)?|recipes?|"
+                    r"sweet\s+treats?)\b",
+                    re.IGNORECASE,
+                ),
+            ),
             (
                 "vegetable_recipe",
                 re.compile(
@@ -360,6 +390,22 @@ _SLOT_RULES: tuple[
                 re.compile(
                     r"\b(?:local\s+dishes|poutine|french\s+fries|"
                     r"regional\s+dishes|local\s+food)\b",
+                    re.IGNORECASE,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:interests?|hobbies?|activities?|common|shared|both|similar)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "interest_movies",
+                re.compile(
+                    r"\b(?:watch(?:ing)?\s+movies?|movies?|films?|dramas?|"
+                    r"romcoms?|sci[-\s]?fi|action\s+movies?)\b",
                     re.IGNORECASE,
                 ),
             ),

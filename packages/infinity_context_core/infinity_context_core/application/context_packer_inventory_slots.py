@@ -14,6 +14,14 @@ _ITEM_PURCHASE_SHOE_SLOT_RE = re.compile(
     r"\b(?:shoes?|sneakers?)\b",
     re.IGNORECASE,
 )
+_ITEM_PURCHASE_JERSEY_SLOT_RE = re.compile(
+    r"\b(?:jerseys?)\b",
+    re.IGNORECASE,
+)
+_ITEM_PURCHASE_MEDIA_SLOT_RE = re.compile(
+    r"\b(?:movies?|films?|dvds?)\b",
+    re.IGNORECASE,
+)
 _ITEM_PURCHASE_FIGURINE_SLOT_RE = re.compile(
     r"\b(?:figurines?|wooden\s+dolls?)\b",
     re.IGNORECASE,
@@ -27,7 +35,7 @@ _DESSERT_COBBLER_SLOT_RE = re.compile(
     re.IGNORECASE,
 )
 _DESSERT_SUNDAE_SLOT_RE = re.compile(
-    r"\b(?:sundae|banana\s+split|ice\s+cream)\b",
+    r"\b(?:sundae|banana\s+split|ice\s*cream|icecream)\b",
     re.IGNORECASE,
 )
 _DESSERT_PIE_SLOT_RE = re.compile(
@@ -38,6 +46,59 @@ _DESSERT_GENERIC_SLOT_RE = re.compile(
     r"\b(?:desserts?|cakes?|cookies?|brownies?|puddings?|pastr(?:y|ies)|"
     r"baked\s+goods?)\b",
     re.IGNORECASE,
+)
+_BOARD_GAME_CONTEXT_RE = re.compile(
+    r"\b(?:board\s+games?|tabletop|strategy\s+game|card\s+game|"
+    r"game\s+convention|gaming\s+party)\b",
+    re.IGNORECASE,
+)
+_NAMED_GAME_PATTERNS = (
+    re.compile(
+        r"\b(?:played|plays|playing)\s+"
+        r"(?:this\s+game|the\s+game|a\s+game\s+called|"
+        r"a\s+board\s+game\s+called|some)\s+"
+        r"(?P<name>[\"']?[A-Z][A-Za-z0-9'&:.-]*(?:\s+[A-Z0-9][A-Za-z0-9'&:.-]*){0,4})"
+    ),
+    re.compile(
+        r"\b(?:currently\s+playing|play(?:ed|s|ing)?)\s+"
+        r"(?:a\s+game\s+called\s+)?"
+        r"(?P<name>[\"']?[A-Z][A-Za-z0-9'&:.-]*(?:\s+[A-Z0-9][A-Za-z0-9'&:.-]*){0,4})"
+        r"(?=.{0,80}\b(?:video\s+game|game|gaming|console|rpg|"
+        r"tournament|championship|match|level|gameplay)\b)"
+    ),
+    re.compile(
+        r"\b(?:currently\s+playing|play(?:ed|s|ing)?|game)\b"
+        r"(?=.{0,120}\b(?:called|named)\s+"
+        r"(?P<name>[\"']?[A-Z][A-Za-z0-9'&:.-]*(?:\s+[A-Z0-9][A-Za-z0-9'&:.-]*){0,4}))"
+    ),
+    re.compile(
+        r"\b(?:game|board\s+game|strategy\s+game)\s+"
+        r"(?:was\s+)?(?:called\s+|named\s+)?"
+        r"(?P<name>[\"']?[A-Z][A-Za-z0-9'&:.-]*(?:\s+[A-Z0-9][A-Za-z0-9'&:.-]*){0,4})"
+    ),
+    re.compile(
+        r"\b(?:local\s+|big\s+)?"
+        r"(?P<name>[\"']?[A-Z][A-Za-z0-9'&:.-]*(?:\s+[A-Z0-9][A-Za-z0-9'&:.-]*){0,4})"
+        r"\s+(?:tournament|championship|match)\b"
+    ),
+)
+_NAMED_GAME_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "board",
+        "game",
+        "games",
+        "gaming",
+        "great",
+        "it",
+        "related",
+        "retrieval",
+        "some",
+        "strategy",
+        "the",
+        "this",
+    }
 )
 _IDENTITY_DIRECT_EVIDENCE_RE = re.compile(
     r"\b(?:transgender|gender\s+identity|transition|pronouns?|"
@@ -85,11 +146,47 @@ _INVENTORY_COMMUNITY_CONFERENCE_SLOT_RE = re.compile(
 _INVENTORY_COMMUNITY_SCHOOL_EVENT_SLOT_RE = re.compile(
     r"\b(?:school\s+event|spoke\s+at\s+(?:a\s+)?school|"
     r"talk(?:ed|ing)?\s+about\s+(?:my\s+)?(?:journey|experience))\b"
-    r"(?=.{0,180}\b(?:lgbtq|transgender|community|rights?|advocacy)\b)|"
-    r"\b(?:lgbtq|transgender|community|rights?|advocacy)\b"
+    r"(?=.{0,180}\b(?:lgbtq|transgender|community|rights?|advocacy|"
+    r"coming\s+out|audience|students?)\b)|"
+    r"\b(?:giv(?:e|ing)|gave|shared?)\s+(?:my\s+)?(?:talk|speech|journey)\b"
+    r"(?=.{0,220}\b(?:lgbtq|transgender|community|rights?|advocacy|"
+    r"coming\s+out|audience|students?)\b)|"
+    r"\b(?:lgbtq|transgender|community|rights?|advocacy|coming\s+out|audience)\b"
     r"(?=.{0,180}\b(?:school\s+event|spoke\s+at\s+(?:a\s+)?school|"
-    r"journey|experience)\b)",
+    r"talk|speech|journey|experience)\b)",
     re.IGNORECASE | re.DOTALL,
+)
+_EXERCISE_ACTIVITY_DIRECT_ACTION_RE = re.compile(
+    r"\b(?:"
+    r"(?:"
+    r"i(?:'m|\s+am)?|we(?:'re|\s+are)?|he(?:'s|\s+is)?|"
+    r"she(?:'s|\s+is)?|they(?:'re|\s+are)?|[A-Z][a-z]{2,}"
+    r")\s+"
+    r"(?:"
+    r"doing|did|do|practice(?:d|s|ing)?|train(?:ed|s|ing)?|"
+    r"started(?:\s+(?:doing|taking|attending|going\s+to))?|"
+    r"began(?:\s+(?:doing|taking|attending|going\s+to))?|"
+    r"took\s+up|tried|trying(?:\s+out)?|attend(?:ed|ing)?|"
+    r"go(?:es|ing)?\s+to|off\s+to\s+do"
+    r")\b"
+    r"(?=.{0,90}\b(?:tae\s*kwon\s*do|taekwondo|kick\s*boxing|kickboxing|"
+    r"boxing|karate|yoga|circuit\s+training|weight\s+training|weights?)\b)|"
+    r"(?:tae\s*kwon\s*do|taekwondo|kick\s*boxing|kickboxing|boxing|karate|"
+    r"yoga|circuit\s+training|weight\s+training|weights?)\b"
+    r"(?=.{0,90}\b(?:"
+    r"doing|did|do|practice(?:d|s|ing)?|"
+    r"started|began|took\s+up|tried|trying(?:\s+out)?|attend(?:ed|ing)?|"
+    r"go(?:es|ing)?\s+to|off\s+to\s+do"
+    r")\b)"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+_EXERCISE_ACTIVITY_MENU_CONTEXT_RE = re.compile(
+    r"\b(?:"
+    r"offers?|offered|offering|available|variety|bunch|classes?\s+including|"
+    r"including|studio|place|martial\s+arts\s+place|type\s+of\s+classes"
+    r")\b",
+    re.IGNORECASE,
 )
 
 
@@ -153,16 +250,29 @@ def _exercise_activity_answer_slot(text: str) -> str:
     return ""
 
 
+def _exercise_activity_answer_directness_rank(text: str) -> int:
+    if not _exercise_activity_answer_slot(text):
+        return 3
+    if _EXERCISE_ACTIVITY_DIRECT_ACTION_RE.search(text) is not None:
+        return 0
+    if _EXERCISE_ACTIVITY_MENU_CONTEXT_RE.search(text) is not None:
+        return 2
+    return 1
+
+
 def _exercise_activity_answer_content_rank(text: str) -> int:
     slot = _exercise_activity_answer_slot(text)
+    directness_rank = _exercise_activity_answer_directness_rank(text)
+    if directness_rank == 0:
+        return 0
     if slot in {"kickboxing", "taekwondo", "weight_training", "circuit_training"}:
-        return 0
-    if slot in {"aerial_yoga", "yoga_trial", "yoga_performance"}:
-        return 0
-    if slot == "yoga":
         return 1
-    if slot == "generic_exercise":
+    if slot in {"aerial_yoga", "yoga_trial", "yoga_performance"}:
+        return 1
+    if slot == "yoga":
         return 2
+    if slot == "generic_exercise":
+        return 3
     return 3
 
 
@@ -171,6 +281,10 @@ def _item_purchase_inventory_slot_for_text(text: str) -> str:
         return ""
     if _ITEM_PURCHASE_SHOE_SLOT_RE.search(text):
         return "item_purchase_shoes"
+    if _ITEM_PURCHASE_JERSEY_SLOT_RE.search(text):
+        return "item_purchase_jerseys"
+    if _ITEM_PURCHASE_MEDIA_SLOT_RE.search(text):
+        return "item_purchase_media"
     if _ITEM_PURCHASE_FIGURINE_SLOT_RE.search(text):
         return "item_purchase_figurines"
     if _ITEM_PURCHASE_GENERIC_SLOT_RE.search(text):
@@ -188,6 +302,60 @@ def _dessert_inventory_slot_for_text(text: str) -> str:
     if _DESSERT_GENERIC_SLOT_RE.search(text):
         return "dessert"
     return ""
+
+
+def _game_inventory_slot_for_text(text: str) -> str:
+    if slot := _named_game_inventory_slot_for_text(text):
+        return slot
+    if _BOARD_GAME_CONTEXT_RE.search(text) is not None:
+        return "game_board"
+    return ""
+
+
+def _game_inventory_answer_directness_rank(text: str) -> int:
+    if _named_game_inventory_slot_for_text(text):
+        return 0
+    if _BOARD_GAME_CONTEXT_RE.search(text) is not None:
+        return 1
+    if re.search(r"\b(?:games?|gaming)\b", text, re.IGNORECASE) is not None:
+        return 2
+    return 3
+
+
+def _named_game_inventory_slot_for_text(text: str) -> str:
+    for pattern in _NAMED_GAME_PATTERNS:
+        match = pattern.search(text)
+        if match is None:
+            continue
+        name = _clean_named_game(match.group("name"))
+        if not name:
+            continue
+        safe_name = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")
+        if len(safe_name) < 2:
+            continue
+        return f"game_named_{safe_name}"
+    return ""
+
+
+def _clean_named_game(candidate: str) -> str:
+    cleaned = candidate.strip(" \"'.,!?-:")
+    cleaned = re.split(
+        r"\b(?:related\s+turns?|retrieval\s+hints?|image\s+caption|visual\s+query)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip(" \"'.,!?-:")
+    if not cleaned:
+        return ""
+    parts = cleaned.split()
+    while parts and parts[-1].casefold() in _NAMED_GAME_STOPWORDS:
+        parts.pop()
+    cleaned = " ".join(parts)
+    if not cleaned:
+        return ""
+    if cleaned.casefold() in _NAMED_GAME_STOPWORDS:
+        return ""
+    return cleaned
 
 
 def _children_preference_answer_slot(text: str) -> str:
@@ -296,6 +464,66 @@ def _inventory_answer_slot_priority_for_family(slot: str, *, family: str) -> int
         if normalized_slot in {"church", "direct_friend", "outdoor_activity", "outdoor_hiking"}:
             return 4
         return 5
+    if reason == "friend-place-church-inventory-bridge":
+        if normalized_slot == "church_joined":
+            return -2
+        if normalized_slot == "church":
+            return -1
+        if normalized_slot in {"direct_friend", "community"}:
+            return 3
+        return 5
+    if reason == "friend-place-gym-inventory-bridge":
+        if normalized_slot == "gym":
+            return -2
+        if normalized_slot in {"direct_friend", "community"}:
+            return 3
+        return 5
+    if reason == "friend-place-shelter-inventory-bridge":
+        if normalized_slot in {"direct_friend", "shelter_anchor"}:
+            return -2
+        if normalized_slot in {"shelter_service_activity", "shelter_activity", "shelter"}:
+            return 0
+        if normalized_slot in {"animal_shelter", "volunteer"}:
+            return 2
+        return 5
+    if reason == "volunteering-inventory-bridge":
+        if normalized_slot in {"shelter_anchor", "animal_shelter"}:
+            return -2
+        if normalized_slot in {"shelter_service_activity", "shelter_activity", "shelter"}:
+            return -1
+        if normalized_slot in {"volunteer_helped_person", "volunteer"}:
+            return 3
+        return 5
+    if reason == "decomposition-inventory-list":
+        if normalized_slot == "direct_friend":
+            return -3
+        if normalized_slot == "shelter_service_activity":
+            return -3
+        if normalized_slot in {"shelter_anchor", "animal_shelter"}:
+            return -2
+        if normalized_slot in {"shelter_activity", "shelter"}:
+            return -1
+    if reason == "outdoor-activity-inventory-bridge":
+        if normalized_slot in {"outdoor_visual_group", "outdoor_mountaineering"}:
+            return -2
+        if normalized_slot in {"outdoor_hiking", "outdoor_picnic", "outdoor_waterfall"}:
+            return 0
+        if normalized_slot == "outdoor_activity":
+            return 2
+        return 5
+    if reason == "cause-event-inventory-bridge":
+        if normalized_slot in {
+            "cause_domestic_abuse",
+            "cause_food_drive",
+            "cause_shelter_toy_drive",
+            "veterans_charity_run",
+            "veterans_march",
+            "veterans_petition",
+            "veterans_hospital",
+            "veterans",
+        }:
+            return -2
+        return 5
     if reason == "cause-education-infrastructure-inventory-bridge":
         if normalized_slot == "education_infrastructure":
             return -2
@@ -310,6 +538,17 @@ def _inventory_answer_slot_priority_for_family(slot: str, *, family: str) -> int
             "veterans_hospital",
         }:
             return 4
+        return 5
+    if reason == "travel-hobby-writing-bridge":
+        if normalized_slot in {"travel_writing_overlap", "travel_place_interest"}:
+            return -2
+        if normalized_slot in {
+            "creative_writing_publication",
+            "creative_writing_story_sharing",
+            "creative_writing",
+            "travel_interest",
+        }:
+            return -1
         return 5
     return _inventory_answer_slot_priority(slot)
 
@@ -436,6 +675,8 @@ def _diversity_family_base(family: str) -> str:
 
 def _inventory_answer_slot_priority(slot: str) -> int:
     normalized_slot = slot.replace("-", "_")
+    if normalized_slot.startswith("game_named_"):
+        return 0
     return {
         "direct_friend": 0,
         "dessert_cobbler": 0,
@@ -465,9 +706,14 @@ def _inventory_answer_slot_priority(slot: str) -> int:
         "state_oregon": 0,
         "state_east_coast": 0,
         "state_pacific_northwest": 0,
+        "state_place_realized": 0,
+        "travel_place_realized": 0,
+        "travel_place": 0,
         "pottery_cup": 0,
         "pottery_pot": 0,
         "item_purchase_figurines": 0,
+        "item_purchase_jerseys": 0,
+        "item_purchase_media": 0,
         "item_purchase_shoes": 0,
         "animal_shelter": 1,
         "animal_activity_bath": 0,
@@ -479,10 +725,25 @@ def _inventory_answer_slot_priority(slot: str) -> int:
         "gym": 1,
         "church_joined": 1,
         "country": 1,
+        "game_board": 1,
         "book_reading": 1,
+        "writing_screenplay": 0,
+        "writing_book": 0,
+        "writing_journal": 0,
+        "writing_blog": 0,
+        "travel_writing_overlap": 0,
+        "travel_place_interest": 0,
+        "creative_writing_publication": 0,
+        "creative_writing_story_sharing": 0,
+        "creative_writing": 0,
+        "travel_interest": 0,
+        "writing_project": 1,
         "church_friend_activity": 1,
         "community_conference": 1,
         "community_school_event": 1,
+        "cause_domestic_abuse": 0,
+        "cause_food_drive": 0,
+        "cause_shelter_toy_drive": 0,
         "education_infrastructure": 1,
         "veterans_petition": 1,
         "veterans_charity_run": 1,

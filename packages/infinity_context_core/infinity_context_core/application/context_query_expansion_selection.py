@@ -186,6 +186,16 @@ _POSSESSION_OBJECT_TERMS = frozenset(
         "ring",
     }
 )
+_POSSESSION_GIFT_EFFECT_TERMS = frozenset(
+    {
+        "cheer",
+        "comfort",
+        "focus",
+        "happy",
+        "happiness",
+        "joy",
+    }
+)
 _SENTIMENTAL_REMINDER_TERMS = frozenset(
     {
         "remind",
@@ -419,6 +429,20 @@ def should_skip_expansion_rule(
         _requests_sentimental_reminder(raw_tokens)
     ):
         return True
+    if reason == "painting_inventory_bridge" and raw_tokens.intersection(
+        {"activity", "activities", "partake"}
+    ):
+        return True
+    if reason == "painting_inventory_bridge" and {"art", "style"}.issubset(raw_tokens):
+        return True
+    if reason == "book_reading_list_bridge" and raw_tokens.intersection(
+        {"recommend", "recommended", "recommendation", "suggest", "suggested", "suggestion"}
+    ):
+        return True
+    if reason == "recommendation_source_bridge" and _is_book_recommendation_object_query(
+        raw_tokens
+    ):
+        return True
     if reason == "children_count_sibling_bridge" and not raw_tokens.intersection(
         {"child", "children", "kid", "kids", "sibling", "siblings", "brother", "sister"}
     ):
@@ -587,6 +611,7 @@ def _requests_possession_gift_object(raw_tokens: set[str]) -> bool:
     return bool(
         raw_tokens.intersection(_FAMILY_RELATIVE_TERMS)
         or raw_tokens.intersection(_POSSESSION_OBJECT_TERMS)
+        or raw_tokens.intersection(_POSSESSION_GIFT_EFFECT_TERMS)
     )
 
 
@@ -794,4 +819,24 @@ def _requests_stale_state_update(*, query: str, raw_tokens: set[str]) -> bool:
         or raw_tokens.intersection({"anymore", "stopped", "больше"})
         or {"longer", "use"}.issubset(raw_tokens)
         or {"больше", "использовать"}.issubset(raw_tokens)
+    )
+
+
+def _is_book_recommendation_object_query(raw_tokens: set[str]) -> bool:
+    return (
+        bool(raw_tokens.intersection({"book", "books"}))
+        and bool(raw_tokens.intersection({"what"}))
+        and bool(
+            raw_tokens.intersection(
+                {
+                    "recommend",
+                    "recommended",
+                    "recommendation",
+                    "suggest",
+                    "suggested",
+                    "suggestion",
+                }
+            )
+        )
+        and not raw_tokens.intersection({"who", "whose", "whom", "source"})
     )

@@ -67,6 +67,7 @@ _SENSITIVE_VALUE_MARKERS = (
 _MAX_DERIVED_RETRIEVAL_QUERIES = 8
 _FUSION_RANK_CONSTANT = 60.0
 _FUSION_MAX_RANK_PER_QUERY = 50
+_FUSION_MULTI_EVIDENCE_MAX_RANK_PER_QUERY = 120
 _HIGH_SIGNAL_DECOMPOSITION_REASONS = frozenset(
     {
         "decomposition_activity_duration",
@@ -216,16 +217,26 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "animal_care_instruction_bridge",
         "animal_diet_evidence_bridge",
         "animal_habitat_setup_bridge",
+        "board_game_inventory_bridge",
         "birdwatching_city_schedule_bridge",
         "business_networking_event_bridge",
         "business_opening_timeline_bridge",
         "business_promotion_event_bridge",
         "business_store_promotion_event_bridge",
+        "customer_experience_bridge",
+        "destress_activity_bridge",
         "family_activity_bridge",
+        "grand_opening_support_bridge",
+        "inspiration_source_bridge",
         "item_purchase_bridge",
+        "pet_adjustment_bridge",
+        "planning_tool_use_bridge",
         "post_athletic_career_bridge",
+        "recognition_award_bridge",
         "store_promotion_inventory_bridge",
         "symbol_importance_bridge",
+        "themed_location_destination_anchor_bridge",
+        "themed_location_destination_bridge",
         "food_recipe_recommendation_bridge",
         "fundraiser_event_inventory_bridge",
         "volunteering_people_inventory_bridge",
@@ -246,6 +257,7 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "book_suggestion_bridge",
         "career_intent_bridge",
         "cause_awareness_event_bridge",
+        "cause_event_inventory_bridge",
         "childhood_possession_inventory_bridge",
         "children_books_inference_bridge",
         "children_count_event_bridge",
@@ -253,7 +265,10 @@ _PROTECTED_EXPANSION_HEAD_REASONS = frozenset(
         "choice_reason_bridge",
         "church_friend_activity_inventory_bridge",
         "classical_music_preference_bridge",
+        "creative_work_submission_bridge",
+        "creative_writing_inventory_bridge",
         "creative_writing_career_bridge",
+        "travel_hobby_writing_bridge",
         "current_occupation_bridge",
         "current_recommendation_bridge",
         "current_residence_bridge",
@@ -1265,9 +1280,10 @@ def _fused_ranked_keys(
     sequence = 0
     for ranking_key, ranked_keys in rankings.items():
         query_weight = _retrieval_query_fusion_weight(ranking_key)
+        max_rank = _fusion_max_rank_for_query(ranking_key)
         seen_in_ranking: set[str] = set()
         for rank, raw_key in enumerate(ranked_keys, start=1):
-            if rank > _FUSION_MAX_RANK_PER_QUERY:
+            if rank > max_rank:
                 break
             key = raw_key.strip()
             if not key or key in seen_in_ranking:
@@ -1286,6 +1302,16 @@ def _fused_ranked_keys(
             key=lambda item: (-item[1], first_seen[item[0]], item[0]),
         )[:limit]
     )
+
+
+def _fusion_max_rank_for_query(ranking_key: str) -> int:
+    _, _, reason = ranking_key.partition(":")
+    if (
+        reason in _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS
+        or reason == "decomposition_relationship_status"
+    ):
+        return _FUSION_MULTI_EVIDENCE_MAX_RANK_PER_QUERY
+    return _FUSION_MAX_RANK_PER_QUERY
 
 
 def _retrieval_query_fusion_weight(ranking_key: str) -> float:

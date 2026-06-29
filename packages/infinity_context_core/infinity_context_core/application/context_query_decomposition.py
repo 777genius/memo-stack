@@ -10,6 +10,9 @@ from infinity_context_core.application.context_conversation_counterparty import 
     requests_conversation_recency,
     requests_conversation_topic,
 )
+from infinity_context_core.application.context_english_temporal_dates import (
+    english_textual_month_year_terms,
+)
 from infinity_context_core.application.context_lexical import query_terms
 from infinity_context_core.application.context_query_duration import (
     activity_duration_tail,
@@ -454,15 +457,25 @@ _INVENTORY_LIST_SLOT_TERMS = frozenset(
         "country",
         "dessert",
         "desserts",
+        "dish",
+        "dishes",
+        "food",
+        "foods",
         "hobbies",
         "instruments",
         "items",
         "kinds",
+        "meal",
+        "meals",
         "people",
         "places",
         "projects",
+        "recipe",
+        "recipes",
         "shelter",
         "shelters",
+        "sport",
+        "sports",
         "states",
         "tasks",
         "things",
@@ -486,11 +499,24 @@ _INVENTORY_LIST_ACTION_TERMS = frozenset(
         "buy",
         "done",
         "feel",
+        "favorite",
+        "favorites",
+        "favourite",
+        "favourites",
         "go",
         "gone",
         "helped",
         "having",
+        "enjoy",
+        "enjoyed",
+        "enjoys",
         "joined",
+        "like",
+        "liked",
+        "likes",
+        "love",
+        "loved",
+        "loves",
         "made",
         "mention",
         "mentioned",
@@ -819,6 +845,8 @@ _ACTIVITY_PARTICIPATION_TERMS = frozenset(
         "participate",
         "participates",
         "participated",
+        "sport",
+        "sports",
     }
 )
 _IDENTITY_ATTRIBUTE_TERMS = frozenset(
@@ -1162,6 +1190,26 @@ _FOLLOWUP_TASK_TERMS = frozenset(
         "поручения",
     }
 )
+_COLLECTIBLE_OBJECT_TERMS = frozenset(
+    {
+        "collectible",
+        "collectibles",
+        "collection",
+        "memorabilia",
+        "keepsake",
+        "keepsakes",
+        "memento",
+        "mementos",
+        "souvenir",
+        "souvenirs",
+        "possession",
+        "possessions",
+        "object",
+        "objects",
+        "item",
+        "items",
+    }
+)
 _GOTCHA_FAILURE_TERMS = frozenset(
     {
         "blocked",
@@ -1223,6 +1271,29 @@ _CURRENT_GOAL_TERMS = frozenset(
         "soon",
         "want",
         "wants",
+    }
+)
+_COUNTRY_DESTINATION_ACTION_TERMS = frozenset(
+    {
+        "go",
+        "going",
+        "meet",
+        "meeting",
+        "met",
+        "see",
+        "show",
+        "stay",
+        "staying",
+        "tour",
+        "travel",
+        "traveled",
+        "travelled",
+        "traveling",
+        "travelling",
+        "trip",
+        "visit",
+        "visited",
+        "visiting",
     }
 )
 _SALIENT_DROP_VARIANTS = frozenset(
@@ -1310,8 +1381,28 @@ def build_query_decomposition_plan(
     requests_relocation_destination_context = _requests_relocation_destination_context(
         variants=variants,
     )
+    requests_country_destination_context = _requests_country_destination_context(
+        raw_tokens=raw_tokens,
+        variants=variants,
+    )
     candidates: list[QueryDecomposition] = []
     _append_clause_decompositions(candidates, query=query, identities=identities)
+    if requests_country_destination_context:
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (
+                    *identities,
+                    *salient_terms,
+                    *english_textual_month_year_terms(query),
+                ),
+                (
+                    "country city destination place trip travel visit meet meeting "
+                    "show around town flight upcoming plan going headed see"
+                ),
+            ),
+            reason="decomposition_country_destination",
+        )
     if _has_event_focus(anchor_intent, variants) and not (
         requests_relocation_context or requests_relocation_destination_context
     ):
@@ -1597,9 +1688,9 @@ def build_query_decomposition_plan(
             query=_compose_query(
                 identities,
                 (
-                    "relationship status single parent partner spouse married "
-                    "dating breakup friends family mentors support system kids "
-                    "children challenge make family отношения статус друзья дружба "
+                    "relationship status single parent partner spouse husband wife "
+                    "married marriage wedding dating breakup divorced separated "
+                    "friends family kids children отношения статус друзья дружба "
                     "партнер супруг семья вместе"
                 ),
             ),
@@ -1664,8 +1755,11 @@ def build_query_decomposition_plan(
                 (*identities, *salient_terms),
                 (
                     "recommendation suggestion advice recommended suggested advised "
-                    "source actor recipient to from because of followed read watched "
-                    "tried used provenance who whom whose"
+                    "recommend it definitely would source actor recipient to from "
+                    "because of who whom whose should get should start for one "
+                    "also another pointers tips ideas how about make sure "
+                    "invest in look for great one good one followed read watched "
+                    "tried used provenance try buy visit play make"
                 ),
             ),
             reason="decomposition_recommendation_source",
@@ -1783,16 +1877,40 @@ def build_query_decomposition_plan(
             reason="decomposition_comparison_preference",
         )
     if _requests_activity_participation(raw_tokens=raw_tokens, variants=variants):
+        activity_terms = (
+            "activities hobbies activity partake participate observed "
+            "painting swimming swim pottery class camping running creative "
+            "outdoors exercise family kids fam weekend unplug hang therapy therapeutic"
+        )
+        sport_terms = (
+            "sports sport game team court scored surfing surfboard waves "
+            "position jersey jerseys season opener"
+        )
+        if variants.intersection(
+            {
+                "basketball",
+                "game",
+                "games",
+                "sport",
+                "sports",
+                "surf",
+                "surfing",
+            }
+        ):
+            activity_tail = (
+                f"activities hobbies activity partake participate observed {sport_terms} "
+                f"{activity_terms} photo picture image visual query take look"
+            )
+        else:
+            activity_tail = (
+                f"{activity_terms} {sport_terms} "
+                "photo picture image visual query take look"
+            )
         _append_candidate(
             candidates,
             query=_compose_query(
                 (*identities, *salient_terms),
-                (
-                    "activities hobbies activity partake participate observed "
-                    "painting swimming swim pottery class camping running creative "
-                    "outdoors exercise family kids fam weekend unplug hang therapy "
-                    "therapeutic photo picture image visual query take look"
-                ),
+                activity_tail,
             ),
             reason="decomposition_activity_participation",
         )
@@ -1817,6 +1935,20 @@ def build_query_decomposition_plan(
                 ),
             ),
             reason="decomposition_commonality",
+        )
+    if _requests_collectible_object_context(raw_tokens=raw_tokens, variants=variants):
+        _append_candidate(
+            candidates,
+            query=_compose_query(
+                (*identities, *salient_terms),
+                (
+                    "collectible memorabilia keepsake memento possession object "
+                    "own owned signed autographed autograph reminder bond friendship "
+                    "appreciation gift received teammates friends favorite player "
+                    "ball jersey trophy card photo"
+                ),
+            ),
+            reason="decomposition_collectible_object",
         )
     if requests_activity_duration_context(raw_tokens=raw_tokens, variants=variants):
         _append_candidate(
@@ -2006,12 +2138,7 @@ def _attribute_aggregation_tail(variants: frozenset[str]) -> str:
 
 def _inventory_list_tail(variants: frozenset[str]) -> str:
     tails: list[str] = []
-    if variants.intersection({"countries", "country", "страна", "страны"}):
-        tails.append(
-            "country countries europe european england spain france italy germany "
-            "portugal ireland sweden abroad solo trip travel visited went"
-        )
-    elif variants.intersection({"where", "где"}) and variants.intersection(
+    if variants.intersection({"where", "где"}) and variants.intersection(
         _PLACE_INVENTORY_ACTION_TERMS
     ):
         tails.append(
@@ -2032,6 +2159,11 @@ def _inventory_list_tail(variants: frozenset[str]) -> str:
             "place area country state city coast destination visited went travel "
             "trip vacation planning go abroad"
         )
+    elif variants.intersection({"countries", "country", "страна", "страны"}):
+        tails.append(
+            "country countries europe european england spain france italy germany "
+            "portugal ireland sweden abroad solo trip travel visited went"
+        )
     if variants.intersection({"shelter", "shelters", "volunteering", "volunteer"}):
         tails.append(
             "volunteer volunteered volunteering shelter homeless dog church gym helped "
@@ -2048,10 +2180,26 @@ def _inventory_list_tail(variants: frozenset[str]) -> str:
             "event events attended participated joined went planning fundraiser tournament "
             "fair networking conference parade speech support group"
         )
-    if variants.intersection({"dessert", "desserts"}):
+    if variants.intersection(
+        {
+            "dessert",
+            "desserts",
+            "dish",
+            "dishes",
+            "food",
+            "foods",
+            "meal",
+            "meals",
+            "recipe",
+            "recipes",
+        }
+    ):
         tails.append(
-            "dessert desserts homemade made baked baking cobbler pie sundae ice cream "
-            "cake cookies brownies pastry favorite"
+            "dessert desserts recipes recipe homemade made baked coconut milk "
+            "dairy-free ice cream icecream sweet treat treats pudding parfait "
+            "visual query image caption cobbler sundae cake tart pie cookies brownies pastry "
+            "chocolate raspberry strawberry blueberry gluten-free crust filling frosting "
+            "cooked prepared whipped discovered tried revised old recipes favorite"
         )
     if variants.intersection({"types", "kinds", "projects", "виды", "типы"}):
         tails.append(
@@ -2210,6 +2358,24 @@ def _requests_absence_contrast(query: str) -> bool:
     return bool(_ABSENCE_CONTRAST_RE.search(query))
 
 
+def _requests_country_destination_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    return bool(
+        variants.intersection({"country", "страна"})
+        and (
+            raw_tokens.intersection(_INVENTORY_LIST_PROMPT_TERMS)
+            or variants.intersection(_INVENTORY_LIST_PROMPT_TERMS)
+        )
+        and (
+            raw_tokens.intersection(_COUNTRY_DESTINATION_ACTION_TERMS)
+            or variants.intersection(_COUNTRY_DESTINATION_ACTION_TERMS)
+        )
+    )
+
+
 def _requests_relationship_status(
     *,
     raw_tokens: frozenset[str],
@@ -2235,7 +2401,7 @@ def _requests_activity_participation(
     raw_tokens: frozenset[str],
     variants: frozenset[str],
 ) -> bool:
-    if not variants.intersection({"activity", "hobby"}):
+    if not variants.intersection({"activity", "hobby", "sport", "sports"}):
         return False
     return bool(raw_tokens.intersection(_ACTIVITY_PARTICIPATION_TERMS))
 
@@ -2245,6 +2411,10 @@ def _requests_inventory_list_context(
     raw_tokens: frozenset[str],
     variants: frozenset[str],
 ) -> bool:
+    if _is_book_recommendation_object_query(raw_tokens=raw_tokens):
+        return False
+    if _requests_recommendation_source_context(raw_tokens=raw_tokens, variants=variants):
+        return False
     if _requests_place_inventory_context(raw_tokens=raw_tokens, variants=variants):
         return True
     if _requests_people_inventory_context(raw_tokens=raw_tokens, variants=variants):
@@ -2329,6 +2499,21 @@ def _requests_commonality_context(
     return len(identities) >= 2 and bool(variants.intersection(_COMMONALITY_TERMS))
 
 
+def _requests_collectible_object_context(
+    *,
+    raw_tokens: frozenset[str],
+    variants: frozenset[str],
+) -> bool:
+    if variants.intersection({"collectible", "collectibles", "memorabilia"}):
+        return True
+    if not variants.intersection(_COLLECTIBLE_OBJECT_TERMS):
+        return False
+    return bool(
+        raw_tokens.intersection({"own", "owns", "owned", "have", "has", "similar", "same"})
+        or variants.intersection({"own", "owns", "owned", "similar", "same", "shared"})
+    )
+
+
 def _requests_followup_task_context(
     *,
     raw_tokens: frozenset[str],
@@ -2402,6 +2587,15 @@ def _requests_recommendation_source_context(
     return bool(
         raw_tokens.intersection(_RECOMMENDATION_PROVENANCE_TERMS)
         or variants.intersection(_RECOMMENDATION_PROVENANCE_TERMS)
+    )
+
+
+def _is_book_recommendation_object_query(*, raw_tokens: frozenset[str]) -> bool:
+    return (
+        bool(raw_tokens.intersection({"book", "books"}))
+        and bool(raw_tokens.intersection({"what"}))
+        and bool(raw_tokens.intersection(_RECOMMENDATION_SOURCE_TERMS))
+        and not raw_tokens.intersection({"who", "whose", "whom", "source"})
     )
 
 

@@ -31,17 +31,17 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
     ),
     (
         frozenset({"artist", "band"}),
-        "talented voice amazing singer named performer artist musician band vocalist",
+        "talented voice amazing song songs singer named performer artist musician band vocalist",
         "music_artist_answer_bridge",
     ),
     (
         frozenset({"artist", "seen"}),
-        "talented voice amazing singer named performer artist musician band vocalist",
+        "talented voice amazing song songs singer named performer artist musician band vocalist",
         "music_artist_answer_bridge",
     ),
     (
         frozenset({"band", "seen"}),
-        "talented voice amazing singer named performer artist musician band vocalist",
+        "talented voice amazing song songs singer named performer artist musician band vocalist",
         "music_artist_answer_bridge",
     ),
     (
@@ -170,6 +170,28 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "post_event_emotion_bridge",
         ),
     (
+            frozenset({"inspired"}),
+            (
+                "inspired inspiration inspired by motivates motivation "
+                "personal experiences self discovery journey nature hiking boldness "
+                "validation stories courage risks got ideas from everywhere people "
+                "know stuff saw imagined imagination ideas characters creative writing "
+                "vision"
+            ),
+            "inspiration_source_bridge",
+        ),
+    (
+            frozenset({"inspires"}),
+            (
+                "inspired inspiration inspired by motivates motivation "
+                "personal experiences self discovery journey nature hiking boldness "
+                "validation stories courage risks got ideas from everywhere people "
+                "know stuff saw imagined imagination ideas characters creative writing "
+                "vision"
+            ),
+            "inspiration_source_bridge",
+        ),
+    (
             frozenset({"color", "pattern", "pottery"}),
             (
                 "pottery colors patterns catch eye make people smile express feelings "
@@ -222,6 +244,66 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             _terms._BOOK_SUGGESTION_EXPANSION,
             "book_suggestion_bridge",
         ),
+    (
+        frozenset({"locations", "enjoy"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"locations", "enjoy"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
+    (
+        frozenset({"places", "enjoy"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"places", "enjoy"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
+    (
+        frozenset({"locations", "related"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"locations", "related"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
+    (
+        frozenset({"places", "related"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"places", "related"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
+    (
+        frozenset({"locations", "recommend"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"locations", "recommend"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
+    (
+        frozenset({"places", "recommend"}),
+        _terms._THEMED_LOCATION_DESTINATION_EXPANSION,
+        "themed_location_destination_bridge",
+    ),
+    (
+        frozenset({"places", "recommend"}),
+        _terms._THEMED_LOCATION_DESTINATION_ANCHOR_EXPANSION,
+        "themed_location_destination_anchor_bridge",
+    ),
     (
             frozenset({"lewis"}),
             (
@@ -353,8 +435,9 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
         frozenset({"volunteering"}),
         (
             "volunteering volunteer helped community charity shelter homeless shelter "
-            "food supplies toy drive fundraiser veterans children people met helped "
-            "residents gratitude letter appreciation wrote support received"
+            "service events give out hand out food supplies toy drive donation drive "
+            "fundraiser veterans children people met helped residents gratitude letter "
+            "appreciation wrote support received donated old car"
         ),
         "volunteering_inventory_bridge",
     ),

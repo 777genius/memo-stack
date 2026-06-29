@@ -1111,6 +1111,12 @@ def positive_preference_rerank_signal(
             reason="book_author_preference_generic_collection",
         )
     if (
+        _is_recommendation_followup_candidate(query_reason=query_reason, item=item)
+        and _RECOMMENDATION_FOLLOWUP_BOOK_RE.search(item.text) is not None
+        and _RECOMMENDATION_FOLLOWUP_SIGNAL_RE.search(item.text) is not None
+    ):
+        return DomainRerankSignal()
+    if (
         _is_outdoor_preference_candidate(query_reason=query_reason, item=item)
         and _OUTDOOR_NATURE_EVIDENCE_RE.search(item.text) is not None
         and (

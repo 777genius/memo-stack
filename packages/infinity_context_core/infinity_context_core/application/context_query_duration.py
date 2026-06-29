@@ -145,7 +145,7 @@ def requests_activity_duration_context(
 
 
 def activity_duration_tail(variants: frozenset[str]) -> str:
-    activity_terms = " ".join(sorted((variants & _ACTIVITY_STATE_TERMS)))[:120]
+    activity_terms = " ".join(sorted(variants & _ACTIVITY_STATE_TERMS))[:120]
     return " ".join(
         part
         for part in (
@@ -153,7 +153,7 @@ def activity_duration_tail(variants: frozenset[str]) -> str:
             (
                 "duration since for years months weeks days started began "
                 "started in began in from already still ongoing continuous "
-                "long time how long"
+                "long time how long age since I was had have owned"
             ),
         )
         if part

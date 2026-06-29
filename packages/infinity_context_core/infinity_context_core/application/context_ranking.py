@@ -155,6 +155,31 @@ _BM25_K1 = 1.2
 _BM25_B = 0.75
 _BM25_MAX_BOOST = 0.035
 _QueryExpansionTerms = tuple[tuple[str, str, tuple[LexicalQueryTerm, ...]], ...]
+_STRICT_QUERY_REASON_MIN_DISTINCTIVE_HITS = {
+    "book_suggestion_bridge": 4,
+    "music_artist_answer_bridge": 4,
+}
+_DIRECT_VISUAL_TEXT_QUERY_RE = re.compile(
+    r"\b(?:what|which)\b(?=.{0,120}\b(?:ocr|text|written|label|title)\b)"
+    r"(?=.{0,120}\b(?:screenshot|screen|image|visual)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ARTIFACT_CONTEXT_COMPOSITE_QUERY_RE = re.compile(
+    r"\b(?:changed|after|before|call|meeting|conversation|about)\b",
+    re.IGNORECASE,
+)
+_BOOK_SUGGESTION_PROJECT_FALSE_FRIEND_RE = re.compile(
+    r"\b(?:project|launch|planning|proposal|task|workflow)\s+suggestion\b|"
+    r"\bsuggestion\s+(?:from|about)\b(?=.{0,80}\b(?:project|launch|planning|proposal|task)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_BOOK_SUGGESTION_EVIDENCE_CUE_RE = re.compile(
+    r"[\"“][^\"”]{2,80}[\"”]|"
+    r"\b(?:book|novel|memoir|author|chapter|must[-\s]?see|great\s+read|"
+    r"read\s+(?:the\s+)?book|recommended\s+(?:the\s+)?book|"
+    r"suggested\s+(?:the\s+)?book)\b",
+    re.IGNORECASE,
+)
 _QUERY_ANCHOR_INTENT_MAX_BOOST = 0.035
 _CONTEXT_REQUIREMENT_MAX_BOOST = 0.04
 _CONTEXT_REQUIREMENT_ANCHOR_BOOST = 0.008
@@ -389,6 +414,7 @@ _DIALOGUE_SPEAKER_RE = re.compile(
     rf"\bD\d+:\d+\s+(?P<speaker>{_SPEAKER_LABEL_RE}):",
     re.IGNORECASE,
 )
+_DIALOGUE_MARKER_RE = re.compile(r"\bD\d+:\d+\b")
 
 
 def dedupe_rank_items(items: tuple[ContextItem, ...]) -> tuple[ContextItem, ...]:
@@ -668,7 +694,20 @@ def best_query_relevance(
         )
         for query, reason, terms in _query_expansion_terms(plan)
     )
-    return max(scored, key=query_relevance_rank_key)
+    strict_filtered = tuple(
+        item
+        for item in scored
+        if not _strict_query_reason_below_minimum(reason=item[1], relevance=item[2])
+    )
+    filtered = tuple(
+        item
+        for item in strict_filtered or scored
+        if not _query_relevance_false_friend(plan=plan, item=item, text=text)
+    )
+    return max(
+        filtered or strict_filtered or scored,
+        key=lambda item: _query_relevance_rank_key_for_plan(plan, item),
+    )
 
 
 def query_relevance_rank_key(
@@ -683,6 +722,62 @@ def query_relevance_rank_key(
         relevance.score_boost,
         reason == "original_query",
     )
+
+
+def _query_relevance_rank_key_for_plan(
+    plan: QueryExpansionPlan,
+    item: tuple[str, str, QueryRelevance],
+) -> tuple[bool, int, int, int, float, bool]:
+    query, reason, relevance = item
+    priority = _query_reason_priority_for_relevance(reason, relevance)
+    if (
+        reason == "visual_text_evidence_bridge"
+        and _is_direct_visual_text_query(plan.original_query)
+    ):
+        priority += 2
+    return (
+        is_query_relevance_sufficient(relevance),
+        priority,
+        relevance.distinctive_term_hits,
+        relevance.unique_term_hits,
+        relevance.score_boost,
+        reason == "original_query",
+    )
+
+
+def _is_direct_visual_text_query(query: str) -> bool:
+    return bool(
+        _DIRECT_VISUAL_TEXT_QUERY_RE.search(query)
+        and _ARTIFACT_CONTEXT_COMPOSITE_QUERY_RE.search(query) is None
+    )
+
+
+def _query_relevance_false_friend(
+    *,
+    plan: QueryExpansionPlan,
+    item: tuple[str, str, QueryRelevance],
+    text: str,
+) -> bool:
+    _, reason, relevance = item
+    if reason != "book_suggestion_bridge":
+        return False
+    if relevance.distinctive_term_hits < 5:
+        return False
+    query = plan.original_query.casefold()
+    if "book" not in query:
+        return False
+    if _BOOK_SUGGESTION_EVIDENCE_CUE_RE.search(text):
+        return False
+    return _BOOK_SUGGESTION_PROJECT_FALSE_FRIEND_RE.search(text) is not None
+
+
+def _strict_query_reason_below_minimum(
+    *,
+    reason: str,
+    relevance: QueryRelevance,
+) -> bool:
+    min_hits = _STRICT_QUERY_REASON_MIN_DISTINCTIVE_HITS.get(reason)
+    return min_hits is not None and relevance.distinctive_term_hits < min_hits
 
 
 def _query_reason_priority_for_relevance(
@@ -872,18 +967,41 @@ def _preferred_merge_body_item(*, primary: ContextItem, secondary: ContextItem) 
 
 
 def _exact_source_sibling_answer_body_rank(item: ContextItem) -> int:
+    turn_ref_count = sum(1 for ref in item.source_refs if _source_ref_is_turn(ref))
+    if turn_ref_count <= 0:
+        return 4
+    if _has_dialogue_turn_body_for_source_ref(item):
+        return 0 if len(item.source_refs) == 1 else 1
     if "keyword_source_sibling_chunks" not in diagnostic_retrieval_sources(item.diagnostics):
-        return 3
+        return 4
     diagnostics = safe_diagnostic_mapping(item.diagnostics)
     signals = safe_score_signals(diagnostics.get("score_signals"))
     if _numeric_signal(signals.get("source_sibling_answer_evidence")) <= 0:
-        return 3
-    turn_ref_count = sum(1 for ref in item.source_refs if _source_ref_is_turn(ref))
-    if turn_ref_count <= 0:
-        return 3
+        return 4
     if len(item.source_refs) == 1:
-        return 0
-    return 1
+        return 2
+    return 3
+
+
+def _has_dialogue_turn_body_for_source_ref(item: ContextItem) -> bool:
+    for ref in item.source_refs:
+        marker = _source_ref_dialogue_marker(ref)
+        if marker and _text_has_dialogue_turn_body(item.text, marker=marker):
+            return True
+    return False
+
+
+def _source_ref_dialogue_marker(ref: SourceRef) -> str:
+    match = _DIALOGUE_MARKER_RE.search(str(ref.source_id or ""))
+    return match.group(0) if match is not None else ""
+
+
+def _text_has_dialogue_turn_body(text: str, *, marker: str) -> bool:
+    for match in re.finditer(rf"\b{re.escape(marker)}\b", text):
+        following = text[match.end() : match.end() + 64]
+        if re.match(r"\s+(?!\.\.\.)[A-Z][^:\n]{0,40}:", following):
+            return True
+    return False
 
 
 def _is_strong_exact_source_sibling_turn(item: ContextItem) -> bool:
@@ -2324,7 +2442,7 @@ def _query_relevance_from_item_diagnostics(
         return None
     relevance = _query_relevance_from_score_signals(signals)
     if relevance is None:
-        return None
+        relevance = score_query_relevance(query=query_text, text=item.text)
     return query_text, reason_value, relevance
 
 

@@ -28,8 +28,8 @@ from infinity_context_core.application.use_cases.build_context import (
     _ranked_keyword_chunk_scores,
     _selected_keyword_prompt_items,
     _source_group_seed_turns,
-    _source_sibling_candidate_rank_key,
     _source_sibling_answer_evidence,
+    _source_sibling_candidate_rank_key,
     _source_sibling_companion_extra_slot,
     _source_sibling_distant_answer_evidence_rank,
     _source_sibling_marker_coverage_count,
@@ -115,6 +115,23 @@ def test_keyword_aggregation_chunks_collect_list_queries() -> None:
     assert diagnostics["keyword_aggregation_chunks_used"] == 1
     assert "family figurines" in items[0].text
     assert "new shoes" in items[0].text
+
+
+def test_aggregation_answer_slots_detect_common_interest_movie_evidence() -> None:
+    slots = aggregation_answer_slots(
+        query="What kind of interests do Joanna and Nate share?",
+        text=(
+            "D1:10 Joanna: Besides writing, I also enjoy reading, "
+            "watching movies, and exploring nature."
+        ),
+    )
+    generic_slots = aggregation_answer_slots(
+        query="What kind of interests do Joanna and Nate share?",
+        text="D23:4 Joanna: It is fun to meet people who share your interests.",
+    )
+
+    assert "interest_movies" in slots
+    assert "interest_movies" not in generic_slots
 
 
 def test_keyword_aggregation_query_kind_handles_band_list_queries() -> None:
@@ -265,6 +282,28 @@ def test_inventory_answer_slots_cover_list_event_place_activity_domains() -> Non
         query="What outdoor activities has John done with his colleagues?",
         text="D18:2 John went mountaineering with workmates. D24:6 John had a picnic.",
     ) == frozenset({"outdoor_mountaineering", "outdoor_picnic"})
+
+
+def test_inventory_answer_slots_cover_dessert_recipe_domains() -> None:
+    assert aggregation_answer_slots(
+        query="What desserts or recipes has Joanna made?",
+        text=(
+            "D3:4 Nate made coconut milk icecream. "
+            "D10:9 Joanna tested dairy-free dessert recipes. "
+            "D20:2 Joanna revised an old recipe and made a strawberry cake."
+        ),
+    ) == frozenset(
+        {
+            "dessert_cake",
+            "dessert_dairy_free",
+            "dessert_ice_cream",
+            "dessert_recipe",
+        }
+    )
+    assert aggregation_answer_slots(
+        query="What projects has Joanna worked on?",
+        text="D10:9 Joanna tested dairy-free dessert recipes.",
+    ) == frozenset()
 
 
 def test_keyword_aggregation_query_kind_handles_inventory_list_queries() -> None:

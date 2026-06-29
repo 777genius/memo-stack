@@ -161,6 +161,24 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "family_activity_bridge",
         ),
     (
+            frozenset({"activity", "dad"}),
+            (
+                "activity dad father parent childhood child kid younger used to go "
+                "used to do used to play used to ride with my dad with my father "
+                "family memory childhood memory"
+            ),
+            "family_activity_bridge",
+        ),
+    (
+            frozenset({"activity", "father"}),
+            (
+                "activity dad father parent childhood child kid younger used to go "
+                "used to do used to play used to ride with my dad with my father "
+                "family memory childhood memory"
+            ),
+            "family_activity_bridge",
+        ),
+    (
             frozenset({"activity", "family"}),
             (
                 "family painting together nature inspired latest work sunset flowers "
@@ -246,6 +264,15 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             "painting_inventory_bridge",
         ),
     (
+            frozenset({"painting"}),
+            (
+                "painted painting artwork picture photo image caption visual query "
+                "horse sunset sunrise lake palm tree flowers sunflower landscape "
+                "nature latest work canvas"
+            ),
+            "painting_inventory_bridge",
+        ),
+    (
             frozenset({"event", "attend"}),
             (
                 "events participated attended joined went lgbtq community advocacy "
@@ -259,6 +286,24 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
                 "competition contest compete competed competing comp tournament trophy "
                 "trophies first place won winner stage performance team crew regional "
                 "regionals visual query image caption participated"
+            ),
+            "activity_competition_evidence_bridge",
+        ),
+    (
+            frozenset({"dancers", "photo"}),
+            (
+                "dancers dance festival photo picture image caption visual query "
+                "performing stage practicing hard grace skill graceful impress "
+                "looks great awesome part of it"
+            ),
+            "activity_competition_evidence_bridge",
+        ),
+    (
+            frozenset({"dance", "festival"}),
+            (
+                "dance festival dancers performing performance stage practicing hard "
+                "grace skill graceful impress participate participating part of it "
+                "glad awesome excited memories grand opening"
             ),
             "activity_competition_evidence_bridge",
         ),
@@ -391,9 +436,91 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
             frozenset({"medium", "game"}),
             (
                 "medium mediums games play gaming GameCube Gamecube PC Playstation "
-                "console equipment upgraded setup competition controller keyboard"
+                "console equipment upgraded setup competition tournament trophy "
+                "cash prize controller keyboard headset headphones"
             ),
             "gaming_medium_bridge",
+        ),
+    (
+            frozenset({"board", "games"}),
+            (
+                "board game board games tabletop strategy game card game gaming party "
+                "game convention played plays playing named called"
+            ),
+            "board_game_inventory_bridge",
+        ),
+    (
+            frozenset({"board", "game"}),
+            (
+                "board game board games tabletop strategy game card game gaming party "
+                "game convention played plays playing named called"
+            ),
+            "board_game_inventory_bridge",
+        ),
+    (
+            frozenset({"video", "games"}),
+            (
+                "video game video games videogame gaming esports tournament tournaments "
+                "championship final champion won winning winner victory feelings emotions "
+                "play plays played playing currently nonstop called named title console pc "
+                "switch rpg role playing fighting game shooter"
+            ),
+            "board_game_inventory_bridge",
+        ),
+    (
+            frozenset({"video", "game"}),
+            (
+                "video game video games videogame gaming esports tournament tournaments "
+                "championship final champion won winning winner victory feelings emotions "
+                "play plays played playing currently nonstop called named title console pc "
+                "switch rpg role playing fighting game shooter"
+            ),
+            "board_game_inventory_bridge",
+        ),
+    (
+            frozenset({"clipboard"}),
+            (
+                "clipboard notepad notebook calendar planner using use stay organized "
+                "motivated sets goals tracks achievements areas improve improvement "
+                "goal setting progress system attached"
+            ),
+            "planning_tool_use_bridge",
+        ),
+    (
+            frozenset({"notepad"}),
+            (
+                "clipboard notepad notebook calendar planner using use stay organized "
+                "motivated sets goals tracks achievements areas improve improvement "
+                "goal setting progress system attached"
+            ),
+            "planning_tool_use_bridge",
+        ),
+    (
+            frozenset({"customers", "experience"}),
+            (
+                "customers customer special experience creating create feel welcome "
+                "coming back come back key space imagining cozy inviting shopping "
+                "store oasis customer experience"
+            ),
+            "customer_experience_bridge",
+        ),
+    (
+            frozenset({"customer", "experience"}),
+            (
+                "customers customer special experience creating create feel welcome "
+                "coming back come back key space imagining cozy inviting shopping "
+                "store oasis customer experience"
+            ),
+            "customer_experience_bridge",
+        ),
+    (
+            frozenset({"grand", "opening"}),
+            (
+                "grand opening launch dance studio tomorrow right by your side "
+                "live it up great memories so excited support proud can't wait "
+                "earned it opening night"
+            ),
+            "grand_opening_support_bridge",
         ),
     (
             frozenset({"pet", "have"}),
@@ -402,6 +529,24 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
                 "puppy pup doggo pet turtle"
             ),
             "pet_inventory_bridge",
+        ),
+    (
+            frozenset({"puppy", "adjusting"}),
+            (
+                "puppy pup dog pet little one new home adjusting adjusted doing "
+                "great learning commands house training trained adopted shelter "
+                "brings joy give home"
+            ),
+            "pet_adjustment_bridge",
+        ),
+    (
+            frozenset({"puppy", "home"}),
+            (
+                "puppy pup dog pet little one new home adjusting adjusted doing "
+                "great learning commands house training trained adopted shelter "
+                "brings joy give home"
+            ),
+            "pet_adjustment_bridge",
         ),
     (
             frozenset({"when", "adopt"}),
@@ -439,6 +584,26 @@ EXPANSION_RULES_PART_3: tuple[tuple[frozenset[str], str, str], ...] = (
                 "family streets reached out needed volunteers"
             ),
             "volunteer_career_inference_bridge",
+        ),
+    (
+            frozenset({"career", "month"}),
+            (
+                "career work job professional month good bad positive negative "
+                "setback setbacks letdown failure failed loss lost work lost progress "
+                "crashed crash major blow frustrating did not do well didn't do well "
+                "not great competition tournament performance"
+            ),
+            "negative_experience_support_bridge",
+        ),
+    (
+            frozenset({"career", "wise"}),
+            (
+                "career work job professional month good bad positive negative "
+                "setback setbacks letdown failure failed loss lost work lost progress "
+                "crashed crash major blow frustrating did not do well didn't do well "
+                "not great competition tournament performance"
+            ),
+            "negative_experience_support_bridge",
         ),
     (
             frozenset({"alternative", "career"}),
