@@ -41,6 +41,7 @@ class _StaticBackend:
         self.memories_by_case = memories_by_case
         self.reset_calls: list[str] = []
         self.ingest_calls: dict[str, int] = defaultdict(int)
+        self.search_calls: dict[str, int] = defaultdict(int)
 
     def reset(self, *, run_id: str) -> None:
         self.reset_calls.append(run_id)
@@ -67,6 +68,7 @@ class _StaticBackend:
         run_id: str,
         top_k: int,
     ) -> BackendSearchResult:
+        self.search_calls[case.case_id] += 1
         memories = self.memories_by_case.get(case.case_id, ())
         return BackendSearchResult(
             query=case.question,
@@ -406,7 +408,12 @@ def test_memory_comparison_benchmark_does_not_cache_failed_ingest(
 
     assert sum(backend.ingest_calls.values()) == 2
     assert result["evaluations"][0]["ingestion"]["items_failed"] == 1
+    assert result["evaluations"][0]["judgment"]["verdict"] == "error"
+    assert result["evaluations"][0]["judgment"]["reason"] == "ingest_failed"
+    assert result["evaluations"][0]["retrieval"]["total_results"] == 0
     assert result["evaluations"][1]["ingestion"]["reused"] is False
+    assert backend.search_calls[first.case_id] == 0
+    assert backend.search_calls[second.case_id] == 1
 
 
 def test_memory_comparison_benchmark_rejects_duplicate_backend_names(

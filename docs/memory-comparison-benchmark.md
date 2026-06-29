@@ -75,6 +75,8 @@ Use deterministic answer/judge for a no-paid dry run by omitting
   isolated user/run at startup by default.
 - Corpus reuse is keyed by memory scope, thread and source content fingerprint;
   failed ingests are not cached for later questions in the same conversation.
+- Any nonzero backend `items_failed` ingest result is scored as an `ingest_failed`
+  stage failure and does not proceed to search for that case.
 
 ## Report Shape
 

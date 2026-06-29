@@ -234,8 +234,25 @@ def run_memory_comparison_benchmark(
                     if failure is not None:
                         failures.append(failure)
                     continue
-                if ingest_result.items_failed == 0:
-                    ingested_corpus_by_backend[backend_name].add(corpus_key)
+                if ingest_result.items_failed > 0:
+                    evaluation = _stage_failure_evaluation(
+                        case,
+                        backend_name=backend_name,
+                        stage="ingest",
+                        reason=(
+                            f"items_failed={ingest_result.items_failed}; "
+                            f"items_processed={ingest_result.items_processed}"
+                        ),
+                        ingest_result=ingest_result,
+                        answerer_model=answerer.model,
+                        judge_model=judge.model,
+                    )
+                    evaluations.append(evaluation)
+                    failure = _failure_analysis_entry(evaluation)
+                    if failure is not None:
+                        failures.append(failure)
+                    continue
+                ingested_corpus_by_backend[backend_name].add(corpus_key)
             evaluation = _run_backend_case(
                 case,
                 backend=backend,
