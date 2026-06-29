@@ -1566,6 +1566,15 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
                     animal_evidence_slot,
                     source_group,
                 )
+            if inventory_slot and _inventory_slot_precedes_marker_coverage(
+                inventory_slot,
+            ):
+                return _compound_diversity_family(
+                    "query_reason_inventory_slot_source_group",
+                    query_reason,
+                    inventory_slot,
+                    source_group,
+                )
             if marker_slot := _aggregation_marker_coverage_slot(
                 item,
                 query_reason=query_reason,
@@ -1697,6 +1706,16 @@ def _answer_support_diversity_family(item: ContextItem) -> str:
         return _typed_diversity_family("requirement_feature", matched_features[0])
 
     return ""
+
+
+def _inventory_slot_precedes_marker_coverage(slot: str) -> bool:
+    return slot in {
+        "game_win_result",
+        "gratitude_note_writer",
+        "shelter_food_dropoff",
+        "skill_game_coaching",
+        "skill_recipe_teaching",
+    }
 
 
 def _first_dialogue_marker(text: str) -> str:

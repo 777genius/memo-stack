@@ -451,6 +451,15 @@ EXPANSION_RULES_PART_2: tuple[tuple[frozenset[str], str, str], ...] = (
             "quantity_enumeration_bridge",
         ),
     (
+            frozenset({"many", "games"}),
+            (
+                "games game won winning wins victory count total number mentioned "
+                "team basketball match scored points shot basket tight score "
+                "pulled off tough win career favorite atmosphere"
+            ),
+            "game_win_count_bridge",
+        ),
+    (
             frozenset({"сколько"}),
             (
                 "count total number quantity listed list includes including consists "

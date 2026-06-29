@@ -42,6 +42,9 @@ from infinity_context_core.application.context_relevance import (
     QueryRelevance,
     is_chunk_candidate_relevance_sufficient,
 )
+from infinity_context_core.application.context_source_sibling_inventory_evidence import (
+    source_sibling_inventory_answer_slot_count,
+)
 from infinity_context_core.application.context_source_sibling_place_evidence import (
     country_destination_answer_support_rank,
     is_country_destination_source_sibling_answer_evidence,
@@ -1399,6 +1402,18 @@ def source_sibling_answer_evidence(
         text=text,
     )
     if aggregation_slot_count > 0:
+        if (
+            source_sibling_inventory_answer_slot_count(
+                expansion_query=expansion_query,
+                expansion_reason=expansion_reason,
+                text=text,
+            )
+            > 0
+        ):
+            return _query_person_matches_text(
+                expansion_query=expansion_query,
+                text=text,
+            )
         if _is_movie_seen_direct_answer_evidence(
             expansion_query=expansion_query,
             expansion_reason=expansion_reason,
@@ -2658,6 +2673,15 @@ def _is_direct_source_sibling_answer_evidence(
     if is_relationship_status_answer_evidence(
         expansion_reason=expansion_reason,
         text=text,
+    ):
+        return True
+    if (
+        source_sibling_inventory_answer_slot_count(
+            expansion_query=expansion_query,
+            expansion_reason=expansion_reason,
+            text=text,
+        )
+        > 0
     ):
         return True
     if food_inventory_answer_support_applies(

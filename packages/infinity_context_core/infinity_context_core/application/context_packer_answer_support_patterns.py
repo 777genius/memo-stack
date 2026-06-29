@@ -65,6 +65,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "fundraiser-event-inventory-bridge",
         "family-painting-activity-bridge",
         "family-swimming-activity-bridge",
+        "game-win-count-bridge",
         "hobby-interest-bridge",
         "hike-count-activity-bridge",
         "inspiration-source-bridge",
@@ -83,6 +84,7 @@ _ANSWER_SUPPORT_AGGREGATION_SOURCE_GROUP_REASONS = frozenset(
         "religious-inference-bridge",
         "running-reason-bridge",
         "running-reason-question-bridge",
+        "skill-teaching-inventory-bridge",
         "symbol-importance-bridge",
         "transgender-youth-center-event-bridge",
         "travel-country-inventory-bridge",
@@ -632,6 +634,15 @@ _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE = re.compile(
     r"received\s+a\s+medal|front\s+desk|kids?\s+event)\b",
     re.IGNORECASE,
 )
+_INVENTORY_SHELTER_FOOD_DROPOFF_SLOT_RE = re.compile(
+    r"\b(?:homeless\s+shelter|shelter)\b"
+    r"(?=.{0,200}\b(?:drop(?:ped)?\s+off|brought|donat(?:e|ed)|"
+    r"baked?|baking|cakes?|baked\s+goods?|desserts?)\b)|"
+    r"\b(?:drop(?:ped)?\s+off|brought|donat(?:e|ed)|baked?|baking|"
+    r"cakes?|baked\s+goods?|desserts?)\b"
+    r"(?=.{0,200}\b(?:homeless\s+shelter|shelter)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 _INVENTORY_VOLUNTEER_HELPED_PERSON_SLOT_RE = re.compile(
     r"\b(?:someone|person)\s+named\s+[A-Z][a-z]+\b|"
     r"\bmet\s+(?:this\s+)?(?:amazing\s+)?(?:woman|man|person),\s+[A-Z][a-z]+\b|"
@@ -640,6 +651,14 @@ _INVENTORY_VOLUNTEER_HELPED_PERSON_SLOT_RE = re.compile(
     r"\b[A-Z][a-z]+,\s+a\s+resident\s+at\s+the\s+shelter\b"
     r"(?=.{0,120}\b(?:gratitude|appreciation|letter|support))",
     re.DOTALL,
+)
+_INVENTORY_GRATITUDE_NOTE_WRITER_SLOT_RE = re.compile(
+    r"\b(?:residents?|person|someone)\b"
+    r"(?=.{0,180}\b(?:wrote|written|note|letter|gratitude|appreciation|"
+    r"thank(?:s|ful)?)\b)|"
+    r"\b(?:wrote|written|note|letter|gratitude|appreciation|thank(?:s|ful)?)\b"
+    r"(?=.{0,180}\b(?:residents?|person|someone|shelter|support)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 _INVENTORY_SHELTER_SERVICE_ACTIVITY_SLOT_RE = re.compile(
     r"\b(?:homeless\s+shelter|shelter)\b(?=.{0,180}\b"
@@ -1130,6 +1149,32 @@ _BOOK_SUGGESTION_DIRECT_RE = re.compile(
     r"(?:great\s+one|let\s+me\s+know\s+what\s+you\s+think)\b"
     r"(?=.{0,160}\b(?:finished|finish|read|book|series|one)\b)"
     r")",
+    re.IGNORECASE | re.DOTALL,
+)
+_SKILL_TEACHING_RECIPE_SLOT_RE = re.compile(
+    r"\b(?:teach(?:ing)?|taught|show(?:ed|ing)?|help(?:ed|ing)?)\b"
+    r"(?=.{0,200}\b(?:how\s+to\s+make|recipes?|cooking|desserts?|baking|"
+    r"make\s+this)\b)|"
+    r"\b(?:recipes?|cooking|desserts?|baking|how\s+to\s+make)\b"
+    r"(?=.{0,200}\b(?:teach(?:ing)?|taught|show(?:ed|ing)?|help(?:ed|ing)?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_SKILL_TEACHING_GAME_SLOT_RE = re.compile(
+    r"\b(?:tips?|coach(?:ed|ing)?|teach(?:ing)?|taught|help(?:ed|ing)?)\b"
+    r"(?=.{0,200}\b(?:improve|practice|learn|skills?|game|gaming|score|"
+    r"scores?|tournament)\b)|"
+    r"\b(?:improve|practice|learn|skills?|game|gaming|score|scores?|tournament)\b"
+    r"(?=.{0,200}\b(?:tips?|coach(?:ed|ing)?|teach(?:ing)?|taught|"
+    r"help(?:ed|ing)?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_GAME_WIN_COUNT_SLOT_RE = re.compile(
+    r"\b(?:games?|match|team|basketball|court)\b"
+    r"(?=.{0,220}\b(?:won|win|winning|victor(?:y|ies)|pulled\s+off|"
+    r"scored|points?|shot|basket|tight\s+score|career)\b)|"
+    r"\b(?:won|win|winning|victor(?:y|ies)|pulled\s+off|scored|points?|"
+    r"shot|basket|tight\s+score)\b"
+    r"(?=.{0,220}\b(?:games?|match|team|basketball|court|career)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _PLACE_AREA_STATE_QUERY_RE = re.compile(

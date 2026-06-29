@@ -295,6 +295,102 @@ _SLOT_RULES: tuple[
         ),
     ),
     (
+        re.compile(
+            r"\b(?:gratitude|appreciation|thank(?:s|ful)?|notes?|letters?|wrote|written)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "gratitude_note_writer",
+                re.compile(
+                    r"\b(?:residents?|person|someone)\b"
+                    r"(?=.{0,180}\b(?:wrote|written|note|letter|gratitude|"
+                    r"appreciation|thank(?:s|ful)?)\b)|"
+                    r"\b(?:wrote|written|note|letter|gratitude|appreciation|"
+                    r"thank(?:s|ful)?)\b"
+                    r"(?=.{0,180}\b(?:residents?|person|someone|shelter|support)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:shelter|foods?|meals?|baked\s+goods?|drop(?:ped)?\s+off|donat(?:e|ed))\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "shelter_food_dropoff",
+                re.compile(
+                    r"\b(?:homeless\s+shelter|shelter)\b"
+                    r"(?=.{0,200}\b(?:drop(?:ped)?\s+off|brought|donat(?:e|ed)|"
+                    r"baked?|baking|cakes?|baked\s+goods?|desserts?)\b)|"
+                    r"\b(?:drop(?:ped)?\s+off|brought|donat(?:e|ed)|baked?|"
+                    r"baking|cakes?|baked\s+goods?|desserts?)\b"
+                    r"(?=.{0,200}\b(?:homeless\s+shelter|shelter)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:skills?|learn|teach|teaching|taught|helped|coach|tips|improve)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "skill_recipe_teaching",
+                re.compile(
+                    r"\b(?:teach(?:ing)?|taught|show(?:ed|ing)?|"
+                    r"help(?:ed|ing)?)\b"
+                    r"(?=.{0,200}\b(?:how\s+to\s+make|recipes?|cooking|desserts?|"
+                    r"baking|make\s+this)\b)|"
+                    r"\b(?:recipes?|cooking|desserts?|baking|how\s+to\s+make)\b"
+                    r"(?=.{0,200}\b(?:teach(?:ing)?|taught|show(?:ed|ing)?|"
+                    r"help(?:ed|ing)?)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+            (
+                "skill_game_coaching",
+                re.compile(
+                    r"\b(?:tips?|coach(?:ed|ing)?|teach(?:ing)?|taught|"
+                    r"help(?:ed|ing)?)\b"
+                    r"(?=.{0,200}\b(?:improve|practice|learn|skills?|game|"
+                    r"gaming|score|scores?|tournament)\b)|"
+                    r"\b(?:improve|practice|learn|skills?|game|gaming|score|"
+                    r"scores?|tournament)\b"
+                    r"(?=.{0,200}\b(?:tips?|coach(?:ed|ing)?|teach(?:ing)?|"
+                    r"taught|help(?:ed|ing)?)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(?:games?|winning|won|wins?|victor(?:y|ies)|count|mentioned)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                "game_win_result",
+                re.compile(
+                    r"\b(?:games?|match|team|basketball|court)\b"
+                    r"(?=.{0,220}\b(?:won|win|winning|victor(?:y|ies)|"
+                    r"pulled\s+off|scored|points?|shot|basket|tight\s+score|"
+                    r"career)\b)|"
+                    r"\b(?:won|win|winning|victor(?:y|ies)|pulled\s+off|scored|"
+                    r"points?|shot|basket|tight\s+score)\b"
+                    r"(?=.{0,220}\b(?:games?|match|team|basketball|court|career)\b)",
+                    re.IGNORECASE | re.DOTALL,
+                ),
+            ),
+        ),
+    ),
+    (
         re.compile(r"\b(?:music|concerts?)\b", re.IGNORECASE),
         (
             (

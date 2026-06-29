@@ -156,6 +156,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "friends_team_inference_bridge",
         "generic_behavior_inference_bridge",
         "gaming_medium_bridge",
+        "game_win_count_bridge",
         "hiking_trail_count_bridge",
         "hobby_interest_bridge",
         "instrument_play_bridge",
@@ -182,6 +183,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "religious_inference_bridge",
         "screenplay_count_bridge",
         "shelter_comfort_reason_bridge",
+        "skill_teaching_inventory_bridge",
         "source_evidence_bridge",
         "speaker_turn_bridge",
         "state_residence_inference_bridge",
@@ -203,6 +205,7 @@ _HIGH_SIGNAL_EXPANSION_REASONS = frozenset(
         "visual_text_evidence_bridge",
         "volunteer_career_inference_bridge",
         "volunteering_people_inventory_bridge",
+        "volunteering_inventory_bridge",
         "yoga_delay_gaming_bridge",
     }
 )
@@ -227,12 +230,14 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "destress_activity_bridge",
         "family_activity_bridge",
         "grand_opening_support_bridge",
+        "game_win_count_bridge",
         "inspiration_source_bridge",
         "item_purchase_bridge",
         "pet_adjustment_bridge",
         "planning_tool_use_bridge",
         "post_athletic_career_bridge",
         "recognition_award_bridge",
+        "skill_teaching_inventory_bridge",
         "store_promotion_inventory_bridge",
         "symbol_importance_bridge",
         "themed_location_destination_anchor_bridge",
@@ -240,6 +245,7 @@ _MULTI_EVIDENCE_PROTECTED_HEAD_REASONS = frozenset(
         "food_recipe_recommendation_bridge",
         "fundraiser_event_inventory_bridge",
         "volunteering_people_inventory_bridge",
+        "volunteering_inventory_bridge",
         "wellness_activity_effect_bridge",
     }
 )

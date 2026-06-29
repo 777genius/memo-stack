@@ -453,7 +453,7 @@ def _inventory_answer_slot_priority_for_family(slot: str, *, family: str) -> int
     reason = _answer_support_inventory_family_reason(family)
     normalized_slot = slot.replace("-", "_")
     if reason == "volunteering-people-inventory-bridge":
-        if normalized_slot == "volunteer_helped_person":
+        if normalized_slot in {"volunteer_helped_person", "gratitude_note_writer"}:
             return -2
         if normalized_slot in {"direct_friend", "volunteer", "shelter", "shelter_anchor"}:
             return 4
@@ -686,6 +686,8 @@ def _inventory_answer_slot_priority(slot: str) -> int:
         "fundraiser_chili_cookoff": 0,
         "fundraiser_shelter_setup": 0,
         "fundraiser_tournament": 0,
+        "game_win_result": 0,
+        "gratitude_note_writer": 0,
         "classical_music_preference": 0,
         "community_activist_group": 0,
         "community_art_show": 0,
@@ -700,7 +702,10 @@ def _inventory_answer_slot_priority(slot: str) -> int:
         "outdoor_waterfall": 0,
         "painting_art_show": 0,
         "shelter_anchor": 0,
+        "shelter_food_dropoff": 0,
         "shelter_service_activity": 0,
+        "skill_game_coaching": 0,
+        "skill_recipe_teaching": 0,
         "volunteer_helped_person": 0,
         "state_florida": 0,
         "state_oregon": 0,

@@ -39,6 +39,7 @@ from infinity_context_core.application.context_packer_answer_support_patterns im
     _FAMILY_ACTIVITY_ACTIVITY_OBJECT_RE,
     _FAMILY_ACTIVITY_CONTEXT_OBJECT_RE,
     _FAMILY_ACTIVITY_DIRECT_ANSWER_OBJECT_RE,
+    _GAME_WIN_COUNT_SLOT_RE,
     _INVENTORY_ANIMAL_ACTIVITY_BATH_SLOT_RE,
     _INVENTORY_ANIMAL_ACTIVITY_FEEDING_SLOT_RE,
     _INVENTORY_ANIMAL_ACTIVITY_HOLDING_SLOT_RE,
@@ -59,6 +60,7 @@ from infinity_context_core.application.context_packer_answer_support_patterns im
     _INVENTORY_FRIEND_PLACE_DIRECT_RE,
     _INVENTORY_FRIEND_PLACE_SHELTER_ACTIVITY_REPEAT_RE,
     _INVENTORY_FRIEND_PLACE_SHELTER_ANCHOR_RE,
+    _INVENTORY_GRATITUDE_NOTE_WRITER_SLOT_RE,
     _INVENTORY_GYM_SLOT_RE,
     _INVENTORY_MUSIC_EVENT_SLOT_RE,
     _INVENTORY_MUSIC_LIVE_EVENT_SLOT_RE,
@@ -70,6 +72,7 @@ from infinity_context_core.application.context_packer_answer_support_patterns im
     _INVENTORY_OUTDOOR_VISUAL_GROUP_SLOT_RE,
     _INVENTORY_OUTDOOR_WATERFALL_SLOT_RE,
     _INVENTORY_PLACE_MARKER_RE,
+    _INVENTORY_SHELTER_FOOD_DROPOFF_SLOT_RE,
     _INVENTORY_SHELTER_SERVICE_ACTIVITY_SLOT_RE,
     _INVENTORY_SHELTER_SLOT_RE,
     _INVENTORY_STATE_EAST_COAST_SLOT_RE,
@@ -98,6 +101,8 @@ from infinity_context_core.application.context_packer_answer_support_patterns im
     _POTTERY_TYPE_SECONDARY_ANSWER_OBJECT_RE,
     _RELIGIOUS_CONTRAST_EVIDENCE_RE,
     _RELIGIOUS_DIRECT_EVIDENCE_RE,
+    _SKILL_TEACHING_GAME_SLOT_RE,
+    _SKILL_TEACHING_RECIPE_SLOT_RE,
     _SUPPORT_NETWORK_DIRECT_ANSWER_RE,
     _SUPPORT_NETWORK_SOCIAL_ACTOR_RE,
     _SUPPORT_NETWORK_SUPPORT_ACTION_RE,
@@ -618,6 +623,20 @@ def _inventory_answer_slot(item: ContextItem, *, query_reason: str) -> str:
         return _item_purchase_inventory_slot_for_text(item.text)
     if normalized_reason in {"place-area-inventory-bridge", "trip-destination-bridge"}:
         return _place_area_inventory_slot_for_text(item.text)
+    if normalized_reason == "game-win-count-bridge":
+        return _game_win_count_inventory_slot_for_text(item.text)
+    if normalized_reason == "skill-teaching-inventory-bridge":
+        return _skill_teaching_inventory_slot_for_text(item.text)
+    if (
+        normalized_reason == "volunteering-people-inventory-bridge"
+        and _INVENTORY_GRATITUDE_NOTE_WRITER_SLOT_RE.search(item.text)
+    ):
+        return "gratitude_note_writer"
+    if (
+        normalized_reason == "volunteering-inventory-bridge"
+        and _INVENTORY_SHELTER_FOOD_DROPOFF_SLOT_RE.search(item.text)
+    ):
+        return "shelter_food_dropoff"
     if not _is_inventory_list_reason(query_reason):
         return ""
     if normalized_reason == "board-game-inventory-bridge":
@@ -637,6 +656,20 @@ def _inventory_answer_slot(item: ContextItem, *, query_reason: str) -> str:
     if query_reason == "outdoor_activity_inventory_bridge":
         return _outdoor_activity_inventory_answer_slot_for_text(item.text)
     return _inventory_answer_slot_for_text(item.text)
+
+
+def _game_win_count_inventory_slot_for_text(text: str) -> str:
+    if _GAME_WIN_COUNT_SLOT_RE.search(text):
+        return "game_win_result"
+    return ""
+
+
+def _skill_teaching_inventory_slot_for_text(text: str) -> str:
+    if _SKILL_TEACHING_RECIPE_SLOT_RE.search(text):
+        return "skill_recipe_teaching"
+    if _SKILL_TEACHING_GAME_SLOT_RE.search(text):
+        return "skill_game_coaching"
+    return ""
 
 def _outdoor_activity_inventory_answer_slot_for_text(text: str) -> str:
     if _INVENTORY_OUTDOOR_MOUNTAINEERING_SLOT_RE.search(text):
@@ -959,6 +992,7 @@ def _is_inventory_list_reason(query_reason: str) -> bool:
         "event-participation-bridge",
         "event-participation-help-bridge",
         "fundraiser-event-inventory-bridge",
+        "game-win-count-bridge",
         "item-purchase-bridge",
         "music-event-inventory-bridge",
         "outdoor-activity-inventory-bridge",
@@ -966,6 +1000,7 @@ def _is_inventory_list_reason(query_reason: str) -> bool:
         "trip-destination-bridge",
         "travel-country-inventory-bridge",
         "veterans-event-inventory-bridge",
+        "skill-teaching-inventory-bridge",
         "volunteering-people-inventory-bridge",
         "volunteering-inventory-bridge",
     }

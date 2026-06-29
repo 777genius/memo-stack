@@ -442,6 +442,15 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
         "volunteering_inventory_bridge",
     ),
     (
+        frozenset({"food", "shelter"}),
+        (
+            "shelter food meal baked goods drop off dropped off brought donated "
+            "donation volunteer homeless shelter service shift supplies dessert "
+            "community help support"
+        ),
+        "volunteering_inventory_bridge",
+    ),
+    (
         frozenset({"people", "volunteering"}),
         (
             "volunteering volunteer shelter residents resident people someone named "
@@ -450,6 +459,24 @@ EXPANSION_RULES_PART_4: tuple[tuple[frozenset[str], str, str], ...] = (
             "they receive impact life person who wrote thank you note"
         ),
         "volunteering_people_inventory_bridge",
+    ),
+    (
+        frozenset({"gratitude"}),
+        (
+            "gratitude appreciation thank notes letters wrote written residents "
+            "shelter volunteer support received support they receive heartfelt "
+            "person people who wrote thank you note"
+        ),
+        "volunteering_people_inventory_bridge",
+    ),
+    (
+        frozenset({"skills", "helped", "learn"}),
+        (
+            "skills helped others learn teach teaching taught coach coaching tips "
+            "improve practice show how to make recipes cooking game gaming score "
+            "scores tournament share sharing knowledge"
+        ),
+        "skill_teaching_inventory_bridge",
     ),
     (
         frozenset({"events", "veterans"}),
