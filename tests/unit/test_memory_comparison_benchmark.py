@@ -1,0 +1,310 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from infinity_context_server import eval as eval_module
+from infinity_context_server.memory_comparison_benchmark import (
+    MEMORY_COMPARISON_MODE,
+    run_memory_comparison_benchmark,
+)
+from infinity_context_server.memory_comparison_llm import (
+    EvidenceOnlyAnswerer,
+    ExpectedTermsJudge,
+    OpenAIResponsesAnswerer,
+    OpenAIResponsesJudge,
+)
+from infinity_context_server.memory_comparison_models import (
+    BackendIngestResult,
+    BackendSearchResult,
+    RetrievedMemory,
+)
+from infinity_context_server.public_benchmark_models import (
+    BenchmarkDocumentInput,
+    PublicBenchmarkCase,
+)
+
+
+class _StaticBackend:
+    def __init__(
+        self,
+        name: str,
+        memories_by_case: dict[str, tuple[RetrievedMemory, ...]],
+    ) -> None:
+        self.name = name
+        self.memories_by_case = memories_by_case
+        self.reset_calls: list[str] = []
+        self.ingest_calls: dict[str, int] = defaultdict(int)
+
+    def reset(self, *, run_id: str) -> None:
+        self.reset_calls.append(run_id)
+
+    def ingest(
+        self,
+        case: PublicBenchmarkCase,
+        *,
+        run_id: str,
+        corpus_key: str,
+    ) -> BackendIngestResult:
+        self.ingest_calls[corpus_key] += 1
+        return BackendIngestResult(
+            items_processed=len(case.documents),
+            total_memories_created=len(case.documents),
+            latency_ms=3.0,
+            metadata={"run_id": run_id, "corpus_key": corpus_key},
+        )
+
+    def search(
+        self,
+        case: PublicBenchmarkCase,
+        *,
+        run_id: str,
+        top_k: int,
+    ) -> BackendSearchResult:
+        memories = self.memories_by_case.get(case.case_id, ())
+        return BackendSearchResult(
+            query=case.question,
+            memories=memories[:top_k],
+            latency_ms=7.0,
+            total_results=len(memories),
+            context_token_count=42,
+            metadata={"run_id": run_id},
+        )
+
+
+def test_memory_comparison_benchmark_reports_side_by_side_metrics(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "unused.json"
+    dataset.write_text("[]", encoding="utf-8")
+    case = _case(
+        case_id="conv-1:qa:1",
+        question="Where did Morgan keep the launch checklist?",
+        expected_terms=("blue notebook",),
+        answer="Morgan kept it in the blue notebook.",
+    )
+    memo_backend = _StaticBackend(
+        "memo-stack",
+        {
+            case.case_id: (
+                RetrievedMemory(
+                    text="Morgan kept the launch checklist in the blue notebook.",
+                    rank=1,
+                    score=0.91,
+                    item_id="memo-hit",
+                ),
+            )
+        },
+    )
+    mem0_backend = _StaticBackend(
+        "mem0",
+        {
+            case.case_id: (
+                RetrievedMemory(
+                    text="Morgan discussed the launch checklist.",
+                    rank=1,
+                    score=0.52,
+                    item_id="mem0-partial",
+                ),
+            )
+        },
+    )
+
+    result = run_memory_comparison_benchmark(
+        dataset_path=dataset,
+        backends=(memo_backend, mem0_backend),
+        answerer=EvidenceOnlyAnswerer(),
+        judge=ExpectedTermsJudge(),
+        top_k=2,
+        top_k_cutoffs=(1, 2),
+        run_id="unit-run",
+        cases_override=(case,),
+    )
+
+    assert result["evaluation_mode"] == MEMORY_COMPARISON_MODE
+    assert result["backend_metrics"]["memo-stack"]["accuracy"] == 1.0
+    assert result["backend_metrics"]["mem0"]["accuracy"] == 0.0
+    assert result["backend_comparison"]["memo_stack_vs_mem0_accuracy_delta"] == 1.0
+    assert result["backend_metrics"]["memo-stack"]["expected_term_recall"] == 1.0
+    assert result["backend_metrics"]["mem0"]["expected_term_recall"] == 0.0
+    assert result["backend_metrics"]["memo-stack"]["by_group"]["single-hop"]["total"] == 1
+    assert result["failure_analysis"][0]["backend"] == "mem0"
+    assert result["evaluations"][0]["cutoff_results"]["1"]["judgment"]["score"] == 1.0
+
+
+def test_memory_comparison_benchmark_reuses_ingested_corpus(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "unused.json"
+    dataset.write_text("[]", encoding="utf-8")
+    first = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+    )
+    second = _case(
+        case_id="conv-1:qa:2",
+        question="Who owns the checklist?",
+        expected_terms=("Morgan",),
+        answer="Morgan",
+    )
+    backend = _StaticBackend(
+        "memo-stack",
+        {
+            first.case_id: (RetrievedMemory(text="blue notebook", rank=1),),
+            second.case_id: (RetrievedMemory(text="Morgan owns it", rank=1),),
+        },
+    )
+
+    result = run_memory_comparison_benchmark(
+        dataset_path=dataset,
+        backends=(backend,),
+        top_k=1,
+        top_k_cutoffs=(1,),
+        run_id="unit-run",
+        cases_override=(first, second),
+    )
+
+    assert result["backend_metrics"]["memo-stack"]["accuracy"] == 1.0
+    assert sum(backend.ingest_calls.values()) == 1
+    assert result["evaluations"][1]["ingestion"]["reused"] is True
+
+
+def test_memory_comparison_cli_is_manual_live_gated(tmp_path: Path) -> None:
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        eval_module.main(
+            [
+                "memory-comparison-benchmark",
+                "--dataset",
+                str(dataset),
+                "--memo-api-url",
+                "http://memo.example",
+                "--mem0-url",
+                "http://mem0.example",
+            ]
+        )
+
+    assert "--allow-live" in str(exc_info.value)
+
+
+def test_memory_comparison_cli_paid_llm_is_separately_gated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("MEMORY_SERVICE_TOKEN", "unit-token")
+
+    with pytest.raises(SystemExit) as exc_info:
+        eval_module.main(
+            [
+                "memory-comparison-benchmark",
+                "--dataset",
+                str(dataset),
+                "--memo-api-url",
+                "http://memo.example",
+                "--mem0-url",
+                "http://mem0.example",
+                "--allow-live",
+                "--answerer-provider",
+                "openai",
+                "--answerer-model",
+                "unit-answerer",
+            ]
+        )
+
+    assert "--allow-paid-llm" in str(exc_info.value)
+
+
+def test_openai_responses_llm_adapters_parse_fake_client() -> None:
+    case = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+    )
+    memories = (RetrievedMemory(text="The checklist is in the blue notebook.", rank=1),)
+    fake_client = _FakeOpenAIClient(
+        (
+            SimpleNamespace(
+                output_text="It is in the blue notebook.",
+                usage=SimpleNamespace(input_tokens=11, output_tokens=7),
+            ),
+            SimpleNamespace(
+                output_text='{"verdict":"correct","score":1,"reason":"Supported."}',
+                usage=SimpleNamespace(input_tokens=13, output_tokens=5),
+            ),
+        )
+    )
+    answerer = OpenAIResponsesAnswerer(
+        api_key="",
+        model="unit-answerer",
+        client_factory=lambda: fake_client,
+    )
+    judge = OpenAIResponsesJudge(
+        api_key="",
+        model="unit-judge",
+        client_factory=lambda: fake_client,
+    )
+
+    answer = answerer.answer(case, memories, backend_name="memo-stack", cutoff=1)
+    judgment = judge.judge(
+        case,
+        answer,
+        memories,
+        backend_name="memo-stack",
+        cutoff=1,
+    )
+
+    assert answer.answer == "It is in the blue notebook."
+    assert answer.token_usage.total_tokens == 18
+    assert judgment.verdict == "correct"
+    assert judgment.score == 1.0
+    assert fake_client.responses.calls[0]["store"] is False
+    assert fake_client.responses.calls[1]["text"]["format"]["type"] == "json_schema"
+
+
+def _case(
+    *,
+    case_id: str,
+    question: str,
+    expected_terms: tuple[str, ...],
+    answer: str,
+) -> PublicBenchmarkCase:
+    return PublicBenchmarkCase(
+        benchmark="locomo",
+        case_id=case_id,
+        question=question,
+        expected_terms=expected_terms,
+        documents=(
+            BenchmarkDocumentInput(
+                title="Conversation",
+                text=f"Morgan said: {answer}",
+                source_external_id="conv-1-doc",
+            ),
+        ),
+        memory_scope_external_ref="locomo-conv-1",
+        thread_external_ref="locomo-conv-1",
+        metadata={"category": 4, "answer_preview": answer},
+    )
+
+
+class _FakeResponses:
+    def __init__(self, responses: tuple[object, ...]) -> None:
+        self._responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs: object) -> object:
+        self.calls.append(dict(kwargs))
+        return self._responses.pop(0)
+
+
+class _FakeOpenAIClient:
+    def __init__(self, responses: tuple[object, ...]) -> None:
+        self.responses = _FakeResponses(responses)

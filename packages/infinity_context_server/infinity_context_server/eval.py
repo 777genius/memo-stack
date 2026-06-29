@@ -121,6 +121,9 @@ from infinity_context_server.eval_types import (  # noqa: F401
     SeedResult,
 )
 from infinity_context_server.main import create_app
+from infinity_context_server.memory_comparison_benchmark import (
+    run_memory_comparison_benchmark,
+)
 from infinity_context_server.public_benchmark import run_public_memory_benchmark
 
 _STANDARD_SCORECARD_EXTERNAL_REPORT_PATHS: tuple[tuple[str, Path], ...] = (
@@ -2442,6 +2445,56 @@ def main(argv: Sequence[str] | None = None) -> None:
         ),
     )
     public_benchmark.add_argument("--report-out", type=Path, default=None)
+    memory_comparison = sub.add_parser("memory-comparison-benchmark")
+    memory_comparison.add_argument("--dataset", type=Path, required=True)
+    memory_comparison.add_argument("--memo-api-url", required=True)
+    memory_comparison.add_argument("--mem0-url", required=True)
+    memory_comparison.add_argument("--benchmark", default="locomo")
+    memory_comparison.add_argument("--min-accuracy", type=float, default=0.0)
+    memory_comparison.add_argument("--max-cases", type=int, default=None)
+    memory_comparison.add_argument("--top-k", type=int, default=200)
+    memory_comparison.add_argument(
+        "--top-k-cutoff",
+        action="append",
+        type=int,
+        default=None,
+        help="Top-k cutoff to judge. Repeat for multiple cutoffs.",
+    )
+    memory_comparison.add_argument(
+        "--case-id",
+        action="append",
+        default=None,
+        help="Run only the requested public benchmark case id. Repeat for multiple cases.",
+    )
+    memory_comparison.add_argument("--run-id", default=None)
+    memory_comparison.add_argument("--report-out", type=Path, default=None)
+    memory_comparison.add_argument(
+        "--answerer-provider",
+        choices=("deterministic", "openai"),
+        default="deterministic",
+    )
+    memory_comparison.add_argument(
+        "--judge-provider",
+        choices=("deterministic", "openai"),
+        default="deterministic",
+    )
+    memory_comparison.add_argument("--answerer-model", default=None)
+    memory_comparison.add_argument("--judge-model", default=None)
+    memory_comparison.add_argument(
+        "--openai-api-key-env",
+        default="MEMORY_OPENAI_API_KEY",
+        help="Environment variable containing the OpenAI API key for paid LLM runs.",
+    )
+    memory_comparison.add_argument(
+        "--allow-paid-llm",
+        action="store_true",
+        help="Required when answerer-provider or judge-provider is openai.",
+    )
+    memory_comparison.add_argument(
+        "--allow-live",
+        action="store_true",
+        help="Required to run live memo-stack and mem0 HTTP comparison.",
+    )
     args = parser.parse_args(argv)
     if args.command == "run":
         if args.suite == SMALL_GOLDEN_SUITE:
@@ -2544,11 +2597,119 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         except ValueError as exc:
             raise SystemExit(_safe_cli_error(exc)) from exc
+    elif args.command == "memory-comparison-benchmark":
+        if not args.allow_live:
+            raise SystemExit(
+                "memory-comparison-benchmark is live/manual only; pass --allow-live"
+            )
+        auth_token = _eval_auth_token_from_env()
+        if not auth_token:
+            raise SystemExit("MEMORY_EVAL_AUTH_TOKEN or MEMORY_SERVICE_TOKEN is required")
+        from infinity_context_server.memory_comparison_http import (
+            InfinityContextHttpComparisonBackend,
+            Mem0HttpComparisonBackend,
+        )
+
+        try:
+            answerer, judge = _memory_comparison_llms_from_args(args)
+            try:
+                result = run_memory_comparison_benchmark(
+                    dataset_path=args.dataset,
+                    benchmark=args.benchmark,
+                    min_accuracy=args.min_accuracy,
+                    max_cases=args.max_cases,
+                    case_ids=tuple(args.case_id or ()),
+                    top_k=args.top_k,
+                    top_k_cutoffs=tuple(args.top_k_cutoff or (10, 20, 50, 200)),
+                    run_id=args.run_id,
+                    report_out=args.report_out,
+                    answerer=answerer,
+                    judge=judge,
+                    backends=(
+                        InfinityContextHttpComparisonBackend(
+                            base_url=args.memo_api_url,
+                            auth_token=auth_token,
+                        ),
+                        Mem0HttpComparisonBackend(base_url=args.mem0_url),
+                    ),
+                )
+            finally:
+                _close_memory_comparison_llms(answerer, judge)
+        except ValueError as exc:
+            raise SystemExit(_safe_cli_error(exc)) from exc
     else:
         raise SystemExit("Unsupported eval command")
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if not result["ok"]:
         raise SystemExit(1)
+
+
+def _memory_comparison_llms_from_args(args: argparse.Namespace):
+    answerer_provider = str(args.answerer_provider)
+    judge_provider = str(args.judge_provider)
+    if answerer_provider == "deterministic" and judge_provider == "deterministic":
+        return None, None
+    if not args.allow_paid_llm:
+        raise SystemExit(
+            "OpenAI memory comparison LLMs are paid/manual only; pass --allow-paid-llm"
+        )
+    api_key = os.getenv(str(args.openai_api_key_env)) or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise SystemExit(
+            f"{args.openai_api_key_env} or OPENAI_API_KEY is required for paid LLM runs"
+        )
+
+    from infinity_context_server.memory_comparison_llm import (
+        EvidenceOnlyAnswerer,
+        ExpectedTermsJudge,
+        OpenAIResponsesAnswerer,
+        OpenAIResponsesJudge,
+    )
+
+    answerer = (
+        OpenAIResponsesAnswerer(
+            api_key=api_key,
+            model=_memory_comparison_model_from_args(
+                args.answerer_model,
+                env_name="MEMORY_COMPARISON_ANSWERER_MODEL",
+                label="answerer",
+            ),
+        )
+        if answerer_provider == "openai"
+        else EvidenceOnlyAnswerer()
+    )
+    judge = (
+        OpenAIResponsesJudge(
+            api_key=api_key,
+            model=_memory_comparison_model_from_args(
+                args.judge_model,
+                env_name="MEMORY_COMPARISON_JUDGE_MODEL",
+                label="judge",
+            ),
+        )
+        if judge_provider == "openai"
+        else ExpectedTermsJudge()
+    )
+    return answerer, judge
+
+
+def _memory_comparison_model_from_args(
+    value: str | None,
+    *,
+    env_name: str,
+    label: str,
+) -> str:
+    model = (value or os.getenv(env_name) or "").strip()
+    if not model:
+        raise SystemExit(f"pass --{label}-model or set {env_name}")
+    return model
+
+
+def _close_memory_comparison_llms(*clients: object | None) -> None:
+    for client in clients:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
 
 
 def _safe_cli_error(exc: Exception) -> str:
