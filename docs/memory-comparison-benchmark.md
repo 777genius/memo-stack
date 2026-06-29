@@ -90,7 +90,8 @@ The JSON report includes:
 - context token estimates, answerer/judge token usage and configured token cost;
 - memo-stack vs mem0 deltas for accuracy, retrieval recall, retrieved count,
   latency, context tokens and token cost;
-- top-k cutoff metrics;
+- configured top-k cutoff metrics, with pre-cutoff stage failures counted as
+  failed scored cases;
 - per-case failure analysis with backend, group, score, retrieval recall and
   missing terms;
 - backend reset/ingest/search/answer/judge exceptions as scored stage failures with

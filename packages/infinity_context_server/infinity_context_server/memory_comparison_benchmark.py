@@ -276,6 +276,7 @@ def run_memory_comparison_benchmark(
             backend_name=backend_name,
             min_accuracy=min_accuracy,
             primary_cutoff=primary_cutoff,
+            cutoffs=cutoffs,
             answerer_token_cost_rate=answerer_token_cost_rate,
             judge_token_cost_rate=judge_token_cost_rate,
         )
@@ -516,6 +517,7 @@ def _backend_metrics(
     backend_name: str,
     min_accuracy: float,
     primary_cutoff: int,
+    cutoffs: Sequence[int],
     answerer_token_cost_rate: TokenCostRate,
     judge_token_cost_rate: TokenCostRate,
 ) -> dict[str, object]:
@@ -558,7 +560,11 @@ def _backend_metrics(
         ),
         "by_category": by_category,
         "by_group": by_group,
-        "by_cutoff": _cutoff_metrics(backend_items, primary_cutoff=primary_cutoff),
+        "by_cutoff": _cutoff_metrics(
+            backend_items,
+            configured_cutoffs=cutoffs,
+            primary_cutoff=primary_cutoff,
+        ),
     }
 
 
@@ -580,10 +586,12 @@ def _bucket_metrics(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
 def _cutoff_metrics(
     items: Sequence[Mapping[str, object]],
     *,
+    configured_cutoffs: Sequence[int],
     primary_cutoff: int,
 ) -> dict[str, object]:
     cutoffs = sorted(
-        {
+        set(configured_cutoffs)
+        | {
             int(cutoff)
             for item in items
             for cutoff in _mapping(item.get("cutoff_results"))

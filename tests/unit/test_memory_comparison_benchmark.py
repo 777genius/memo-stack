@@ -467,6 +467,14 @@ def test_memory_comparison_benchmark_records_search_failures(
 
     assert result["backend_metrics"]["memo-stack"]["accuracy"] == 1.0
     assert result["backend_metrics"]["mem0"]["accuracy"] == 0.0
+    assert result["backend_metrics"]["mem0"]["by_cutoff"]["1"] == {
+        "primary": True,
+        "total": 1,
+        "passed": 0,
+        "failed": 1,
+        "accuracy": 0.0,
+        "avg_score": 0.0,
+    }
     assert result["failure_analysis"][0]["backend"] == "mem0"
     assert result["failure_analysis"][0]["reason"] == "search_failed"
     assert result["evaluations"][1]["judgment"]["verdict"] == "error"
