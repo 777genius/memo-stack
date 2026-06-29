@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any, Literal, Protocol
 
 from infinity_context_server.public_benchmark_models import PublicBenchmarkCase
@@ -19,6 +20,24 @@ class TokenUsage:
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+
+@dataclass(frozen=True)
+class TokenCostRate:
+    input_usd_per_1m: float = 0.0
+    output_usd_per_1m: float = 0.0
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("input_usd_per_1m", self.input_usd_per_1m),
+            ("output_usd_per_1m", self.output_usd_per_1m),
+        ):
+            if not isfinite(value) or value < 0:
+                raise ValueError(f"{label} must be a non-negative finite number")
+
+    @property
+    def is_configured(self) -> bool:
+        return self.input_usd_per_1m > 0 or self.output_usd_per_1m > 0
 
 
 @dataclass(frozen=True)
@@ -143,6 +162,26 @@ def token_usage_payload(usage: TokenUsage) -> dict[str, int]:
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,
         "total_tokens": usage.total_tokens,
+    }
+
+
+def token_cost_rate_payload(rate: TokenCostRate) -> dict[str, float]:
+    return {
+        "input_usd_per_1m": rate.input_usd_per_1m,
+        "output_usd_per_1m": rate.output_usd_per_1m,
+    }
+
+
+def token_cost_payload(usage: TokenUsage, rate: TokenCostRate) -> dict[str, object]:
+    input_usd = usage.prompt_tokens * rate.input_usd_per_1m / 1_000_000
+    output_usd = usage.completion_tokens * rate.output_usd_per_1m / 1_000_000
+    return {
+        "configured": rate.is_configured,
+        "currency": "USD",
+        "input_usd": round(input_usd, 8),
+        "output_usd": round(output_usd, 8),
+        "total_usd": round(input_usd + output_usd, 8),
+        "rates_per_1m_tokens": token_cost_rate_payload(rate),
     }
 
 

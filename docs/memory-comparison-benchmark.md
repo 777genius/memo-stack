@@ -19,6 +19,10 @@ MEMORY_SERVICE_TOKEN=... \
 MEMORY_OPENAI_API_KEY=... \
 MEMORY_COMPARISON_ANSWERER_MODEL=... \
 MEMORY_COMPARISON_JUDGE_MODEL=... \
+MEMORY_COMPARISON_ANSWERER_INPUT_USD_PER_1M=... \
+MEMORY_COMPARISON_ANSWERER_OUTPUT_USD_PER_1M=... \
+MEMORY_COMPARISON_JUDGE_INPUT_USD_PER_1M=... \
+MEMORY_COMPARISON_JUDGE_OUTPUT_USD_PER_1M=... \
 python -m infinity_context_server.eval memory-comparison-benchmark \
   --dataset ./datasets/locomo10.json \
   --memo-api-url http://127.0.0.1:8000 \
@@ -33,6 +37,10 @@ python -m infinity_context_server.eval memory-comparison-benchmark \
   --top-k-cutoff 200 \
   --answerer-provider openai \
   --judge-provider openai \
+  --answerer-input-usd-per-1m 2.50 \
+  --answerer-output-usd-per-1m 10.00 \
+  --judge-input-usd-per-1m 2.50 \
+  --judge-output-usd-per-1m 10.00 \
   --allow-live \
   --allow-paid-llm \
   --run-id locomo-side-by-side-sandbox-001 \
@@ -56,6 +64,9 @@ Use deterministic answer/judge for a no-paid dry run by omitting
 - OpenAI key is read from `MEMORY_OPENAI_API_KEY` by default, with
   `OPENAI_API_KEY` as fallback. Do not commit keys or generated raw provider
   payloads.
+- Token cost reporting uses explicit USD-per-1M-token rates from CLI flags or
+  `MEMORY_COMPARISON_*_USD_PER_1M` env vars. The runner does not hardcode
+  provider prices.
 - The memo-stack backend isolates state with a run-specific benchmark space.
 - The mem0 backend uses a run-specific `user_id` / `run_id` and deletes that
   isolated user/run at startup by default.
@@ -70,7 +81,7 @@ The JSON report includes:
 - LoCoMo category 5 reported but excluded from scored accuracy;
 - retrieved memory count, retrieval recall and missing expected terms;
 - ingest/search/generation/judge latency averages;
-- context token estimates and answerer/judge token usage;
+- context token estimates, answerer/judge token usage and configured token cost;
 - top-k cutoff metrics;
 - per-case failure analysis with backend, group, score, retrieval recall and
   missing terms;

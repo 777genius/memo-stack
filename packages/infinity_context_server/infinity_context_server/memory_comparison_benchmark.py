@@ -32,10 +32,14 @@ from infinity_context_server.memory_comparison_models import (
     MemoryComparisonBackendPort,
     MemoryComparisonJudgePort,
     RetrievedMemory,
+    TokenCostRate,
+    TokenUsage,
     answer_payload,
     ingestion_payload,
     judge_payload,
     search_payload,
+    token_cost_payload,
+    token_cost_rate_payload,
 )
 from infinity_context_server.public_benchmark import (
     LOCOMO_BENCHMARK_SUITE,
@@ -96,6 +100,8 @@ def run_memory_comparison_benchmark(
     top_k: int = 200,
     top_k_cutoffs: Sequence[int] = (10, 20, 50, 200),
     run_id: str | None = None,
+    answerer_token_cost_rate: TokenCostRate | None = None,
+    judge_token_cost_rate: TokenCostRate | None = None,
 ) -> dict[str, object]:
     """Run a mem0-style benchmark against multiple memory backends."""
 
@@ -111,6 +117,8 @@ def run_memory_comparison_benchmark(
     started = time.perf_counter()
     answerer = answerer or EvidenceOnlyAnswerer()
     judge = judge or ExpectedTermsJudge()
+    answerer_token_cost_rate = answerer_token_cost_rate or TokenCostRate()
+    judge_token_cost_rate = judge_token_cost_rate or TokenCostRate()
     run_id = run_id or f"memory-comparison-{uuid.uuid4().hex[:12]}"
     requested_case_ids = normalize_requested_case_ids(case_ids)
     requested_capabilities = normalize_requested_capabilities(capabilities)
@@ -251,6 +259,8 @@ def run_memory_comparison_benchmark(
             backend_name=backend_name,
             min_accuracy=min_accuracy,
             primary_cutoff=primary_cutoff,
+            answerer_token_cost_rate=answerer_token_cost_rate,
+            judge_token_cost_rate=judge_token_cost_rate,
         )
         for backend_name in backend_names
     }
@@ -278,6 +288,11 @@ def run_memory_comparison_benchmark(
             "primary_cutoff": primary_cutoff,
             "answerer_model": answerer.model,
             "judge_model": judge.model,
+            "token_cost_rates": {
+                "currency": "USD",
+                "answerer": token_cost_rate_payload(answerer_token_cost_rate),
+                "judge": token_cost_rate_payload(judge_token_cost_rate),
+            },
             "backend_names": list(backend_names),
             "scoring_note": "LoCoMo category 5 is reported but excluded from scored accuracy.",
         },
@@ -477,6 +492,8 @@ def _backend_metrics(
     backend_name: str,
     min_accuracy: float,
     primary_cutoff: int,
+    answerer_token_cost_rate: TokenCostRate,
+    judge_token_cost_rate: TokenCostRate,
 ) -> dict[str, object]:
     backend_items = [item for item in evaluations if item.get("backend") == backend_name]
     scored = [item for item in backend_items if item.get("scored") is True]
@@ -506,6 +523,11 @@ def _backend_metrics(
         "avg_context_tokens": _avg(_context_tokens(item) for item in backend_items),
         "expected_term_recall": _avg(_retrieval_recall(item) for item in scored),
         "token_usage": _token_usage_summary(backend_items),
+        "token_cost": _token_cost_summary(
+            backend_items,
+            answerer_token_cost_rate=answerer_token_cost_rate,
+            judge_token_cost_rate=judge_token_cost_rate,
+        ),
         "by_group": by_group,
         "by_cutoff": _cutoff_metrics(backend_items, primary_cutoff=primary_cutoff),
     }
@@ -841,19 +863,69 @@ def _retrieval_recall(item: Mapping[str, object]) -> float:
     return float(_mapping(item.get("retrieval_quality")).get("expected_term_recall", 0.0))
 
 
-def _token_usage_summary(items: Sequence[Mapping[str, object]]) -> dict[str, int]:
-    prompt_tokens = 0
-    completion_tokens = 0
-    for item in items:
-        for stage in ("generation", "judgment"):
-            usage = _mapping(_mapping(item.get(stage)).get("token_usage"))
-            prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
-            completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+def _token_usage_summary(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    answerer = _stage_token_usage_summary(items, "generation")
+    judge = _stage_token_usage_summary(items, "judgment")
+    prompt_tokens = answerer.prompt_tokens + judge.prompt_tokens
+    completion_tokens = answerer.completion_tokens + judge.completion_tokens
     return {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": prompt_tokens + completion_tokens,
+        "by_stage": {
+            "answerer": {
+                "prompt_tokens": answerer.prompt_tokens,
+                "completion_tokens": answerer.completion_tokens,
+                "total_tokens": answerer.total_tokens,
+            },
+            "judge": {
+                "prompt_tokens": judge.prompt_tokens,
+                "completion_tokens": judge.completion_tokens,
+                "total_tokens": judge.total_tokens,
+            },
+        },
     }
+
+
+def _token_cost_summary(
+    items: Sequence[Mapping[str, object]],
+    *,
+    answerer_token_cost_rate: TokenCostRate,
+    judge_token_cost_rate: TokenCostRate,
+) -> dict[str, object]:
+    answerer_usage = _stage_token_usage_summary(items, "generation")
+    judge_usage = _stage_token_usage_summary(items, "judgment")
+    answerer_cost = token_cost_payload(answerer_usage, answerer_token_cost_rate)
+    judge_cost = token_cost_payload(judge_usage, judge_token_cost_rate)
+    return {
+        "configured": (
+            answerer_token_cost_rate.is_configured
+            or judge_token_cost_rate.is_configured
+        ),
+        "currency": "USD",
+        "answerer": answerer_cost,
+        "judge": judge_cost,
+        "total_usd": round(
+            float(answerer_cost["total_usd"]) + float(judge_cost["total_usd"]),
+            8,
+        ),
+    }
+
+
+def _stage_token_usage_summary(
+    items: Sequence[Mapping[str, object]],
+    stage: str,
+) -> TokenUsage:
+    prompt_tokens = 0
+    completion_tokens = 0
+    for item in items:
+        usage = _mapping(_mapping(item.get(stage)).get("token_usage"))
+        prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+    return TokenUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
 
 def _group_by(

@@ -21,6 +21,7 @@ from infinity_context_server.memory_comparison_models import (
     BackendIngestResult,
     BackendSearchResult,
     RetrievedMemory,
+    TokenCostRate,
 )
 from infinity_context_server.public_benchmark_models import (
     BenchmarkDocumentInput,
@@ -123,6 +124,14 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
         top_k_cutoffs=(1, 2),
         run_id="unit-run",
         cases_override=(case,),
+        answerer_token_cost_rate=TokenCostRate(
+            input_usd_per_1m=2.0,
+            output_usd_per_1m=8.0,
+        ),
+        judge_token_cost_rate=TokenCostRate(
+            input_usd_per_1m=3.0,
+            output_usd_per_1m=9.0,
+        ),
     )
 
     assert result["evaluation_mode"] == MEMORY_COMPARISON_MODE
@@ -134,6 +143,31 @@ def test_memory_comparison_benchmark_reports_side_by_side_metrics(
     assert result["backend_metrics"]["memo-stack"]["by_group"]["single-hop"]["total"] == 1
     assert result["failure_analysis"][0]["backend"] == "mem0"
     assert result["evaluations"][0]["cutoff_results"]["1"]["judgment"]["score"] == 1.0
+    token_usage = result["backend_metrics"]["memo-stack"]["token_usage"]["by_stage"]
+    token_cost = result["backend_metrics"]["memo-stack"]["token_cost"]
+    expected_answerer_cost = round(
+        (
+            token_usage["answerer"]["prompt_tokens"] * 2.0
+            + token_usage["answerer"]["completion_tokens"] * 8.0
+        )
+        / 1_000_000,
+        8,
+    )
+    expected_judge_cost = round(
+        (
+            token_usage["judge"]["prompt_tokens"] * 3.0
+            + token_usage["judge"]["completion_tokens"] * 9.0
+        )
+        / 1_000_000,
+        8,
+    )
+    assert token_cost["configured"] is True
+    assert token_cost["answerer"]["total_usd"] == expected_answerer_cost
+    assert token_cost["judge"]["total_usd"] == expected_judge_cost
+    assert token_cost["total_usd"] == round(
+        expected_answerer_cost + expected_judge_cost,
+        8,
+    )
 
 
 def test_memory_comparison_benchmark_reuses_ingested_corpus(
@@ -421,6 +455,14 @@ def test_memory_comparison_cli_closes_live_backend_clients(
         backends = kwargs["backends"]
         assert tuple(backend.name for backend in backends) == ("memo-stack", "mem0")
         assert kwargs["capabilities"] == ("single-hop", "temporal")
+        assert kwargs["answerer_token_cost_rate"] == TokenCostRate(
+            input_usd_per_1m=2.5,
+            output_usd_per_1m=10.0,
+        )
+        assert kwargs["judge_token_cost_rate"] == TokenCostRate(
+            input_usd_per_1m=3.5,
+            output_usd_per_1m=12.0,
+        )
         return {
             "suite": "memory-comparison-benchmark",
             "ok": True,
@@ -449,6 +491,14 @@ def test_memory_comparison_cli_closes_live_backend_clients(
             "single-hop",
             "--capability",
             "temporal",
+            "--answerer-input-usd-per-1m",
+            "2.5",
+            "--answerer-output-usd-per-1m",
+            "10",
+            "--judge-input-usd-per-1m",
+            "3.5",
+            "--judge-output-usd-per-1m",
+            "12",
         ]
     )
 

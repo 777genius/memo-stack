@@ -2492,6 +2492,42 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Environment variable containing the OpenAI API key for paid LLM runs.",
     )
     memory_comparison.add_argument(
+        "--answerer-input-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Answerer input-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_ANSWERER_INPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison.add_argument(
+        "--answerer-output-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Answerer output-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_ANSWERER_OUTPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison.add_argument(
+        "--judge-input-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Judge input-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_JUDGE_INPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison.add_argument(
+        "--judge-output-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Judge output-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_JUDGE_OUTPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison.add_argument(
         "--allow-paid-llm",
         action="store_true",
         help="Required when answerer-provider or judge-provider is openai.",
@@ -2640,6 +2676,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                     answerer=answerer,
                     judge=judge,
                     backends=backends,
+                    answerer_token_cost_rate=_memory_comparison_token_cost_rate_from_args(
+                        input_value=args.answerer_input_usd_per_1m,
+                        output_value=args.answerer_output_usd_per_1m,
+                        input_env_name="MEMORY_COMPARISON_ANSWERER_INPUT_USD_PER_1M",
+                        output_env_name="MEMORY_COMPARISON_ANSWERER_OUTPUT_USD_PER_1M",
+                    ),
+                    judge_token_cost_rate=_memory_comparison_token_cost_rate_from_args(
+                        input_value=args.judge_input_usd_per_1m,
+                        output_value=args.judge_output_usd_per_1m,
+                        input_env_name="MEMORY_COMPARISON_JUDGE_INPUT_USD_PER_1M",
+                        output_env_name="MEMORY_COMPARISON_JUDGE_OUTPUT_USD_PER_1M",
+                    ),
                 )
             finally:
                 _close_memory_comparison_clients(answerer, judge, *backends)
@@ -2711,6 +2759,39 @@ def _memory_comparison_model_from_args(
     if not model:
         raise SystemExit(f"pass --{label}-model or set {env_name}")
     return model
+
+
+def _memory_comparison_token_cost_rate_from_args(
+    *,
+    input_value: float | None,
+    output_value: float | None,
+    input_env_name: str,
+    output_env_name: str,
+):
+    from infinity_context_server.memory_comparison_models import TokenCostRate
+
+    return TokenCostRate(
+        input_usd_per_1m=_memory_comparison_float_setting(
+            input_value,
+            env_name=input_env_name,
+        ),
+        output_usd_per_1m=_memory_comparison_float_setting(
+            output_value,
+            env_name=output_env_name,
+        ),
+    )
+
+
+def _memory_comparison_float_setting(value: float | None, *, env_name: str) -> float:
+    if value is not None:
+        return value
+    raw = os.getenv(env_name)
+    if raw is None or not raw.strip():
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise SystemExit(f"{env_name} must be a number") from exc
 
 
 def _close_memory_comparison_clients(*clients: object | None) -> None:
