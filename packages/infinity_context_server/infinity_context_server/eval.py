@@ -2492,16 +2492,30 @@ def main(argv: Sequence[str] | None = None) -> None:
     memory_comparison.add_argument("--report-out", type=Path, default=None)
     memory_comparison.add_argument(
         "--answerer-provider",
-        choices=("deterministic", "openai"),
+        choices=("deterministic", "openai", "codex"),
         default="deterministic",
     )
     memory_comparison.add_argument(
         "--judge-provider",
-        choices=("deterministic", "openai"),
+        choices=("deterministic", "openai", "codex"),
         default="deterministic",
     )
     memory_comparison.add_argument("--answerer-model", default=None)
     memory_comparison.add_argument("--judge-model", default=None)
+    memory_comparison.add_argument(
+        "--codex-command",
+        default=os.getenv("MEMORY_COMPARISON_CODEX_COMMAND", "codex"),
+        help="Codex CLI command for provider=codex.",
+    )
+    memory_comparison.add_argument(
+        "--codex-timeout-seconds",
+        type=float,
+        default=_memory_comparison_float_env_default(
+            "MEMORY_COMPARISON_CODEX_TIMEOUT_SECONDS",
+            180.0,
+        ),
+        help="Per Codex CLI answer/judge timeout for provider=codex.",
+    )
     memory_comparison.add_argument(
         "--openai-api-key-env",
         default="MEMORY_OPENAI_API_KEY",
@@ -2725,25 +2739,30 @@ def _memory_comparison_llms_from_args(args: argparse.Namespace):
     judge_provider = str(args.judge_provider)
     if answerer_provider == "deterministic" and judge_provider == "deterministic":
         return None, None
-    if not args.allow_paid_llm:
+    uses_openai = answerer_provider == "openai" or judge_provider == "openai"
+    if uses_openai and not args.allow_paid_llm:
         raise SystemExit(
             "OpenAI memory comparison LLMs are paid/manual only; pass --allow-paid-llm"
         )
-    api_key = os.getenv(str(args.openai_api_key_env)) or os.getenv("OPENAI_API_KEY")
-    if not api_key:
+    api_key = ""
+    if uses_openai:
+        api_key = os.getenv(str(args.openai_api_key_env)) or os.getenv("OPENAI_API_KEY") or ""
+    if uses_openai and not api_key:
         raise SystemExit(
             f"{args.openai_api_key_env} or OPENAI_API_KEY is required for paid LLM runs"
         )
 
     from infinity_context_server.memory_comparison_llm import (
+        CodexCliAnswerer,
+        CodexCliJudge,
         EvidenceOnlyAnswerer,
         ExpectedTermsJudge,
         OpenAIResponsesAnswerer,
         OpenAIResponsesJudge,
     )
 
-    answerer = (
-        OpenAIResponsesAnswerer(
+    if answerer_provider == "openai":
+        answerer = OpenAIResponsesAnswerer(
             api_key=api_key,
             model=_memory_comparison_model_from_args(
                 args.answerer_model,
@@ -2751,11 +2770,21 @@ def _memory_comparison_llms_from_args(args: argparse.Namespace):
                 label="answerer",
             ),
         )
-        if answerer_provider == "openai"
-        else EvidenceOnlyAnswerer()
-    )
-    judge = (
-        OpenAIResponsesJudge(
+    elif answerer_provider == "codex":
+        answerer = CodexCliAnswerer(
+            model=_memory_comparison_codex_model_from_args(
+                args.answerer_model,
+                env_name="MEMORY_COMPARISON_ANSWERER_MODEL",
+                label="answerer",
+            ),
+            codex_command=str(args.codex_command),
+            timeout_seconds=float(args.codex_timeout_seconds),
+        )
+    else:
+        answerer = EvidenceOnlyAnswerer()
+
+    if judge_provider == "openai":
+        judge = OpenAIResponsesJudge(
             api_key=api_key,
             model=_memory_comparison_model_from_args(
                 args.judge_model,
@@ -2763,10 +2792,36 @@ def _memory_comparison_llms_from_args(args: argparse.Namespace):
                 label="judge",
             ),
         )
-        if judge_provider == "openai"
-        else ExpectedTermsJudge()
-    )
+    elif judge_provider == "codex":
+        judge = CodexCliJudge(
+            model=_memory_comparison_codex_model_from_args(
+                args.judge_model,
+                env_name="MEMORY_COMPARISON_JUDGE_MODEL",
+                label="judge",
+            ),
+            codex_command=str(args.codex_command),
+            timeout_seconds=float(args.codex_timeout_seconds),
+        )
+    else:
+        judge = ExpectedTermsJudge()
     return answerer, judge
+
+
+def _memory_comparison_codex_model_from_args(
+    value: str | None,
+    *,
+    env_name: str,
+    label: str,
+) -> str:
+    model = (
+        value
+        or os.getenv(env_name)
+        or os.getenv("MEMORY_COMPARISON_CODEX_MODEL")
+        or "gpt-5.5"
+    ).strip()
+    if not model:
+        raise SystemExit(f"pass --{label}-model or set {env_name}")
+    return model
 
 
 def _memory_comparison_model_from_args(
@@ -2779,6 +2834,16 @@ def _memory_comparison_model_from_args(
     if not model:
         raise SystemExit(f"pass --{label}-model or set {env_name}")
     return model
+
+
+def _memory_comparison_float_env_default(env_name: str, fallback: float) -> float:
+    raw_value = os.getenv(env_name)
+    if raw_value is None:
+        return fallback
+    try:
+        return float(raw_value)
+    except ValueError as exc:
+        raise SystemExit(f"{env_name} must be a float") from exc
 
 
 def _memory_comparison_token_cost_rate_from_args(

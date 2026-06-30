@@ -17,6 +17,8 @@ from infinity_context_server.memory_comparison_benchmark import (
     run_memory_comparison_benchmark,
 )
 from infinity_context_server.memory_comparison_llm import (
+    CodexCliAnswerer,
+    CodexCliJudge,
     EvidenceOnlyAnswerer,
     ExpectedTermsJudge,
     OpenAIResponsesAnswerer,
@@ -624,6 +626,31 @@ def test_memory_comparison_cli_paid_llm_is_separately_gated(
     assert "--allow-paid-llm" in str(exc_info.value)
 
 
+def test_memory_comparison_codex_provider_does_not_require_openai_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MEMORY_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    answerer, judge = eval_module._memory_comparison_llms_from_args(
+        SimpleNamespace(
+            answerer_provider="codex",
+            judge_provider="codex",
+            allow_paid_llm=False,
+            openai_api_key_env="MEMORY_OPENAI_API_KEY",
+            answerer_model=None,
+            judge_model=None,
+            codex_command="codex",
+            codex_timeout_seconds=12.0,
+        )
+    )
+
+    assert isinstance(answerer, CodexCliAnswerer)
+    assert isinstance(judge, CodexCliJudge)
+    assert answerer.model == "gpt-5.5"
+    assert judge.model == "gpt-5.5"
+
+
 def test_memory_comparison_cli_closes_live_backend_clients(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1049,6 +1076,73 @@ def test_openai_responses_llm_adapters_parse_fake_client() -> None:
     assert judgment.score == 1.0
     assert fake_client.responses.calls[0]["store"] is False
     assert fake_client.responses.calls[1]["text"]["format"]["type"] == "json_schema"
+
+
+def test_codex_cli_llm_adapters_use_safe_exec_args_and_parse_fake_runner() -> None:
+    case = _case(
+        case_id="conv-1:qa:1",
+        question="Where is the checklist?",
+        expected_terms=("blue notebook",),
+        answer="blue notebook",
+    )
+    memories = (RetrievedMemory(text="The checklist is in the blue notebook.", rank=1),)
+    calls: list[dict[str, object]] = []
+
+    def fake_runner(
+        args: Sequence[str],
+        prompt: str,
+        timeout_seconds: float,
+        cwd: Path | None,
+    ) -> str:
+        calls.append(
+            {
+                "args": tuple(args),
+                "prompt": prompt,
+                "timeout_seconds": timeout_seconds,
+                "cwd": cwd,
+            }
+        )
+        assert "--ignore-user-config" in args
+        assert "--ignore-rules" in args
+        assert "--skip-git-repo-check" in args
+        assert "read-only" in args
+        assert 'approval_policy="never"' in args
+        if "memory benchmark answerer" in prompt:
+            return "It is in the blue notebook."
+        return '```json\n{"verdict":"correct","score":1,"reason":"Supported."}\n```'
+
+    answerer = CodexCliAnswerer(
+        model="gpt-5.5",
+        codex_command="unit-codex",
+        timeout_seconds=9.0,
+        command_runner=fake_runner,
+        cwd=Path("/tmp"),
+    )
+    judge = CodexCliJudge(
+        model="gpt-5.5",
+        codex_command="unit-codex",
+        timeout_seconds=9.0,
+        command_runner=fake_runner,
+        cwd=Path("/tmp"),
+    )
+
+    answer = answerer.answer(case, memories, backend_name="memo-stack", cutoff=1)
+    judgment = judge.judge(
+        case,
+        answer,
+        memories,
+        backend_name="memo-stack",
+        cutoff=1,
+    )
+
+    assert answer.answer == "It is in the blue notebook."
+    assert answer.metadata["provider"] == "codex-cli"
+    assert judgment.verdict == "correct"
+    assert judgment.score == 1.0
+    assert tuple(calls[0]["args"])[0] == "unit-codex"
+    assert tuple(calls[0]["args"])[-1] == "-"
+    assert calls[0]["timeout_seconds"] == 9.0
+    assert calls[0]["cwd"] == Path("/tmp")
 
 
 def _case(

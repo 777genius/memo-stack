@@ -8,9 +8,14 @@ explicitly env-gated by the caller.
 from __future__ import annotations
 
 import json
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
+
+from infinity_context_core.application.sensitive_text import redact_sensitive_text
 
 from infinity_context_server.memory_comparison_models import (
     AnswerResult,
@@ -19,6 +24,8 @@ from infinity_context_server.memory_comparison_models import (
     TokenUsage,
 )
 from infinity_context_server.public_benchmark_models import PublicBenchmarkCase
+
+CodexCommandRunner = Callable[[Sequence[str], str, float, Path | None], str]
 
 
 def approximate_token_count(text: str) -> int:
@@ -315,6 +322,165 @@ class OpenAIResponsesJudge:
         return self._client
 
 
+class CodexCliAnswerer:
+    """Codex CLI answerer for manual benchmark runs without an OpenAI API key."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        codex_command: str = "codex",
+        timeout_seconds: float = 180.0,
+        command_runner: CodexCommandRunner | None = None,
+        cwd: Path | None = None,
+    ) -> None:
+        self.model = _require_nonblank(model, "CodexCliAnswerer requires a model")
+        self._codex_command = _require_nonblank(
+            codex_command,
+            "CodexCliAnswerer requires a codex command",
+        )
+        self._timeout_seconds = _positive_timeout(timeout_seconds)
+        self._command_runner = command_runner
+        self._cwd = cwd
+
+    def answer(
+        self,
+        case: PublicBenchmarkCase,
+        memories: Sequence[RetrievedMemory],
+        *,
+        backend_name: str,
+        cutoff: int,
+    ) -> AnswerResult:
+        started = time.perf_counter()
+        evidence_prompt = render_answer_prompt(case, memories, cutoff=cutoff)
+        prompt = "\n".join(
+            (
+                "You are a memory benchmark answerer.",
+                "Do not use tools, files, network, prior knowledge, or hidden context.",
+                "Use only the retrieved memory evidence in the prompt.",
+                "Return the final answer text only.",
+                "",
+                evidence_prompt,
+            )
+        )
+        answer = self._run(prompt).strip()
+        return AnswerResult(
+            answer=answer,
+            model=self.model,
+            latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            token_usage=TokenUsage(
+                prompt_tokens=approximate_token_count(prompt),
+                completion_tokens=approximate_token_count(answer),
+            ),
+            metadata={
+                "backend_name": backend_name,
+                "cutoff": cutoff,
+                "provider": "codex-cli",
+                "codex_command": self._codex_command,
+            },
+        )
+
+    def close(self) -> None:
+        return None
+
+    def _run(self, prompt: str) -> str:
+        if self._command_runner is not None:
+            return self._command_runner(
+                _codex_exec_args(self._codex_command, self.model, None),
+                prompt,
+                self._timeout_seconds,
+                self._cwd,
+            )
+        return _run_codex_cli(
+            codex_command=self._codex_command,
+            model=self.model,
+            prompt=prompt,
+            timeout_seconds=self._timeout_seconds,
+            cwd=self._cwd,
+        )
+
+
+class CodexCliJudge:
+    """Codex CLI judge for manual benchmark runs without an OpenAI API key."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        codex_command: str = "codex",
+        timeout_seconds: float = 180.0,
+        command_runner: CodexCommandRunner | None = None,
+        cwd: Path | None = None,
+    ) -> None:
+        self.model = _require_nonblank(model, "CodexCliJudge requires a model")
+        self._codex_command = _require_nonblank(
+            codex_command,
+            "CodexCliJudge requires a codex command",
+        )
+        self._timeout_seconds = _positive_timeout(timeout_seconds)
+        self._command_runner = command_runner
+        self._cwd = cwd
+
+    def judge(
+        self,
+        case: PublicBenchmarkCase,
+        answer: AnswerResult,
+        memories: Sequence[RetrievedMemory],
+        *,
+        backend_name: str,
+        cutoff: int,
+    ) -> JudgeResult:
+        started = time.perf_counter()
+        prompt = "\n".join(
+            (
+                "You are an objective LoCoMo memory benchmark judge.",
+                "Do not use tools, files, network, prior knowledge, or hidden context.",
+                "Return JSON only with keys verdict, score, and reason.",
+                'Use verdict "correct", "incorrect", or "error"; score must be 0..1.',
+                "",
+                _judge_prompt(case, answer, memories),
+            )
+        )
+        raw_text = self._run(prompt)
+        payload = _parse_judge_payload(raw_text)
+        return JudgeResult(
+            verdict=payload["verdict"],
+            score=payload["score"],
+            reason=payload["reason"],
+            model=self.model,
+            latency_ms=round((time.perf_counter() - started) * 1000, 2),
+            token_usage=TokenUsage(
+                prompt_tokens=approximate_token_count(prompt),
+                completion_tokens=approximate_token_count(raw_text),
+            ),
+            metadata={
+                "backend_name": backend_name,
+                "cutoff": cutoff,
+                "provider": "codex-cli",
+                "codex_command": self._codex_command,
+            },
+        )
+
+    def close(self) -> None:
+        return None
+
+    def _run(self, prompt: str) -> str:
+        if self._command_runner is not None:
+            return self._command_runner(
+                _codex_exec_args(self._codex_command, self.model, None),
+                prompt,
+                self._timeout_seconds,
+                self._cwd,
+            )
+        return _run_codex_cli(
+            codex_command=self._codex_command,
+            model=self.model,
+            prompt=prompt,
+            timeout_seconds=self._timeout_seconds,
+            cwd=self._cwd,
+        )
+
+
 def _judge_prompt(
     case: PublicBenchmarkCase,
     answer: AnswerResult,
@@ -356,18 +522,37 @@ def _judge_schema() -> dict[str, Any]:
 
 
 def _parse_judge_payload(raw_text: str) -> dict[str, Any]:
+    json_text = _extract_json_object(raw_text)
     try:
-        payload = json.loads(raw_text)
+        payload = json.loads(json_text)
     except json.JSONDecodeError as exc:
-        raise ValueError("OpenAI judge returned invalid JSON") from exc
+        raise ValueError("LLM judge returned invalid JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError("OpenAI judge returned non-object JSON")
+        raise ValueError("LLM judge returned non-object JSON")
     verdict = str(payload.get("verdict") or "").strip().lower()
     if verdict not in {"correct", "incorrect", "error"}:
-        raise ValueError("OpenAI judge returned invalid verdict")
+        raise ValueError("LLM judge returned invalid verdict")
     score = _bounded_score(payload.get("score"))
     reason = str(payload.get("reason") or "")[:1000]
     return {"verdict": verdict, "score": score, "reason": reason}
+
+
+def _extract_json_object(raw_text: str) -> str:
+    text = str(raw_text or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    if text.startswith("{"):
+        return text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return text[start : end + 1]
+    return text
 
 
 def _bounded_score(value: object) -> float:
@@ -416,3 +601,94 @@ def _usage_int(usage: object, *names: str) -> int:
         if isinstance(value, int | float):
             return max(0, int(value))
     return 0
+
+
+def _require_nonblank(value: str, message: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise ValueError(message)
+    return normalized
+
+
+def _positive_timeout(value: float) -> float:
+    timeout = float(value)
+    if timeout <= 0:
+        raise ValueError("Codex CLI timeout must be positive")
+    return timeout
+
+
+def _codex_exec_args(
+    codex_command: str,
+    model: str,
+    output_path: Path | None,
+) -> list[str]:
+    args = [
+        codex_command,
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--sandbox",
+        "read-only",
+        "-c",
+        'approval_policy="never"',
+        "-m",
+        model,
+    ]
+    if output_path is not None:
+        args.extend(("-o", str(output_path)))
+    args.append("-")
+    return args
+
+
+def _run_codex_cli(
+    *,
+    codex_command: str,
+    model: str,
+    prompt: str,
+    timeout_seconds: float,
+    cwd: Path | None,
+) -> str:
+    output_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            prefix="memory-comparison-codex-",
+            suffix=".txt",
+            delete=False,
+        ) as output_file:
+            output_path = Path(output_file.name)
+        completed = subprocess.run(
+            _codex_exec_args(codex_command, model, output_path),
+            input=prompt,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+            cwd=str(cwd) if cwd is not None else None,
+        )
+        output_text = output_path.read_text(encoding="utf-8").strip() if output_path else ""
+        if completed.returncode != 0:
+            stderr_preview = _redacted_preview(completed.stderr)
+            raise ValueError(
+                f"Codex CLI exited with status {completed.returncode}: {stderr_preview}"
+            )
+        if not output_text:
+            output_text = completed.stdout.strip()
+        if not output_text:
+            raise ValueError("Codex CLI returned empty output")
+        return output_text
+    except FileNotFoundError as exc:
+        raise ValueError(f"Codex CLI command not found: {codex_command}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(f"Codex CLI timed out after {timeout_seconds:g}s") from exc
+    finally:
+        if output_path is not None:
+            output_path.unlink(missing_ok=True)
+
+
+def _redacted_preview(value: str) -> str:
+    redacted = redact_sensitive_text(str(value or ""))
+    return " ".join(redacted.split())[:1000]
