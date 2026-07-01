@@ -49,13 +49,12 @@ def render_answer_prompt(
         "Answer the question using only the retrieved memory evidence.",
         "If evidence is insufficient, say you do not have enough information.",
         f"Question: {case.question}",
-        f"Retrieved memories, top {cutoff}:",
+        _evidence_context_heading(memories, cutoff=cutoff),
     ]
     if not memories:
         lines.append("(No memories retrieved)")
-    for memory in memories:
-        refs = f" refs={','.join(memory.source_refs)}" if memory.source_refs else ""
-        lines.append(f"{memory.rank}. {memory.text}{refs}")
+    for index, memory in enumerate(memories, 1):
+        lines.append(_render_memory_evidence_line(memory, index=index))
     lines.append("Answer:")
     return "\n".join(lines)
 
@@ -89,6 +88,59 @@ class EvidenceOnlyAnswerer:
             ),
             metadata={"backend_name": backend_name, "cutoff": cutoff},
         )
+
+
+def _evidence_context_heading(
+    memories: Sequence[RetrievedMemory],
+    *,
+    cutoff: int,
+) -> str:
+    if any("answer_context_role" in memory.metadata for memory in memories):
+        return f"Planned evidence context, cutoff {cutoff}:"
+    return f"Retrieved memories, top {cutoff}:"
+
+
+def _render_memory_evidence_line(memory: RetrievedMemory, *, index: int) -> str:
+    refs = f" refs={','.join(memory.source_refs)}" if memory.source_refs else ""
+    metadata = memory.metadata
+    role = str(metadata.get("answer_context_role") or "").strip()
+    if not role:
+        return f"{memory.rank}. {memory.text}{refs}"
+
+    labels = [f"role={role}", f"rank={memory.rank}"]
+    retrieval_order = metadata.get("answer_context_retrieval_order")
+    if isinstance(retrieval_order, int):
+        labels.append(f"retrieval_order={retrieval_order}")
+    answerability = _prompt_score(metadata.get("answer_context_answerability_score"))
+    if answerability is not None:
+        labels.append(f"answerability={answerability}")
+    confidence = _prompt_score(
+        metadata.get("answer_context_bundle_confidence_score")
+    )
+    confidence_band = str(
+        metadata.get("answer_context_bundle_confidence_band") or ""
+    ).strip()
+    if confidence is not None and confidence_band:
+        labels.append(f"bundle={confidence_band}:{confidence}")
+    elif confidence is not None:
+        labels.append(f"bundle={confidence}")
+    missing_roles = _string_sequence(
+        metadata.get("answer_context_missing_required_roles")
+    )
+    if missing_roles:
+        labels.append(f"missing_roles={','.join(missing_roles[:4])}")
+    role_complete = metadata.get("answer_context_role_requirement_complete")
+    if role_complete is False:
+        labels.append("role_complete=false")
+    reason_codes = _string_sequence(metadata.get("answer_context_reason_codes"))
+    if reason_codes:
+        labels.append(f"reasons={','.join(reason_codes[:4])}")
+    risk_reasons = _string_sequence(
+        metadata.get("answer_context_bundle_risk_reason_codes")
+    )
+    if risk_reasons:
+        labels.append(f"risks={','.join(risk_reasons[:3])}")
+    return f"{index}. [{' '.join(labels)}] {memory.text}{refs}"
 
 
 class ExpectedTermsJudge:
@@ -153,6 +205,27 @@ def _judge_prompt_preview(
 
 def _normalize_text(value: str) -> str:
     return " ".join(str(value or "").casefold().split())
+
+
+def _prompt_score(value: object) -> str | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return f"{parsed:.2f}".rstrip("0").rstrip(".")
+
+
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return (stripped,) if stripped else ()
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
 
 
 class OpenAIResponsesAnswerer:

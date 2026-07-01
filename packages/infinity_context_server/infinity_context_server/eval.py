@@ -123,6 +123,17 @@ from infinity_context_server.eval_types import (  # noqa: F401
 from infinity_context_server.main import create_app
 from infinity_context_server.memory_comparison_benchmark import (
     run_memory_comparison_benchmark,
+    run_memory_comparison_replay,
+)
+from infinity_context_server.memory_comparison_cli import (
+    _close_memory_comparison_clients,
+    _memory_comparison_float_env_default,
+    _memory_comparison_llms_from_args,
+    _memory_comparison_token_cost_rate_from_args,
+)
+from infinity_context_server.memory_comparison_preflight import (
+    MemoryComparisonPreflightConfig,
+    run_memory_comparison_preflight,
 )
 from infinity_context_server.public_benchmark import run_public_memory_benchmark
 
@@ -2465,7 +2476,40 @@ def main(argv: Sequence[str] | None = None) -> None:
             "fresh run id when the mem0 API key cannot call admin reset endpoints."
         ),
     )
+    memory_comparison.add_argument(
+        "--mem0-send-timestamps",
+        action="store_true",
+        help=(
+            "Forward official LoCoMo timestamps to mem0. Leave disabled for mem0 OSS "
+            "no-key runs because current OSS Memory.add rejects timestamp."
+        ),
+    )
     memory_comparison.add_argument("--benchmark", default="locomo")
+    memory_comparison.add_argument(
+        "--locomo-ingest-mode",
+        choices=("rich-documents", "official-turns"),
+        default="rich-documents",
+        help=(
+            "For official LoCoMo datasets, use rich normalized documents or "
+            "official mem0-style one-turn memory chunks."
+        ),
+    )
+    memory_comparison.add_argument(
+        "--case-set",
+        choices=(
+            "all",
+            "locomo-fast",
+            "locomo-fast-multi-hop",
+            "locomo-fast-temporal",
+            "locomo-fast-open-domain",
+            "locomo-fast-single-hop",
+        ),
+        default="all",
+        help=(
+            "Fast diagnostic case set. Use locomo-fast for 10 scored questions "
+            "per LoCoMo group instead of the full benchmark."
+        ),
+    )
     memory_comparison.add_argument("--min-accuracy", type=float, default=0.0)
     memory_comparison.add_argument("--max-cases", type=int, default=None)
     memory_comparison.add_argument("--top-k", type=int, default=200)
@@ -2490,6 +2534,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     memory_comparison.add_argument("--run-id", default=None)
     memory_comparison.add_argument("--report-out", type=Path, default=None)
+    memory_comparison.add_argument(
+        "--report-mode",
+        choices=("full", "compact"),
+        default="full",
+        help=(
+            "Use compact to write metrics, aggregate diagnostics, and top "
+            "failures without embedding every retrieved result."
+        ),
+    )
+    memory_comparison.add_argument(
+        "--compact-failure-limit",
+        type=int,
+        default=50,
+        help="Maximum failure_analysis entries to keep in compact reports.",
+    )
     memory_comparison.add_argument(
         "--answerer-provider",
         choices=("deterministic", "openai", "codex"),
@@ -2566,6 +2625,124 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--allow-live",
         action="store_true",
         help="Required to run live memo-stack and mem0 HTTP comparison.",
+    )
+    memory_comparison.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Print sanitized readiness checks without running live benchmark state.",
+    )
+    memory_comparison.add_argument(
+        "--preflight-probe-services",
+        action="store_true",
+        help="During --preflight-only, probe memo-stack and mem0 HTTP roots.",
+    )
+    memory_comparison.add_argument(
+        "--preflight-timeout-seconds",
+        type=float,
+        default=1.5,
+        help="HTTP timeout for --preflight-probe-services.",
+    )
+    memory_comparison_replay = sub.add_parser("memory-comparison-replay")
+    memory_comparison_replay.add_argument("--report", type=Path, required=True)
+    memory_comparison_replay.add_argument("--report-out", type=Path, default=None)
+    memory_comparison_replay.add_argument("--min-accuracy", type=float, default=0.0)
+    memory_comparison_replay.add_argument(
+        "--top-k-cutoff",
+        action="append",
+        type=int,
+        default=None,
+        help="Replay answer/judge at this cutoff. Repeat for multiple cutoffs.",
+    )
+    memory_comparison_replay.add_argument(
+        "--primary-cutoff",
+        type=int,
+        default=None,
+        help="Primary cutoff for top-level generation, judgment and accuracy.",
+    )
+    memory_comparison_replay.add_argument("--run-id", default=None)
+    memory_comparison_replay.add_argument(
+        "--report-mode",
+        choices=("full", "compact"),
+        default="full",
+        help="Use compact to omit replayed per-case retrieval payloads.",
+    )
+    memory_comparison_replay.add_argument(
+        "--compact-failure-limit",
+        type=int,
+        default=50,
+        help="Maximum failure_analysis entries to keep in compact replay reports.",
+    )
+    memory_comparison_replay.add_argument(
+        "--answerer-provider",
+        choices=("deterministic", "openai", "codex"),
+        default="deterministic",
+    )
+    memory_comparison_replay.add_argument(
+        "--judge-provider",
+        choices=("deterministic", "openai", "codex"),
+        default="deterministic",
+    )
+    memory_comparison_replay.add_argument("--answerer-model", default=None)
+    memory_comparison_replay.add_argument("--judge-model", default=None)
+    memory_comparison_replay.add_argument(
+        "--codex-command",
+        default=os.getenv("MEMORY_COMPARISON_CODEX_COMMAND", "codex"),
+        help="Codex CLI command for provider=codex.",
+    )
+    memory_comparison_replay.add_argument(
+        "--codex-timeout-seconds",
+        type=float,
+        default=_memory_comparison_float_env_default(
+            "MEMORY_COMPARISON_CODEX_TIMEOUT_SECONDS",
+            180.0,
+        ),
+        help="Per Codex CLI answer/judge timeout for provider=codex.",
+    )
+    memory_comparison_replay.add_argument(
+        "--openai-api-key-env",
+        default="MEMORY_OPENAI_API_KEY",
+        help="Environment variable containing the OpenAI API key for paid LLM runs.",
+    )
+    memory_comparison_replay.add_argument(
+        "--answerer-input-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Answerer input-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_ANSWERER_INPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison_replay.add_argument(
+        "--answerer-output-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Answerer output-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_ANSWERER_OUTPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison_replay.add_argument(
+        "--judge-input-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Judge input-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_JUDGE_INPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison_replay.add_argument(
+        "--judge-output-usd-per-1m",
+        type=float,
+        default=None,
+        help=(
+            "Judge output-token price in USD per 1M tokens. Defaults to "
+            "MEMORY_COMPARISON_JUDGE_OUTPUT_USD_PER_1M when set."
+        ),
+    )
+    memory_comparison_replay.add_argument(
+        "--allow-paid-llm",
+        action="store_true",
+        help="Required when answerer-provider or judge-provider is openai.",
     )
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -2670,46 +2847,106 @@ def main(argv: Sequence[str] | None = None) -> None:
         except ValueError as exc:
             raise SystemExit(_safe_cli_error(exc)) from exc
     elif args.command == "memory-comparison-benchmark":
-        if not args.allow_live:
-            raise SystemExit(
-                "memory-comparison-benchmark is live/manual only; pass --allow-live"
+        if args.preflight_only:
+            result = run_memory_comparison_preflight(
+                _memory_comparison_preflight_config_from_args(args)
             )
-        auth_token = _eval_auth_token_from_env()
-        if not auth_token:
-            raise SystemExit("MEMORY_EVAL_AUTH_TOKEN or MEMORY_SERVICE_TOKEN is required")
-        from infinity_context_server.memory_comparison_http import (
-            InfinityContextHttpComparisonBackend,
-            Mem0HttpComparisonBackend,
-        )
+        else:
+            if not args.allow_live:
+                raise SystemExit(
+                    "memory-comparison-benchmark is live/manual only; pass --allow-live"
+                )
+            auth_token = _eval_auth_token_from_env()
+            if not auth_token:
+                raise SystemExit(
+                    "MEMORY_EVAL_AUTH_TOKEN or MEMORY_SERVICE_TOKEN is required"
+                )
+            from infinity_context_server.memory_comparison_http import (
+                InfinityContextHttpComparisonBackend,
+                Mem0HttpComparisonBackend,
+            )
 
+            try:
+                answerer, judge = _memory_comparison_llms_from_args(args)
+                backends = (
+                    InfinityContextHttpComparisonBackend(
+                        base_url=args.memo_api_url,
+                        auth_token=auth_token,
+                    ),
+                    Mem0HttpComparisonBackend(
+                        base_url=args.mem0_url,
+                        api_key=os.getenv(str(args.mem0_api_key_env)) or None,
+                        reset_user_on_start=not args.mem0_skip_reset,
+                        send_timestamps=bool(args.mem0_send_timestamps),
+                    ),
+                )
+                try:
+                    result = run_memory_comparison_benchmark(
+                        dataset_path=args.dataset,
+                        benchmark=args.benchmark,
+                        min_accuracy=args.min_accuracy,
+                        max_cases=args.max_cases,
+                        case_ids=tuple(args.case_id or ()),
+                        capabilities=tuple(args.capability or ()),
+                        top_k=args.top_k,
+                        top_k_cutoffs=tuple(args.top_k_cutoff or (10, 20, 50, 200)),
+                        run_id=args.run_id,
+                        report_out=args.report_out,
+                        locomo_ingest_mode=str(args.locomo_ingest_mode),
+                        case_set=str(args.case_set),
+                        report_mode=str(args.report_mode),
+                        compact_failure_limit=int(args.compact_failure_limit),
+                        answerer=answerer,
+                        judge=judge,
+                        backends=backends,
+                        answerer_token_cost_rate=(
+                            _memory_comparison_token_cost_rate_from_args(
+                                input_value=args.answerer_input_usd_per_1m,
+                                output_value=args.answerer_output_usd_per_1m,
+                                input_env_name=(
+                                    "MEMORY_COMPARISON_ANSWERER_INPUT_USD_PER_1M"
+                                ),
+                                output_env_name=(
+                                    "MEMORY_COMPARISON_ANSWERER_OUTPUT_USD_PER_1M"
+                                ),
+                            )
+                        ),
+                        judge_token_cost_rate=(
+                            _memory_comparison_token_cost_rate_from_args(
+                                input_value=args.judge_input_usd_per_1m,
+                                output_value=args.judge_output_usd_per_1m,
+                                input_env_name=(
+                                    "MEMORY_COMPARISON_JUDGE_INPUT_USD_PER_1M"
+                                ),
+                                output_env_name=(
+                                    "MEMORY_COMPARISON_JUDGE_OUTPUT_USD_PER_1M"
+                                ),
+                            )
+                        ),
+                    )
+                finally:
+                    _close_memory_comparison_clients(answerer, judge, *backends)
+            except ValueError as exc:
+                raise SystemExit(_safe_cli_error(exc)) from exc
+    elif args.command == "memory-comparison-replay":
         try:
             answerer, judge = _memory_comparison_llms_from_args(args)
-            backends = (
-                InfinityContextHttpComparisonBackend(
-                    base_url=args.memo_api_url,
-                    auth_token=auth_token,
-                ),
-                Mem0HttpComparisonBackend(
-                    base_url=args.mem0_url,
-                    api_key=os.getenv(str(args.mem0_api_key_env)) or None,
-                    reset_user_on_start=not args.mem0_skip_reset,
-                ),
-            )
             try:
-                result = run_memory_comparison_benchmark(
-                    dataset_path=args.dataset,
-                    benchmark=args.benchmark,
+                result = run_memory_comparison_replay(
+                    report_path=args.report,
                     min_accuracy=args.min_accuracy,
-                    max_cases=args.max_cases,
-                    case_ids=tuple(args.case_id or ()),
-                    capabilities=tuple(args.capability or ()),
-                    top_k=args.top_k,
-                    top_k_cutoffs=tuple(args.top_k_cutoff or (10, 20, 50, 200)),
+                    top_k_cutoffs=(
+                        tuple(args.top_k_cutoff)
+                        if args.top_k_cutoff is not None
+                        else None
+                    ),
+                    primary_cutoff=args.primary_cutoff,
                     run_id=args.run_id,
                     report_out=args.report_out,
+                    report_mode=str(args.report_mode),
+                    compact_failure_limit=int(args.compact_failure_limit),
                     answerer=answerer,
                     judge=judge,
-                    backends=backends,
                     answerer_token_cost_rate=_memory_comparison_token_cost_rate_from_args(
                         input_value=args.answerer_input_usd_per_1m,
                         output_value=args.answerer_output_usd_per_1m,
@@ -2724,7 +2961,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ),
                 )
             finally:
-                _close_memory_comparison_clients(answerer, judge, *backends)
+                _close_memory_comparison_clients(answerer, judge)
         except ValueError as exc:
             raise SystemExit(_safe_cli_error(exc)) from exc
     else:
@@ -2734,156 +2971,31 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(1)
 
 
-def _memory_comparison_llms_from_args(args: argparse.Namespace):
-    answerer_provider = str(args.answerer_provider)
-    judge_provider = str(args.judge_provider)
-    if answerer_provider == "deterministic" and judge_provider == "deterministic":
-        return None, None
-    uses_openai = answerer_provider == "openai" or judge_provider == "openai"
-    if uses_openai and not args.allow_paid_llm:
-        raise SystemExit(
-            "OpenAI memory comparison LLMs are paid/manual only; pass --allow-paid-llm"
-        )
-    api_key = ""
-    if uses_openai:
-        api_key = os.getenv(str(args.openai_api_key_env)) or os.getenv("OPENAI_API_KEY") or ""
-    if uses_openai and not api_key:
-        raise SystemExit(
-            f"{args.openai_api_key_env} or OPENAI_API_KEY is required for paid LLM runs"
-        )
-
-    from infinity_context_server.memory_comparison_llm import (
-        CodexCliAnswerer,
-        CodexCliJudge,
-        EvidenceOnlyAnswerer,
-        ExpectedTermsJudge,
-        OpenAIResponsesAnswerer,
-        OpenAIResponsesJudge,
+def _memory_comparison_preflight_config_from_args(
+    args: argparse.Namespace,
+) -> MemoryComparisonPreflightConfig:
+    return MemoryComparisonPreflightConfig(
+        dataset_path=args.dataset,
+        memo_api_url=str(args.memo_api_url),
+        mem0_url=str(args.mem0_url),
+        case_set=str(args.case_set),
+        locomo_ingest_mode=str(args.locomo_ingest_mode),
+        report_mode=str(args.report_mode),
+        top_k=int(args.top_k),
+        top_k_cutoffs=tuple(args.top_k_cutoff or (10, 20, 50, 200)),
+        allow_live=bool(args.allow_live),
+        allow_paid_llm=bool(args.allow_paid_llm),
+        answerer_provider=str(args.answerer_provider),
+        judge_provider=str(args.judge_provider),
+        answerer_model=args.answerer_model,
+        judge_model=args.judge_model,
+        openai_api_key_env=str(args.openai_api_key_env),
+        mem0_api_key_env=str(args.mem0_api_key_env),
+        auth_token_configured=bool(_eval_auth_token_from_env()),
+        probe_services=bool(args.preflight_probe_services),
+        probe_timeout_seconds=float(args.preflight_timeout_seconds),
+        env=os.environ,
     )
-
-    if answerer_provider == "openai":
-        answerer = OpenAIResponsesAnswerer(
-            api_key=api_key,
-            model=_memory_comparison_model_from_args(
-                args.answerer_model,
-                env_name="MEMORY_COMPARISON_ANSWERER_MODEL",
-                label="answerer",
-            ),
-        )
-    elif answerer_provider == "codex":
-        answerer = CodexCliAnswerer(
-            model=_memory_comparison_codex_model_from_args(
-                args.answerer_model,
-                env_name="MEMORY_COMPARISON_ANSWERER_MODEL",
-                label="answerer",
-            ),
-            codex_command=str(args.codex_command),
-            timeout_seconds=float(args.codex_timeout_seconds),
-        )
-    else:
-        answerer = EvidenceOnlyAnswerer()
-
-    if judge_provider == "openai":
-        judge = OpenAIResponsesJudge(
-            api_key=api_key,
-            model=_memory_comparison_model_from_args(
-                args.judge_model,
-                env_name="MEMORY_COMPARISON_JUDGE_MODEL",
-                label="judge",
-            ),
-        )
-    elif judge_provider == "codex":
-        judge = CodexCliJudge(
-            model=_memory_comparison_codex_model_from_args(
-                args.judge_model,
-                env_name="MEMORY_COMPARISON_JUDGE_MODEL",
-                label="judge",
-            ),
-            codex_command=str(args.codex_command),
-            timeout_seconds=float(args.codex_timeout_seconds),
-        )
-    else:
-        judge = ExpectedTermsJudge()
-    return answerer, judge
-
-
-def _memory_comparison_codex_model_from_args(
-    value: str | None,
-    *,
-    env_name: str,
-    label: str,
-) -> str:
-    model = (
-        value
-        or os.getenv(env_name)
-        or os.getenv("MEMORY_COMPARISON_CODEX_MODEL")
-        or "gpt-5.5"
-    ).strip()
-    if not model:
-        raise SystemExit(f"pass --{label}-model or set {env_name}")
-    return model
-
-
-def _memory_comparison_model_from_args(
-    value: str | None,
-    *,
-    env_name: str,
-    label: str,
-) -> str:
-    model = (value or os.getenv(env_name) or "").strip()
-    if not model:
-        raise SystemExit(f"pass --{label}-model or set {env_name}")
-    return model
-
-
-def _memory_comparison_float_env_default(env_name: str, fallback: float) -> float:
-    raw_value = os.getenv(env_name)
-    if raw_value is None:
-        return fallback
-    try:
-        return float(raw_value)
-    except ValueError as exc:
-        raise SystemExit(f"{env_name} must be a float") from exc
-
-
-def _memory_comparison_token_cost_rate_from_args(
-    *,
-    input_value: float | None,
-    output_value: float | None,
-    input_env_name: str,
-    output_env_name: str,
-):
-    from infinity_context_server.memory_comparison_models import TokenCostRate
-
-    return TokenCostRate(
-        input_usd_per_1m=_memory_comparison_float_setting(
-            input_value,
-            env_name=input_env_name,
-        ),
-        output_usd_per_1m=_memory_comparison_float_setting(
-            output_value,
-            env_name=output_env_name,
-        ),
-    )
-
-
-def _memory_comparison_float_setting(value: float | None, *, env_name: str) -> float:
-    if value is not None:
-        return value
-    raw = os.getenv(env_name)
-    if raw is None or not raw.strip():
-        return 0.0
-    try:
-        return float(raw)
-    except ValueError as exc:
-        raise SystemExit(f"{env_name} must be a number") from exc
-
-
-def _close_memory_comparison_clients(*clients: object | None) -> None:
-    for client in clients:
-        close = getattr(client, "close", None)
-        if callable(close):
-            close()
 
 
 def _safe_cli_error(exc: Exception) -> str:

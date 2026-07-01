@@ -37,6 +37,7 @@ class BenchmarkMemoryInput:
     text: str
     kind: str = "note"
     source_external_id: str | None = None
+    metadata: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class BenchmarkDocumentInput:
     source_type: str = "benchmark_document"
     classification: str = "internal"
     source_external_id: str | None = None
+    source_refs: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True)

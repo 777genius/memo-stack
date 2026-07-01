@@ -11,13 +11,26 @@ import json
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 from infinity_context_core.application.sensitive_text import redact_sensitive_text
 from infinity_context_core.reporting import with_report_provenance
 
+from infinity_context_server.memory_comparison_answer_context import (
+    answer_context_from_evidence_bundle,
+)
+from infinity_context_server.memory_comparison_answer_context import (
+    answer_context_metrics as _answer_context_metrics,
+)
+from infinity_context_server.memory_comparison_evidence import (
+    evidence_bundle as build_evidence_bundle,
+)
+from infinity_context_server.memory_comparison_evidence import (
+    retrieval_quality as build_retrieval_quality,
+)
 from infinity_context_server.memory_comparison_llm import (
     EvidenceOnlyAnswerer,
     ExpectedTermsJudge,
@@ -41,20 +54,45 @@ from infinity_context_server.memory_comparison_models import (
     token_cost_payload,
     token_cost_rate_payload,
 )
+from infinity_context_server.memory_comparison_quality_diagnostics import (
+    evidence_ref_rank_gate_metrics as _evidence_ref_rank_gate_metrics,
+)
+from infinity_context_server.memory_comparison_quality_diagnostics import (
+    fast_gate_metrics as _fast_gate_metrics,
+)
+from infinity_context_server.memory_comparison_quality_diagnostics import (
+    quality_diagnostics as _quality_diagnostics,
+)
+from infinity_context_server.memory_comparison_query_integrity import (
+    query_integrity_diagnostics as _query_integrity_diagnostics,
+)
 from infinity_context_server.public_benchmark import (
     LOCOMO_BENCHMARK_SUITE,
     PUBLIC_MEMORY_BENCHMARK_SUITE,
     _case_capability,
+    _case_hash,
     _dataset_hash,
     _duplicate_case_keys,
+    _first_str,
+    _is_official_locomo_sample,
+    _is_session_key,
     _load_cases,
+    _load_dataset_payload,
     _normalize_benchmark_name,
+    _official_locomo_evidence_lookup,
+    _official_locomo_evidence_previews,
+    _official_locomo_evidence_terms,
+    _official_locomo_supported_answer_terms,
+    _preview_value,
+    _session_sort_key,
+    _terms,
 )
 from infinity_context_server.public_benchmark_artifacts import (
     validate_artifact_paths_do_not_overwrite_dataset,
     write_json_atomic,
 )
 from infinity_context_server.public_benchmark_models import (
+    BenchmarkMemoryInput,
     BenchmarkValidationError,
     PublicBenchmarkCase,
 )
@@ -72,6 +110,29 @@ from infinity_context_server.public_benchmark_selection import (
 MEMORY_COMPARISON_SUITE = "memory-comparison-benchmark"
 MEMORY_COMPARISON_SCHEMA_VERSION = "memory-comparison-benchmark-v1"
 MEMORY_COMPARISON_MODE = "ingest_search_answer_judge"
+MEMORY_COMPARISON_REPLAY_MODE = "evaluate_only_replay"
+LOCOMO_INGEST_RICH_DOCUMENTS = "rich-documents"
+LOCOMO_INGEST_OFFICIAL_TURNS = "official-turns"
+MEMORY_COMPARISON_CASE_SET_ALL = "all"
+MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST = "locomo-fast"
+MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_MULTI_HOP = "locomo-fast-multi-hop"
+MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_TEMPORAL = "locomo-fast-temporal"
+MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_OPEN_DOMAIN = "locomo-fast-open-domain"
+MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_SINGLE_HOP = "locomo-fast-single-hop"
+MEMORY_COMPARISON_CASE_SETS = (
+    MEMORY_COMPARISON_CASE_SET_ALL,
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST,
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_MULTI_HOP,
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_TEMPORAL,
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_OPEN_DOMAIN,
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_SINGLE_HOP,
+)
+MEMORY_COMPARISON_REPORT_FULL = "full"
+MEMORY_COMPARISON_REPORT_COMPACT = "compact"
+MEMORY_COMPARISON_REPORT_MODES = (
+    MEMORY_COMPARISON_REPORT_FULL,
+    MEMORY_COMPARISON_REPORT_COMPACT,
+)
 
 _LOCOMO_CATEGORY_NAMES = {
     1: "multi-hop",
@@ -81,6 +142,19 @@ _LOCOMO_CATEGORY_NAMES = {
     5: "adversarial",
 }
 _LOCOMO_SCORED_CATEGORIES = frozenset({1, 2, 3, 4})
+_LOCOMO_FAST_CASES_PER_GROUP = 10
+_LOCOMO_FAST_CASE_SET_GROUPS = {
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST: (
+        "multi-hop",
+        "temporal",
+        "open-domain",
+        "single-hop",
+    ),
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_MULTI_HOP: ("multi-hop",),
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_TEMPORAL: ("temporal",),
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_OPEN_DOMAIN: ("open-domain",),
+    MEMORY_COMPARISON_CASE_SET_LOCOMO_FAST_SINGLE_HOP: ("single-hop",),
+}
 
 
 def run_memory_comparison_benchmark(
@@ -102,11 +176,17 @@ def run_memory_comparison_benchmark(
     run_id: str | None = None,
     answerer_token_cost_rate: TokenCostRate | None = None,
     judge_token_cost_rate: TokenCostRate | None = None,
+    locomo_ingest_mode: str = LOCOMO_INGEST_RICH_DOCUMENTS,
+    case_set: str = MEMORY_COMPARISON_CASE_SET_ALL,
+    report_mode: str = MEMORY_COMPARISON_REPORT_FULL,
+    compact_failure_limit: int = 50,
 ) -> dict[str, object]:
     """Run a mem0-style benchmark against multiple memory backends."""
 
     if not backends:
         raise BenchmarkValidationError("at least one comparison backend is required")
+    case_set = _normalize_case_set(case_set)
+    report_mode = _normalize_report_mode(report_mode)
     backend_names = _unique_backend_names(backends)
     validate_artifact_paths_do_not_overwrite_dataset(
         dataset_path=dataset_path,
@@ -125,10 +205,18 @@ def run_memory_comparison_benchmark(
     cutoffs = _normalize_top_k_cutoffs(top_k=top_k, values=top_k_cutoffs)
     primary_cutoff = top_k
     dataset_hash = _dataset_hash(dataset_path)
-    cases = tuple(cases_override) if cases_override is not None else _load_cases(dataset_path)
+    cases = (
+        tuple(cases_override)
+        if cases_override is not None
+        else _load_memory_comparison_cases(
+            dataset_path,
+            locomo_ingest_mode=locomo_ingest_mode,
+        )
+    )
     canonical_benchmark = _normalize_benchmark_name(benchmark) if benchmark else None
     if canonical_benchmark:
         cases = tuple(case for case in cases if case.benchmark == canonical_benchmark)
+    cases, case_set_selection = _apply_case_set(cases, case_set=case_set)
     cases, case_selection = select_cases(
         cases,
         max_cases=max_cases,
@@ -164,6 +252,18 @@ def run_memory_comparison_benchmark(
             cutoffs=cutoffs,
             failures=setup_failures,
             elapsed_ms=_elapsed_ms(started),
+        )
+        result["metadata"] = {
+            **dict(_mapping(result.get("metadata"))),
+            "locomo_ingest_mode": locomo_ingest_mode,
+            "case_set": case_set,
+            "case_set_selection": case_set_selection,
+            "report_mode": report_mode,
+        }
+        result = _report_payload(
+            result,
+            report_mode=report_mode,
+            compact_failure_limit=compact_failure_limit,
         )
         _write_report(result, report_out)
         return result
@@ -318,6 +418,10 @@ def run_memory_comparison_benchmark(
             ],
             "backend_names": list(backend_names),
             "scoring_note": "LoCoMo category 5 is reported but excluded from scored accuracy.",
+            "locomo_ingest_mode": locomo_ingest_mode,
+            "case_set": case_set,
+            "case_set_selection": case_set_selection,
+            "report_mode": report_mode,
         },
         "metrics": {
             "backend_count": len(backend_names),
@@ -339,6 +443,147 @@ def run_memory_comparison_benchmark(
         generated_by="infinity_context_server.memory_comparison_benchmark",
         run_id=run_id,
         cwd=Path.cwd(),
+    )
+    result = _report_payload(
+        result,
+        report_mode=report_mode,
+        compact_failure_limit=compact_failure_limit,
+    )
+    _write_report(result, report_out)
+    return result
+
+
+def run_memory_comparison_replay(
+    *,
+    report_path: Path,
+    answerer: MemoryComparisonAnswererPort | None = None,
+    judge: MemoryComparisonJudgePort | None = None,
+    report_out: Path | None = None,
+    min_accuracy: float = 0.0,
+    top_k_cutoffs: Sequence[int] | None = None,
+    primary_cutoff: int | None = None,
+    run_id: str | None = None,
+    answerer_token_cost_rate: TokenCostRate | None = None,
+    judge_token_cost_rate: TokenCostRate | None = None,
+    report_mode: str = MEMORY_COMPARISON_REPORT_FULL,
+    compact_failure_limit: int = 50,
+) -> dict[str, object]:
+    """Replay answer/judge stages from a saved full memory comparison report."""
+
+    if report_out is not None and report_out.resolve() == report_path.resolve():
+        raise BenchmarkValidationError("report_out must not overwrite the replay source")
+    report_mode = _normalize_report_mode(report_mode)
+    started = time.perf_counter()
+    answerer = answerer or EvidenceOnlyAnswerer()
+    judge = judge or ExpectedTermsJudge()
+    answerer_token_cost_rate = answerer_token_cost_rate or TokenCostRate()
+    judge_token_cost_rate = judge_token_cost_rate or TokenCostRate()
+
+    source_report = _load_replay_source_report(report_path)
+    source_evaluations = _replay_source_evaluations(source_report)
+    source_metadata = _mapping(source_report.get("metadata"))
+    cutoffs, primary_cutoff = _replay_cutoffs(
+        source_metadata=source_metadata,
+        source_evaluations=source_evaluations,
+        top_k_cutoffs=top_k_cutoffs,
+        primary_cutoff=primary_cutoff,
+    )
+    run_id = run_id or f"memory-comparison-replay-{uuid.uuid4().hex[:12]}"
+    backend_names = _replay_backend_names(source_evaluations, source_metadata)
+
+    evaluations: list[dict[str, object]] = []
+    failures: list[dict[str, object]] = []
+    for source_evaluation in source_evaluations:
+        evaluation = _replay_evaluation(
+            source_evaluation,
+            answerer=answerer,
+            judge=judge,
+            cutoffs=cutoffs,
+            primary_cutoff=primary_cutoff,
+        )
+        evaluations.append(evaluation)
+        failure = _failure_analysis_entry(evaluation)
+        if failure is not None:
+            failures.append(failure)
+
+    backend_metrics = {
+        backend_name: _backend_metrics(
+            evaluations,
+            backend_name=backend_name,
+            min_accuracy=min_accuracy,
+            primary_cutoff=primary_cutoff,
+            cutoffs=cutoffs,
+            answerer_token_cost_rate=answerer_token_cost_rate,
+            judge_token_cost_rate=judge_token_cost_rate,
+        )
+        for backend_name in backend_names
+    }
+    ok = bool(evaluations) and all(
+        bool(metrics["ok"]) for metrics in backend_metrics.values()
+    )
+    result: dict[str, object] = {
+        "schema_version": MEMORY_COMPARISON_SCHEMA_VERSION,
+        "suite": MEMORY_COMPARISON_SUITE,
+        "source_suite": source_report.get("source_suite", PUBLIC_MEMORY_BENCHMARK_SUITE),
+        "status": "ok" if ok else "failed",
+        "ok": ok,
+        "benchmark": source_report.get("benchmark", "all"),
+        "benchmark_scope": source_report.get(
+            "benchmark_scope",
+            "memory_system_side_by_side",
+        ),
+        "evaluation_mode": MEMORY_COMPARISON_REPLAY_MODE,
+        "run_id": run_id,
+        "dataset_path_label": source_report.get("dataset_path_label"),
+        "dataset_hash": source_report.get("dataset_hash"),
+        "requested_case_ids": source_report.get("requested_case_ids", []),
+        "requested_capabilities": source_report.get("requested_capabilities", []),
+        "case_selection": source_report.get("case_selection", {}),
+        "metadata": {
+            "top_k": primary_cutoff,
+            "top_k_cutoffs": list(cutoffs),
+            "primary_cutoff": primary_cutoff,
+            "answerer_model": answerer.model,
+            "judge_model": judge.model,
+            "token_cost_rates": {
+                "currency": "USD",
+                "answerer": token_cost_rate_payload(answerer_token_cost_rate),
+                "judge": token_cost_rate_payload(judge_token_cost_rate),
+            },
+            "token_cost_scope": "answerer_judge_only",
+            "replay_scope": "answerer_judge_only_no_memory_calls",
+            "source_report_path_label": report_path.name,
+            "source_run_id": source_report.get("run_id"),
+            "source_evaluation_mode": source_report.get("evaluation_mode"),
+            "source_report_mode": source_metadata.get("report_mode", "full"),
+            "backend_names": list(backend_names),
+            "report_mode": report_mode,
+        },
+        "metrics": {
+            "backend_count": len(backend_names),
+            "case_count": _replay_case_count(source_report, source_evaluations),
+            "evaluation_count": len(evaluations),
+            "scored_evaluation_count": sum(1 for item in evaluations if item["scored"]),
+            "min_accuracy": min_accuracy,
+            "elapsed_ms": _elapsed_ms(started),
+        },
+        "backend_metrics": backend_metrics,
+        "backend_comparison": _backend_comparison(backend_metrics),
+        "evaluations": evaluations,
+        "failure_analysis": failures,
+        "failures": failures,
+        "elapsed_ms": _elapsed_ms(started),
+    }
+    result = with_report_provenance(
+        result,
+        generated_by="infinity_context_server.memory_comparison_replay",
+        run_id=run_id,
+        cwd=Path.cwd(),
+    )
+    result = _report_payload(
+        result,
+        report_mode=report_mode,
+        compact_failure_limit=compact_failure_limit,
     )
     _write_report(result, report_out)
     return result
@@ -369,14 +614,25 @@ def _run_backend_case(
             answerer_model=answerer.model,
             judge_model=judge.model,
         )
-    retrieval_quality = _retrieval_quality(case, search_result.memories)
+    retrieval_quality = build_retrieval_quality(case, search_result.memories)
+    evidence_bundle = build_evidence_bundle(case, search_result.memories)
     cutoff_results: dict[str, object] = {}
     primary_answer = None
     primary_judgment = None
     for cutoff in cutoffs:
         sliced = search_result.memories[:cutoff]
+        answer_context = answer_context_from_evidence_bundle(
+            search_result.memories,
+            evidence_bundle,
+            cutoff=cutoff,
+        )
         try:
-            answer = answerer.answer(case, sliced, backend_name=backend_name, cutoff=cutoff)
+            answer = answerer.answer(
+                case,
+                answer_context.memories,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            )
         except Exception as exc:
             return _stage_failure_evaluation(
                 case,
@@ -394,7 +650,7 @@ def _run_backend_case(
             judgment = judge.judge(
                 case,
                 answer,
-                sliced,
+                answer_context.memories,
                 backend_name=backend_name,
                 cutoff=cutoff,
             )
@@ -416,6 +672,7 @@ def _run_backend_case(
             "generation": answer_payload(answer),
             "judgment": judge_payload(judgment),
             "memories_evaluated": len(sliced),
+            "answer_context": answer_context.to_diagnostics(),
         }
         cutoff_results[str(cutoff)] = cutoff_payload
         if cutoff == primary_cutoff:
@@ -437,8 +694,9 @@ def _run_backend_case(
         "expected_terms": list(case.expected_terms),
         "forbidden_terms": list(case.forbidden_terms),
         "ingestion": ingestion_payload(ingest_result),
-        "retrieval": search_payload(search_result),
+        "retrieval": _search_payload_with_query_integrity(case, search_result),
         "retrieval_quality": retrieval_quality,
+        "evidence_bundle": evidence_bundle,
         "generation": answer_payload(primary_answer),
         "judgment": judge_payload(primary_judgment),
         "cutoff_results": cutoff_results,
@@ -466,7 +724,8 @@ def _stage_failure_evaluation(
         context_token_count=0,
         metadata={"stage": stage, "error": reason},
     )
-    retrieval_quality = retrieval_quality or _retrieval_quality(case, search_result.memories)
+    retrieval_quality = retrieval_quality or build_retrieval_quality(case, search_result.memories)
+    evidence_bundle = build_evidence_bundle(case, search_result.memories)
     error_metadata: dict[str, object] = {"stage": stage, "error": reason}
     if cutoff is not None:
         error_metadata["cutoff"] = cutoff
@@ -503,12 +762,375 @@ def _stage_failure_evaluation(
         "expected_terms": list(case.expected_terms),
         "forbidden_terms": list(case.forbidden_terms),
         "ingestion": ingestion_payload(ingest_result),
-        "retrieval": search_payload(search_result),
+        "retrieval": _search_payload_with_query_integrity(case, search_result),
         "retrieval_quality": retrieval_quality,
+        "evidence_bundle": evidence_bundle,
         "generation": answer_payload(answer),
         "judgment": judge_payload(judgment),
         "cutoff_results": cutoff_results,
     }
+
+
+def _search_payload_with_query_integrity(
+    case: PublicBenchmarkCase,
+    search_result: BackendSearchResult,
+) -> dict[str, object]:
+    payload = search_payload(search_result)
+    metadata = dict(_mapping(payload.get("metadata")))
+    metadata["query_integrity"] = _query_integrity_diagnostics(case, search_result)
+    payload["metadata"] = metadata
+    return payload
+
+
+def _load_replay_source_report(report_path: Path) -> Mapping[str, object]:
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise BenchmarkValidationError(
+            f"Unable to read replay source report: {report_path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise BenchmarkValidationError(
+            f"Replay source report is not valid JSON: {report_path}"
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise BenchmarkValidationError("Replay source report must be a JSON object")
+    return payload
+
+
+def _replay_source_evaluations(
+    source_report: Mapping[str, object],
+) -> tuple[Mapping[str, object], ...]:
+    raw_evaluations = source_report.get("evaluations")
+    if not isinstance(raw_evaluations, Sequence) or isinstance(
+        raw_evaluations,
+        str | bytes,
+    ):
+        raise BenchmarkValidationError(
+            "Replay requires a full memory comparison report with evaluations"
+        )
+    evaluations = tuple(
+        item for item in raw_evaluations if isinstance(item, Mapping)
+    )
+    if not evaluations:
+        raise BenchmarkValidationError(
+            "Replay source report has no evaluations; compact reports cannot be replayed"
+        )
+    return evaluations
+
+
+def _replay_cutoffs(
+    *,
+    source_metadata: Mapping[str, object],
+    source_evaluations: Sequence[Mapping[str, object]],
+    top_k_cutoffs: Sequence[int] | None,
+    primary_cutoff: int | None,
+) -> tuple[tuple[int, ...], int]:
+    source_cutoffs = _positive_ints(source_metadata.get("top_k_cutoffs"))
+    if not source_cutoffs:
+        source_cutoffs = tuple(
+            sorted(
+                {
+                    int(cutoff)
+                    for evaluation in source_evaluations
+                    for cutoff in _mapping(evaluation.get("cutoff_results"))
+                    if str(cutoff).isdigit() and int(cutoff) > 0
+                }
+            )
+        )
+    if top_k_cutoffs is not None:
+        source_cutoffs = tuple(int(cutoff) for cutoff in top_k_cutoffs)
+    primary = (
+        primary_cutoff
+        or _positive_int(source_metadata.get("primary_cutoff"))
+        or _positive_int(source_metadata.get("top_k"))
+        or (max(source_cutoffs) if source_cutoffs else 200)
+    )
+    return _normalize_top_k_cutoffs(top_k=primary, values=source_cutoffs), primary
+
+
+def _replay_backend_names(
+    source_evaluations: Sequence[Mapping[str, object]],
+    source_metadata: Mapping[str, object],
+) -> tuple[str, ...]:
+    from_metadata = _str_tuple(source_metadata.get("backend_names"))
+    if from_metadata:
+        return from_metadata
+    return tuple(
+        sorted(
+            {
+                str(evaluation.get("backend"))
+                for evaluation in source_evaluations
+                if str(evaluation.get("backend", "")).strip()
+            }
+        )
+    )
+
+
+def _replay_case_count(
+    source_report: Mapping[str, object],
+    source_evaluations: Sequence[Mapping[str, object]],
+) -> int:
+    metrics = _mapping(source_report.get("metrics"))
+    case_count = _positive_int(metrics.get("case_count"))
+    if case_count is not None:
+        return case_count
+    return len(
+        {
+            str(evaluation.get("case_id"))
+            for evaluation in source_evaluations
+            if str(evaluation.get("case_id", "")).strip()
+        }
+    )
+
+
+def _replay_evaluation(
+    source: Mapping[str, object],
+    *,
+    answerer: MemoryComparisonAnswererPort,
+    judge: MemoryComparisonJudgePort,
+    cutoffs: Sequence[int],
+    primary_cutoff: int,
+) -> dict[str, object]:
+    case = _replay_case_from_evaluation(source)
+    backend_name = str(source.get("backend") or "unknown")
+    memories = _replay_memories_from_evaluation(source)
+    retrieval_quality = dict(_mapping(source.get("retrieval_quality"))) or (
+        build_retrieval_quality(case, memories)
+    )
+    evidence_bundle = dict(_mapping(source.get("evidence_bundle"))) or build_evidence_bundle(
+        case,
+        memories,
+    )
+    cutoff_results: dict[str, object] = {}
+    primary_answer = None
+    primary_judgment = None
+    for cutoff in cutoffs:
+        sliced = memories[:cutoff]
+        answer_context = answer_context_from_evidence_bundle(
+            memories,
+            evidence_bundle,
+            cutoff=cutoff,
+        )
+        try:
+            answer = answerer.answer(
+                case,
+                answer_context.memories,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            )
+        except Exception as exc:
+            return _replay_stage_failure_evaluation(
+                source,
+                case,
+                backend_name=backend_name,
+                stage="answer",
+                reason=_safe_error_reason(exc),
+                answerer_model=answerer.model,
+                judge_model=judge.model,
+                retrieval_quality=retrieval_quality,
+                evidence_bundle=evidence_bundle,
+                cutoff=cutoff,
+            )
+        try:
+            judgment = judge.judge(
+                case,
+                answer,
+                answer_context.memories,
+                backend_name=backend_name,
+                cutoff=cutoff,
+            )
+        except Exception as exc:
+            return _replay_stage_failure_evaluation(
+                source,
+                case,
+                backend_name=backend_name,
+                stage="judge",
+                reason=_safe_error_reason(exc),
+                answer=answer,
+                answerer_model=answerer.model,
+                judge_model=judge.model,
+                retrieval_quality=retrieval_quality,
+                evidence_bundle=evidence_bundle,
+                cutoff=cutoff,
+            )
+        cutoff_results[str(cutoff)] = {
+            "generation": answer_payload(answer),
+            "judgment": judge_payload(judgment),
+            "memories_evaluated": len(sliced),
+            "answer_context": answer_context.to_diagnostics(),
+        }
+        if cutoff == primary_cutoff:
+            primary_answer = answer
+            primary_judgment = judgment
+    assert primary_answer is not None
+    assert primary_judgment is not None
+    return _replay_evaluation_payload(
+        source,
+        case,
+        backend_name=backend_name,
+        retrieval_quality=retrieval_quality,
+        evidence_bundle=evidence_bundle,
+        generation=answer_payload(primary_answer),
+        judgment=judge_payload(primary_judgment),
+        cutoff_results=cutoff_results,
+    )
+
+
+def _replay_stage_failure_evaluation(
+    source: Mapping[str, object],
+    case: PublicBenchmarkCase,
+    *,
+    backend_name: str,
+    stage: str,
+    reason: str,
+    answerer_model: str,
+    judge_model: str,
+    retrieval_quality: Mapping[str, object],
+    evidence_bundle: Mapping[str, object],
+    answer: AnswerResult | None = None,
+    cutoff: int,
+) -> dict[str, object]:
+    error_metadata = {"stage": stage, "error": reason, "cutoff": cutoff}
+    answer = answer or AnswerResult(
+        answer="",
+        model=answerer_model,
+        metadata=error_metadata,
+    )
+    judgment = JudgeResult(
+        verdict="error",
+        score=0.0,
+        reason=f"{stage}_failed",
+        model=judge_model,
+        metadata=error_metadata,
+    )
+    cutoff_results = {
+        str(cutoff): {
+            "generation": answer_payload(answer),
+            "judgment": judge_payload(judgment),
+            "memories_evaluated": len(_replay_memories_from_evaluation(source)[:cutoff]),
+        }
+    }
+    return _replay_evaluation_payload(
+        source,
+        case,
+        backend_name=backend_name,
+        retrieval_quality=retrieval_quality,
+        evidence_bundle=evidence_bundle,
+        generation=answer_payload(answer),
+        judgment=judge_payload(judgment),
+        cutoff_results=cutoff_results,
+    )
+
+
+def _replay_evaluation_payload(
+    source: Mapping[str, object],
+    case: PublicBenchmarkCase,
+    *,
+    backend_name: str,
+    retrieval_quality: Mapping[str, object],
+    evidence_bundle: Mapping[str, object],
+    generation: Mapping[str, object],
+    judgment: Mapping[str, object],
+    cutoff_results: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "id": source.get("id") or f"{backend_name}:{case.benchmark}:{case.case_id}",
+        "backend": backend_name,
+        "benchmark": case.benchmark,
+        "case_id": case.case_id,
+        "category": source.get("category") or _case_category_label(case),
+        "group": source.get("group") or _case_group(case),
+        "capability": source.get("capability") or _case_capability(case),
+        "scored": source.get("scored")
+        if isinstance(source.get("scored"), bool)
+        else _case_is_scored(case),
+        "question": case.question,
+        "ground_truth": source.get("ground_truth") or _case_ground_truth(case),
+        "expected_terms": list(case.expected_terms),
+        "forbidden_terms": list(case.forbidden_terms),
+        "ingestion": dict(_mapping(source.get("ingestion"))),
+        "retrieval": dict(_mapping(source.get("retrieval"))),
+        "retrieval_quality": dict(retrieval_quality),
+        "evidence_bundle": dict(evidence_bundle),
+        "generation": dict(generation),
+        "judgment": dict(judgment),
+        "cutoff_results": dict(cutoff_results),
+        "replay": {
+            "source_evaluation_id": source.get("id"),
+            "memory_calls": 0,
+        },
+    }
+
+
+def _replay_case_from_evaluation(source: Mapping[str, object]) -> PublicBenchmarkCase:
+    benchmark = str(source.get("benchmark") or LOCOMO_BENCHMARK_SUITE)
+    case_id = str(source.get("case_id") or source.get("id") or "unknown")
+    question = str(source.get("question") or "")
+    expected_terms = _str_tuple(source.get("expected_terms"))
+    forbidden_terms = _str_tuple(source.get("forbidden_terms"))
+    category = _locomo_category_from_replay_value(
+        source.get("category"),
+        group=source.get("group"),
+    )
+    metadata: dict[str, object] = {
+        "answer_preview": str(source.get("ground_truth") or " | ".join(expected_terms)),
+    }
+    if category is not None:
+        metadata["category"] = category
+    return PublicBenchmarkCase(
+        benchmark=benchmark,
+        case_id=case_id,
+        question=question,
+        expected_terms=expected_terms,
+        forbidden_terms=forbidden_terms,
+        metadata=metadata,
+    )
+
+
+def _replay_memories_from_evaluation(
+    source: Mapping[str, object],
+) -> tuple[RetrievedMemory, ...]:
+    retrieval = _mapping(source.get("retrieval"))
+    results = retrieval.get("results")
+    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
+        return ()
+    memories: list[RetrievedMemory] = []
+    for index, item in enumerate(results, start=1):
+        if not isinstance(item, Mapping):
+            continue
+        memories.append(
+            RetrievedMemory(
+                text=str(item.get("memory") or item.get("text") or ""),
+                rank=_positive_int(item.get("rank")) or index,
+                score=_float_value(item.get("score")),
+                item_id=str(item["id"]) if item.get("id") is not None else None,
+                created_at=(
+                    str(item["created_at"])
+                    if item.get("created_at") is not None
+                    else None
+                ),
+                source_refs=_str_tuple(item.get("source_refs")),
+                metadata=dict(_mapping(item.get("metadata"))),
+            )
+        )
+    return tuple(memories)
+
+
+def _locomo_category_from_replay_value(
+    value: object,
+    *,
+    group: object,
+) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raw = str(value or "").strip()
+    prefix = raw.split(":", 1)[0]
+    if prefix.isdigit():
+        return int(prefix)
+    reverse = {name: category for category, name in _LOCOMO_CATEGORY_NAMES.items()}
+    mapped = reverse.get(str(group or raw).strip())
+    return int(mapped) if mapped is not None else None
 
 
 def _backend_metrics(
@@ -523,6 +1145,7 @@ def _backend_metrics(
 ) -> dict[str, object]:
     backend_items = [item for item in evaluations if item.get("backend") == backend_name]
     scored = [item for item in backend_items if item.get("scored") is True]
+    evidence_scored = [item for item in scored if _has_evidence_recall(item)]
     passed = sum(1 for item in scored if _evaluation_score(item) >= 1.0)
     accuracy = _ratio(passed, len(scored))
     by_group = {
@@ -552,6 +1175,8 @@ def _backend_metrics(
         ),
         "avg_context_tokens": _avg(_context_tokens(item) for item in backend_items),
         "expected_term_recall": _avg(_retrieval_recall(item) for item in scored),
+        "evidence_term_recall": _avg(_evidence_recall(item) for item in evidence_scored),
+        "evidence_term_recall_evaluation_count": len(evidence_scored),
         "token_usage": _token_usage_summary(backend_items),
         "token_cost": _token_cost_summary(
             backend_items,
@@ -565,11 +1190,30 @@ def _backend_metrics(
             configured_cutoffs=cutoffs,
             primary_cutoff=primary_cutoff,
         ),
+        "top_k_gate": _top_k_gate_metrics(
+            backend_items,
+            configured_cutoffs=cutoffs,
+            primary_cutoff=primary_cutoff,
+        ),
+        "answer_context_metrics": _answer_context_metrics(
+            backend_items,
+            configured_cutoffs=cutoffs,
+            primary_cutoff=primary_cutoff,
+        ),
+        "source_mix_gate": _source_mix_gate_metrics(backend_items),
+        "temporal_metadata_gate": _temporal_metadata_gate_metrics(backend_items),
+        "benchmark_rerank_gate": _benchmark_rerank_gate_metrics(backend_items),
+        "query_integrity_gate": _query_integrity_gate_metrics(backend_items),
+        "multi_hop_bundle_gate": _multi_hop_bundle_gate_metrics(backend_items),
+        "evidence_ref_rank_gate": _evidence_ref_rank_gate_metrics(backend_items),
+        "quality_diagnostics": _quality_diagnostics(backend_items),
+        "fast_gate": _fast_gate_metrics(backend_items),
     }
 
 
 def _bucket_metrics(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
     scored = [item for item in items if item.get("scored") is True]
+    evidence_scored = [item for item in scored if _has_evidence_recall(item)]
     passed = sum(1 for item in scored if _evaluation_score(item) >= 1.0)
     return {
         "total": len(items),
@@ -580,6 +1224,8 @@ def _bucket_metrics(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
         "accuracy": _ratio(passed, len(scored)),
         "avg_score": _avg(_evaluation_score(item) for item in scored),
         "expected_term_recall": _avg(_retrieval_recall(item) for item in scored),
+        "evidence_term_recall": _avg(_evidence_recall(item) for item in evidence_scored),
+        "evidence_term_recall_evaluation_count": len(evidence_scored),
     }
 
 
@@ -617,26 +1263,355 @@ def _cutoff_metrics(
             "failed": len(scores) - passed,
             "accuracy": _ratio(passed, len(scores)),
             "avg_score": _avg(scores),
+            "avg_memories_evaluated": _avg(
+                _memories_evaluated_for_cutoff(item, cutoff) for item in cutoff_items
+            ),
+            "max_memories_evaluated": max(
+                (_memories_evaluated_for_cutoff(item, cutoff) for item in cutoff_items),
+                default=0,
+            ),
         }
     return metrics
 
 
-def _retrieval_quality(
-    case: PublicBenchmarkCase,
-    memories: Sequence[RetrievedMemory],
+def _top_k_gate_metrics(
+    items: Sequence[Mapping[str, object]],
+    *,
+    configured_cutoffs: Sequence[int],
+    primary_cutoff: int,
 ) -> dict[str, object]:
-    evidence = _normalize_text(" ".join(memory.text for memory in memories))
-    covered_terms = tuple(
-        term for term in case.expected_terms if _normalize_text(term) in evidence
+    lower_cutoffs = tuple(
+        sorted(cutoff for cutoff in configured_cutoffs if cutoff < primary_cutoff)
     )
-    missing_terms = tuple(term for term in case.expected_terms if term not in covered_terms)
+    largest_lower_cutoff = lower_cutoffs[-1] if lower_cutoffs else None
+    primary_counts = [
+        _evaluation_memories_evaluated_for_cutoff(item, primary_cutoff)
+        for item in items
+        if item.get("scored") is True
+    ]
+    lower_counts = (
+        [
+            _evaluation_memories_evaluated_for_cutoff(item, largest_lower_cutoff)
+            for item in items
+            if item.get("scored") is True
+        ]
+        if largest_lower_cutoff is not None
+        else []
+    )
+    primary_avg = _avg(primary_counts)
+    lower_avg = _avg(lower_counts)
+    primary_exceeds_lower = (
+        largest_lower_cutoff is not None
+        and bool(primary_counts)
+        and primary_avg > lower_avg
+    )
     return {
-        "expected_term_count": len(case.expected_terms),
-        "covered_expected_term_count": len(covered_terms),
-        "expected_term_recall": _ratio(len(covered_terms), len(case.expected_terms)),
-        "covered_terms": list(covered_terms),
-        "missing_terms": list(missing_terms),
+        "primary_cutoff": primary_cutoff,
+        "largest_lower_cutoff": largest_lower_cutoff,
+        "primary_avg_memories_evaluated": primary_avg,
+        "largest_lower_avg_memories_evaluated": lower_avg,
+        "primary_max_memories_evaluated": max(primary_counts, default=0),
+        "largest_lower_max_memories_evaluated": max(lower_counts, default=0),
+        "primary_reached_cutoff_count": sum(
+            1 for count in primary_counts if count >= primary_cutoff
+        ),
+        "primary_exceeds_largest_lower": primary_exceeds_lower,
+        "fake_top_k_suspected": (
+            largest_lower_cutoff is not None
+            and bool(primary_counts)
+            and primary_avg <= lower_avg
+        ),
     }
+
+
+def _source_mix_gate_metrics(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    counts = _retrieval_source_counts(items)
+    non_postgres_count = sum(
+        count
+        for source, count in counts.items()
+        if source not in {"postgres_facts", "unknown"}
+    )
+    hybrid_item_count = sum(
+        1
+        for item in items
+        for result in _retrieval_results(item)
+        if len(_result_retrieval_sources(result)) > 1
+    )
+    unique_sources = tuple(source for source in counts if source != "unknown")
+    return {
+        "retrieval_source_counts": counts,
+        "unique_source_count": len(unique_sources),
+        "non_postgres_source_count": non_postgres_count,
+        "hybrid_item_count": hybrid_item_count,
+        "only_postgres_facts": bool(counts) and set(counts) <= {"postgres_facts"},
+        "source_mix_ok": non_postgres_count > 0 or hybrid_item_count > 0,
+    }
+
+
+def _temporal_metadata_gate_metrics(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    timestamped_operations = 0
+    session_date_operations = 0
+    for item in items:
+        ingestion = _mapping(item.get("ingestion"))
+        operations = ingestion.get("operations", ())
+        if not isinstance(operations, Sequence) or isinstance(operations, str | bytes):
+            continue
+        for operation in operations:
+            if not isinstance(operation, Mapping):
+                continue
+            metadata = _mapping(operation.get("metadata"))
+            if _positive_int(metadata.get("source_timestamp")) is not None:
+                timestamped_operations += 1
+            if str(metadata.get("session_date") or "").strip():
+                session_date_operations += 1
+    return {
+        "timestamped_ingestion_operations": timestamped_operations,
+        "session_dated_ingestion_operations": session_date_operations,
+        "temporal_metadata_ok": timestamped_operations > 0,
+    }
+
+
+def _benchmark_rerank_gate_metrics(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    retrieval_metadata = [
+        _mapping(_mapping(item.get("retrieval")).get("metadata")) for item in items
+    ]
+    reranks = [
+        metadata.get("benchmark_rerank") for metadata in retrieval_metadata
+    ]
+    query_expansions = [
+        metadata.get("query_expansion") for metadata in retrieval_metadata
+    ]
+    multi_query_merges = [
+        metadata.get("multi_query_merge") for metadata in retrieval_metadata
+    ]
+    rerank_payloads = [_mapping(item) for item in reranks if isinstance(item, Mapping)]
+    query_expansion_payloads = [
+        _mapping(item) for item in query_expansions if isinstance(item, Mapping)
+    ]
+    multi_query_merge_payloads = [
+        _mapping(item) for item in multi_query_merges if isinstance(item, Mapping)
+    ]
+    boosted_counts = [
+        _positive_int(payload.get("boosted_memory_count")) or 0
+        for payload in rerank_payloads
+    ]
+    max_boosts = [_metric_value(payload, "max_boost") for payload in rerank_payloads]
+    uses_ground_truth_count = sum(
+        1 for payload in rerank_payloads if bool(payload.get("uses_ground_truth"))
+    ) + sum(
+        1
+        for payload in query_expansion_payloads
+        if bool(payload.get("uses_ground_truth"))
+    )
+    return {
+        "evaluation_count": len(rerank_payloads),
+        "query_expansion_evaluation_count": len(query_expansion_payloads),
+        "query_expansion_applied_count": sum(
+            1 for payload in query_expansion_payloads if payload.get("applied")
+        ),
+        "multi_query_evaluation_count": len(multi_query_merge_payloads),
+        "multi_query_raw_result_count": sum(
+            _positive_int(payload.get("raw_result_count")) or 0
+            for payload in multi_query_merge_payloads
+        ),
+        "multi_query_unique_result_count": sum(
+            _positive_int(payload.get("unique_result_count")) or 0
+            for payload in multi_query_merge_payloads
+        ),
+        "multi_query_hit_count": sum(
+            _positive_int(payload.get("multi_query_hit_count")) or 0
+            for payload in multi_query_merge_payloads
+        ),
+        "applied_count": sum(1 for payload in rerank_payloads if payload.get("applied")),
+        "boosted_memory_count": sum(boosted_counts),
+        "max_boost": max(max_boosts, default=0.0),
+        "uses_ground_truth_count": uses_ground_truth_count,
+        "uses_ground_truth": uses_ground_truth_count > 0,
+        "benchmark_rerank_ok": bool(rerank_payloads) and uses_ground_truth_count == 0,
+    }
+
+
+def _query_integrity_gate_metrics(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    item_payloads = [
+        (
+            item,
+            _mapping(
+                _mapping(_mapping(item.get("retrieval")).get("metadata")).get(
+                    "query_integrity"
+                )
+            ),
+        )
+        for item in items
+    ]
+    item_payloads = [
+        (item, payload) for item, payload in item_payloads if payload
+    ]
+    overlap_items = [
+        (item, payload)
+        for item, payload in item_payloads
+        if _positive_int(payload.get("expected_answer_query_overlap_count"))
+    ]
+    profile_overlap_items = [
+        (item, payload)
+        for item, payload in item_payloads
+        if _positive_int(payload.get("expected_answer_query_profile_overlap_count"))
+    ]
+    overlap_counts = [
+        _positive_int(payload.get("expected_answer_query_overlap_count")) or 0
+        for _item, payload in item_payloads
+    ]
+    profile_overlap_counts = [
+        _positive_int(payload.get("expected_answer_query_profile_overlap_count")) or 0
+        for _item, payload in item_payloads
+    ]
+    ranked_overlap_items = _ranked_query_integrity_overlap_items(
+        overlap_items,
+        count_key="expected_answer_query_overlap_count",
+    )
+    ranked_profile_overlap_items = _ranked_query_integrity_overlap_items(
+        profile_overlap_items,
+        count_key="expected_answer_query_profile_overlap_count",
+    )
+    overlap_samples = _query_integrity_overlap_samples(
+        ranked_overlap_items,
+        count_key="expected_answer_query_overlap_count",
+        terms_key="expected_answer_query_overlap_terms",
+    )
+    profile_overlap_samples = _query_integrity_overlap_samples(
+        ranked_profile_overlap_items,
+        count_key="expected_answer_query_profile_overlap_count",
+        terms_key="expected_answer_query_profile_overlap_terms",
+    )
+    return {
+        "diagnostic_only": True,
+        "affects_retrieval": False,
+        "evaluation_count": len(item_payloads),
+        "overlap_case_count": len(overlap_items),
+        "overlap_token_total": sum(overlap_counts),
+        "overlap_case_rate": _ratio(len(overlap_items), len(item_payloads)),
+        "avg_overlap_count": _avg(overlap_counts),
+        "max_overlap_count": max(overlap_counts, default=0),
+        "profile_overlap_case_count": len(profile_overlap_items),
+        "profile_overlap_token_total": sum(profile_overlap_counts),
+        "profile_overlap_case_rate": _ratio(
+            len(profile_overlap_items),
+            len(item_payloads),
+        ),
+        "avg_profile_overlap_count": _avg(profile_overlap_counts),
+        "max_profile_overlap_count": max(profile_overlap_counts, default=0),
+        "query_integrity_clean": (
+            len(overlap_items) == 0 and len(profile_overlap_items) == 0
+        ),
+        "profile_query_integrity_clean": len(profile_overlap_items) == 0,
+        "sample_overlap_case_ids": [
+            str(item.get("case_id"))
+            for item, _payload in ranked_overlap_items[:10]
+            if item.get("case_id")
+        ],
+        "sample_overlap_cases": overlap_samples,
+        "sample_profile_overlap_case_ids": [
+            str(item.get("case_id"))
+            for item, _payload in ranked_profile_overlap_items[:10]
+            if item.get("case_id")
+        ],
+        "sample_profile_overlap_cases": profile_overlap_samples,
+    }
+
+
+def _ranked_query_integrity_overlap_items(
+    overlap_items: Sequence[tuple[Mapping[str, object], Mapping[str, object]]],
+    *,
+    count_key: str,
+) -> tuple[tuple[Mapping[str, object], Mapping[str, object]], ...]:
+    return tuple(
+        sorted(
+            overlap_items,
+            key=lambda item: (
+                -(_positive_int(item[1].get(count_key)) or 0),
+                str(item[0].get("case_id") or ""),
+            ),
+        )
+    )
+
+
+def _query_integrity_overlap_samples(
+    overlap_items: Sequence[tuple[Mapping[str, object], Mapping[str, object]]],
+    *,
+    count_key: str,
+    terms_key: str,
+) -> list[dict[str, object]]:
+    samples: list[dict[str, object]] = []
+    for item, payload in overlap_items[:10]:
+        case_id = item.get("case_id")
+        if not case_id:
+            continue
+        overlap_terms = _str_tuple(payload.get(terms_key))[:20]
+        samples.append(
+            {
+                "case_id": str(case_id),
+                "overlap_count": _positive_int(payload.get(count_key))
+                or len(overlap_terms),
+                "overlap_terms": list(overlap_terms),
+            }
+        )
+    return samples
+
+
+def _multi_hop_bundle_gate_metrics(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    multi_hop_items = [
+        item
+        for item in items
+        if item.get("group") == "multi-hop" and item.get("scored") is True
+    ]
+    bundles = [_mapping(item.get("evidence_bundle")) for item in multi_hop_items]
+    complete_count = sum(1 for bundle in bundles if bool(bundle.get("bundle_complete")))
+    return {
+        "multi_hop_evaluation_count": len(multi_hop_items),
+        "bundle_complete_count": complete_count,
+        "bundle_completion_rate": _ratio(complete_count, len(multi_hop_items)),
+        "avg_bundle_item_count": _avg(
+            _metric_value(bundle, "item_count") for bundle in bundles
+        ),
+        "avg_supporting_evidence_count": _avg(
+            _metric_value(bundle, "supporting_evidence_count") for bundle in bundles
+        ),
+        "avg_bundle_evidence_term_recall": _avg(
+            _metric_value(bundle, "evidence_term_recall") for bundle in bundles
+        ),
+        "avg_bundle_query_support_term_recall": _avg(
+            _metric_value(bundle, "query_support_term_recall") for bundle in bundles
+        ),
+        "avg_bundle_query_support_term_count": _avg(
+            _metric_value(bundle, "query_support_term_count") for bundle in bundles
+        ),
+        "multi_hop_bundle_ok": bool(multi_hop_items) and complete_count > 0,
+    }
+
+
+def _memories_evaluated_for_cutoff(
+    cutoff_payload: Mapping[str, object],
+    cutoff: int,
+) -> int:
+    value = cutoff_payload.get("memories_evaluated")
+    if value is None:
+        value = _mapping(cutoff_payload.get(str(cutoff))).get("memories_evaluated")
+    return _positive_int(value) or 0
+
+
+def _evaluation_memories_evaluated_for_cutoff(
+    item: Mapping[str, object],
+    cutoff: int,
+) -> int:
+    cutoff_payload = _mapping(_mapping(item.get("cutoff_results")).get(str(cutoff)))
+    return _memories_evaluated_for_cutoff(cutoff_payload, cutoff)
 
 
 def _failure_analysis_entry(
@@ -690,6 +1665,11 @@ def _backend_comparison(
             mem0_metrics,
             "expected_term_recall",
         )
+        comparison["memo_stack_vs_mem0_evidence_term_recall_delta"] = _metric_delta(
+            memo_metrics,
+            mem0_metrics,
+            "evidence_term_recall",
+        )
         comparison["memo_stack_vs_mem0_avg_retrieved_count_delta"] = _metric_delta(
             memo_metrics,
             mem0_metrics,
@@ -716,6 +1696,212 @@ def _backend_comparison(
             8,
         )
     return comparison
+
+
+def _normalize_case_set(value: str | None) -> str:
+    normalized = (value or MEMORY_COMPARISON_CASE_SET_ALL).strip()
+    if normalized not in MEMORY_COMPARISON_CASE_SETS:
+        raise BenchmarkValidationError(
+            "Unsupported memory comparison case set: "
+            f"{normalized}. Supported: {', '.join(MEMORY_COMPARISON_CASE_SETS)}"
+        )
+    return normalized
+
+
+def _normalize_report_mode(value: str | None) -> str:
+    normalized = (value or MEMORY_COMPARISON_REPORT_FULL).strip()
+    if normalized not in MEMORY_COMPARISON_REPORT_MODES:
+        raise BenchmarkValidationError(
+            "Unsupported memory comparison report mode: "
+            f"{normalized}. Supported: {', '.join(MEMORY_COMPARISON_REPORT_MODES)}"
+        )
+    return normalized
+
+
+def _apply_case_set(
+    cases: Sequence[PublicBenchmarkCase],
+    *,
+    case_set: str,
+) -> tuple[tuple[PublicBenchmarkCase, ...], dict[str, object]]:
+    selected_input = tuple(cases)
+    if case_set == MEMORY_COMPARISON_CASE_SET_ALL:
+        return selected_input, {
+            "name": MEMORY_COMPARISON_CASE_SET_ALL,
+            "input_count": len(selected_input),
+            "selected_count": len(selected_input),
+        }
+
+    groups = _LOCOMO_FAST_CASE_SET_GROUPS[case_set]
+    selected: list[PublicBenchmarkCase] = []
+    selected_by_group: dict[str, int] = {}
+    for group in groups:
+        group_cases = [
+            case
+            for case in selected_input
+            if case.benchmark == LOCOMO_BENCHMARK_SUITE
+            and _case_is_scored(case)
+            and _case_group(case) == group
+        ]
+        selected_slice = group_cases[:_LOCOMO_FAST_CASES_PER_GROUP]
+        selected.extend(selected_slice)
+        selected_by_group[group] = len(selected_slice)
+
+    return tuple(selected), {
+        "name": case_set,
+        "input_count": len(selected_input),
+        "selected_count": len(selected),
+        "requested_groups": list(groups),
+        "requested_per_group": _LOCOMO_FAST_CASES_PER_GROUP,
+        "selected_by_group": selected_by_group,
+        "goal": "fast_locomo_diagnostic_not_full_benchmark",
+    }
+
+
+def _report_payload(
+    result: dict[str, object],
+    *,
+    report_mode: str,
+    compact_failure_limit: int,
+) -> dict[str, object]:
+    if report_mode == MEMORY_COMPARISON_REPORT_FULL:
+        return result
+    compact_failure_limit = max(0, int(compact_failure_limit))
+    return _compact_report(result, failure_limit=compact_failure_limit)
+
+
+def _compact_report(
+    result: Mapping[str, object],
+    *,
+    failure_limit: int,
+) -> dict[str, object]:
+    evaluations = [
+        item for item in result.get("evaluations", ()) if isinstance(item, Mapping)
+    ]
+    failure_analysis = [
+        item for item in result.get("failure_analysis", ()) if isinstance(item, Mapping)
+    ]
+    failures = [item for item in result.get("failures", ()) if isinstance(item, Mapping)]
+    metadata = {
+        **dict(_mapping(result.get("metadata"))),
+        "report_mode": MEMORY_COMPARISON_REPORT_COMPACT,
+        "full_evaluation_count": len(evaluations),
+        "compact_failure_limit": failure_limit,
+    }
+    compact: dict[str, object] = {
+        "schema_version": result.get("schema_version"),
+        "suite": result.get("suite"),
+        "source_suite": result.get("source_suite"),
+        "status": result.get("status"),
+        "ok": result.get("ok"),
+        "benchmark": result.get("benchmark"),
+        "benchmark_scope": result.get("benchmark_scope"),
+        "evaluation_mode": result.get("evaluation_mode"),
+        "run_id": result.get("run_id"),
+        "dataset_path_label": result.get("dataset_path_label"),
+        "dataset_hash": result.get("dataset_hash"),
+        "requested_case_ids": result.get("requested_case_ids", []),
+        "requested_capabilities": result.get("requested_capabilities", []),
+        "case_selection": result.get("case_selection", {}),
+        "metadata": metadata,
+        "metrics": result.get("metrics", {}),
+        "backend_metrics": result.get("backend_metrics", {}),
+        "backend_comparison": result.get("backend_comparison", {}),
+        "diagnostics": _compact_diagnostics(evaluations),
+        "failure_analysis": failure_analysis[:failure_limit],
+        "failures": failures[:failure_limit],
+        "evaluations": [],
+        "elapsed_ms": result.get("elapsed_ms", 0.0),
+    }
+    provenance = result.get("provenance")
+    if isinstance(provenance, Mapping):
+        compact["provenance"] = dict(provenance)
+    return compact
+
+
+def _compact_diagnostics(
+    evaluations: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    by_backend = _group_by(evaluations, key="backend")
+    return {
+        "evaluations_omitted": len(evaluations),
+        "backend_summaries": {
+            backend: _compact_backend_diagnostics(items)
+            for backend, items in sorted(by_backend.items())
+        },
+    }
+
+
+def _compact_backend_diagnostics(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    retrievals = [_mapping(item.get("retrieval")) for item in items]
+    qualities = [_mapping(item.get("retrieval_quality")) for item in items]
+    return {
+        "retrieved_count": _numeric_summary(
+            _retrieved_count(item) for item in items
+        ),
+        "search_latency_ms": _numeric_summary(
+            float(retrieval.get("latency_ms", 0.0)) for retrieval in retrievals
+        ),
+        "context_tokens": _numeric_summary(
+            float(retrieval.get("context_token_count", 0.0))
+            for retrieval in retrievals
+        ),
+        "expected_term_recall": _numeric_summary(
+            float(quality.get("expected_term_recall", 0.0)) for quality in qualities
+        ),
+        "evidence_term_recall": _numeric_summary(
+            float(quality.get("evidence_term_recall", 0.0))
+            for quality in qualities
+            if "evidence_term_recall" in quality
+        ),
+        "limited_by_http_api_caps_count": sum(
+            1
+            for retrieval in retrievals
+            if bool(_mapping(retrieval.get("metadata")).get("limited_by_http_api_caps"))
+        ),
+        "retrieval_source_counts": _retrieval_source_counts(items),
+    }
+
+
+def _numeric_summary(values: Iterable[float]) -> dict[str, object]:
+    sequence = [float(value) for value in values]
+    if not sequence:
+        return {"count": 0, "avg": 0.0, "min": 0.0, "max": 0.0}
+    return {
+        "count": len(sequence),
+        "avg": round(sum(sequence) / len(sequence), 4),
+        "min": round(min(sequence), 4),
+        "max": round(max(sequence), 4),
+    }
+
+
+def _retrieval_source_counts(
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for item in items:
+        for result in _retrieval_results(item):
+            for source in _result_retrieval_sources(result):
+                counts[source] += 1
+    return dict(sorted(counts.items()))
+
+
+def _retrieval_results(item: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    retrieval = _mapping(item.get("retrieval"))
+    results = retrieval.get("results", ())
+    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
+        return ()
+    return tuple(result for result in results if isinstance(result, Mapping))
+
+
+def _result_retrieval_sources(result: Mapping[str, object]) -> tuple[str, ...]:
+    metadata = _mapping(result.get("metadata"))
+    diagnostics = _mapping(metadata.get("diagnostics"))
+    sources = diagnostics.get("retrieval_sources")
+    if isinstance(sources, Sequence) and not isinstance(sources, str | bytes):
+        return tuple(str(source or "unknown") for source in sources)
+    return (str(diagnostics.get("retrieval_source") or "unknown"),)
 
 
 def _empty_failure_report(
@@ -824,6 +2010,174 @@ def _unique_backend_names(backends: Sequence[MemoryComparisonBackendPort]) -> tu
     return tuple(names)
 
 
+def _load_memory_comparison_cases(
+    dataset_path: Path,
+    *,
+    locomo_ingest_mode: str,
+) -> tuple[PublicBenchmarkCase, ...]:
+    if locomo_ingest_mode == LOCOMO_INGEST_RICH_DOCUMENTS:
+        return _load_cases(dataset_path)
+    if locomo_ingest_mode != LOCOMO_INGEST_OFFICIAL_TURNS:
+        raise BenchmarkValidationError(f"Unsupported LoCoMo ingest mode: {locomo_ingest_mode}")
+
+    payload = _load_dataset_payload(dataset_path)
+    cases = _official_locomo_turn_cases_from_payload(payload)
+    return cases or _load_cases(dataset_path)
+
+
+def _official_locomo_turn_cases_from_payload(payload: object) -> tuple[PublicBenchmarkCase, ...]:
+    if isinstance(payload, Mapping) and _is_official_locomo_sample(payload):
+        return _official_locomo_turn_cases(payload)
+    if isinstance(payload, Sequence) and not isinstance(payload, str | bytes):
+        cases: list[PublicBenchmarkCase] = []
+        for item in payload:
+            if isinstance(item, Mapping) and _is_official_locomo_sample(item):
+                cases.extend(_official_locomo_turn_cases(item))
+        return tuple(cases)
+    return ()
+
+
+def _official_locomo_turn_cases(raw: Mapping[str, object]) -> tuple[PublicBenchmarkCase, ...]:
+    sample_id = _first_str(raw, "sample_id", "id") or _case_hash(raw)
+    memories = _official_locomo_turn_memories(raw, sample_id=sample_id)
+    evidence_lookup = _official_locomo_evidence_lookup(raw)
+    raw_qas = raw.get("qa")
+    if not isinstance(raw_qas, Sequence) or isinstance(raw_qas, str | bytes):
+        return ()
+
+    cases: list[PublicBenchmarkCase] = []
+    for index, qa in enumerate(raw_qas):
+        if not isinstance(qa, Mapping):
+            continue
+        question = _first_str(qa, "question", "query")
+        evidence_terms = _official_locomo_evidence_terms(qa, evidence_lookup)
+        answer_terms = _terms(qa, "answer", "expected_answer", "answers")
+        expected_terms = answer_terms or evidence_terms or _official_locomo_supported_answer_terms(
+            qa,
+            documents=(),
+        )
+        if not question or not expected_terms:
+            continue
+        category = qa.get("category")
+        case_id = f"{sample_id}:qa:{index + 1}"
+        cases.append(
+            PublicBenchmarkCase(
+                benchmark=LOCOMO_BENCHMARK_SUITE,
+                case_id=case_id,
+                question=question,
+                expected_terms=expected_terms,
+                memories=memories,
+                memory_scope_external_ref=f"locomo-{sample_id}",
+                thread_external_ref=f"locomo-{sample_id}",
+                metadata={
+                    "source_format": "official_locomo",
+                    "locomo_ingest_mode": LOCOMO_INGEST_OFFICIAL_TURNS,
+                    "sample_id": sample_id,
+                    "qa_index": index,
+                    "category": category,
+                    "answer_preview": _preview_value(qa.get("answer")),
+                    "answer_terms": answer_terms,
+                    "evidence_terms": evidence_terms,
+                    "evidence": qa.get("evidence") if isinstance(qa.get("evidence"), list) else [],
+                    "evidence_previews": _official_locomo_evidence_previews(
+                        qa,
+                        evidence_lookup=evidence_lookup,
+                    ),
+                },
+            )
+        )
+    return tuple(cases)
+
+
+def _official_locomo_turn_memories(
+    raw: Mapping[str, object],
+    *,
+    sample_id: str,
+) -> tuple[BenchmarkMemoryInput, ...]:
+    conversation = raw.get("conversation")
+    if not isinstance(conversation, Mapping):
+        return ()
+    speaker_a = _first_str(conversation, "speaker_a") or ""
+    memories: list[BenchmarkMemoryInput] = []
+    for session_key in sorted(conversation, key=_session_sort_key):
+        if not _is_session_key(session_key):
+            continue
+        turns = conversation.get(session_key)
+        if not isinstance(turns, Sequence) or isinstance(turns, str | bytes):
+            continue
+        date_value = _first_str(conversation, f"{session_key}_date_time") or ""
+        timestamp = _locomo_date_to_epoch(date_value)
+        for index, turn in enumerate(turns):
+            if not isinstance(turn, Mapping):
+                continue
+            dia_id = _first_str(turn, "dia_id", "id") or f"{session_key}:{index + 1}"
+            speaker = _first_str(turn, "speaker", "role", "author") or "speaker"
+            text = _official_locomo_turn_memory_text(
+                turn,
+                session_key=session_key,
+                dia_id=dia_id,
+                speaker=speaker,
+                date_value=date_value,
+            )
+            if not text:
+                continue
+            role = "user" if speaker == speaker_a else "assistant"
+            memories.append(
+                BenchmarkMemoryInput(
+                    text=text,
+                    source_external_id=f"locomo:{sample_id}:{session_key}:{dia_id}:turn",
+                    metadata={
+                        "role": role,
+                        "timestamp": timestamp,
+                        "session_key": session_key,
+                        "session_date": date_value,
+                        "dia_id": dia_id,
+                        "speaker": speaker,
+                    },
+                )
+            )
+    return tuple(memories)
+
+
+def _official_locomo_turn_memory_text(
+    turn: Mapping[str, object],
+    *,
+    session_key: str,
+    dia_id: str,
+    speaker: str,
+    date_value: str,
+) -> str:
+    text = _first_str(turn, "text", "content", "utterance") or ""
+    caption = _first_str(turn, "blip_caption", "caption")
+    visual_query = _first_str(turn, "query", "image_query", "visual_query")
+    if visual_query and caption:
+        image_text = f"[Sharing image - query: {visual_query}. The image shows: {caption}]"
+    elif visual_query:
+        image_text = f"[Sharing image - query for: {visual_query}]"
+    elif caption:
+        image_text = f"[Sharing image that shows: {caption}]"
+    else:
+        image_text = ""
+    if image_text:
+        text = f"{text} {image_text}" if text else image_text
+    if not text.strip():
+        return ""
+    date_prefix = f"{session_key} date: {date_value}\n" if date_value.strip() else ""
+    return f"{date_prefix}{dia_id} {speaker}: {text.strip()}"
+
+
+def _locomo_date_to_epoch(date_value: str) -> int | None:
+    if not date_value.strip():
+        return None
+    for fmt in ("%I:%M %p on %d %B, %Y", "%I:%M %p on %d %b, %Y"):
+        try:
+            parsed = datetime.strptime(date_value.strip(), fmt)
+        except ValueError:
+            continue
+        return int(parsed.replace(tzinfo=UTC).timestamp())
+    return None
+
+
 def _case_corpus_key(case: PublicBenchmarkCase) -> str:
     memory_scope = case.memory_scope_external_ref or case.case_id
     thread = case.thread_external_ref or case.case_id
@@ -839,6 +2193,7 @@ def _case_corpus_fingerprint(case: PublicBenchmarkCase) -> str:
                 "index": index,
                 "memory_kind": memory.kind,
                 "source_external_id": memory.source_external_id,
+                "metadata": dict(memory.metadata),
                 "text": memory.text,
             }
         )
@@ -944,6 +2299,14 @@ def _context_tokens(item: Mapping[str, object]) -> float:
 
 def _retrieval_recall(item: Mapping[str, object]) -> float:
     return float(_mapping(item.get("retrieval_quality")).get("expected_term_recall", 0.0))
+
+
+def _has_evidence_recall(item: Mapping[str, object]) -> bool:
+    return "evidence_term_recall" in _mapping(item.get("retrieval_quality"))
+
+
+def _evidence_recall(item: Mapping[str, object]) -> float:
+    return float(_mapping(item.get("retrieval_quality")).get("evidence_term_recall", 0.0))
 
 
 def _metric_delta(
@@ -1069,6 +2432,40 @@ def _normalize_text(value: str) -> str:
 
 def _mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _str_tuple(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return (stripped,) if stripped else ()
+    if not isinstance(value, Sequence) or isinstance(value, bytes):
+        return ()
+    return tuple(str(item) for item in value if str(item).strip())
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _positive_ints(value: object) -> tuple[int, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return ()
+    return tuple(parsed for item in value if (parsed := _positive_int(item)) is not None)
+
+
+def _float_value(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _safe_error_reason(exc: Exception) -> str:

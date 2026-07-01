@@ -59,6 +59,12 @@ class ContextRequest(BaseModel):
     tags_none: list[str] = Field(default_factory=list, max_length=10)
 
 
+class BenchmarkContextRequest(ContextRequest):
+    token_budget: int = Field(default=16000, ge=64, le=64000)
+    max_facts: int = Field(default=200, ge=0, le=1000)
+    max_chunks: int = Field(default=400, ge=0, le=2000)
+
+
 def context_item_to_response(item) -> dict[str, Any]:
     diagnostics = normalize_context_diagnostics(item.diagnostics)
     source_refs = tuple(item.source_refs)
@@ -886,6 +892,14 @@ async def search_memory(
         scope=_trace_scope(scope),
     )
     return response
+
+
+@router.post("/context/benchmark-search", include_in_schema=False)
+async def benchmark_search_memory(
+    request: BenchmarkContextRequest,
+    container: Annotated[Container, Depends(get_container)],
+) -> dict[str, Any]:
+    return await search_memory(request, container)  # type: ignore[arg-type]
 
 
 def _empty_context_response(

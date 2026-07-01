@@ -17,12 +17,14 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
+from infinity_context_core.application.context_lexical import text_variant_profile
 from infinity_context_core.application.context_relevance import (
     QueryRelevance,
-    score_query_relevance,
+    score_query_relevance_against_profile,
 )
 from infinity_context_core.reporting import with_report_provenance
 
@@ -1904,7 +1906,7 @@ def _official_locomo_related_observation_evidence_ids(
             continue
         if actor_key and turn.speaker.casefold().strip() != actor_key:
             continue
-        relevance = score_query_relevance(query=text, text=turn.text)
+        relevance = _score_official_locomo_turn_relevance(query=text, turn_text=turn.text)
         if not _is_related_locomo_observation_turn(relevance):
             continue
         distance = (
@@ -2105,7 +2107,7 @@ def _official_locomo_related_event_summary_evidence_ids(
     for turn in session_turns:
         if actor_key and turn.speaker.casefold().strip() != actor_key:
             continue
-        relevance = score_query_relevance(query=text, text=turn.text)
+        relevance = _score_official_locomo_turn_relevance(query=text, turn_text=turn.text)
         if not _is_related_locomo_observation_turn(relevance):
             continue
         ranked.append(
@@ -2127,6 +2129,26 @@ def _official_locomo_related_event_summary_evidence_ids(
             key=lambda item: session_order.get(item, 10_000),
         )
     )
+
+
+def _score_official_locomo_turn_relevance(
+    *,
+    query: str,
+    turn_text: str,
+) -> QueryRelevance:
+    text_counts, text_variants = _official_locomo_turn_text_variant_profile(turn_text)
+    return score_query_relevance_against_profile(
+        query=query,
+        text_counts=text_counts,
+        text_variants=text_variants,
+    )
+
+
+@lru_cache(maxsize=8192)
+def _official_locomo_turn_text_variant_profile(
+    turn_text: str,
+) -> tuple[Mapping[str, int], tuple[tuple[str, ...], ...]]:
+    return text_variant_profile(turn_text)
 
 
 def _official_locomo_event_summary_text(item: object) -> str:
