@@ -1,0 +1,551 @@
+from __future__ import annotations
+
+from infinity_context_server.memory_comparison_candidate_features import (
+    build_candidate_evidence_features,
+)
+from infinity_context_server.memory_comparison_models import RetrievedMemory
+
+
+def test_candidate_features_capture_focused_direct_turn_and_provenance() -> None:
+    memory = RetrievedMemory(
+        item_id="relationship-status",
+        rank=1,
+        text=(
+            "session_2 turn D2:14 date: 8:10 pm "
+            "D2:14 Caroline: Family will be a challenge as a parent after "
+            "the breakup, but my friends support me."
+        ),
+        source_refs=("D2:14", "conv-26"),
+        metadata={
+            "item_type": "chunk",
+            "diagnostics": {
+                "retrieval_sources": ["keyword_chunks"],
+                "benchmark_query_roles": ["multi_hop_bridge"],
+                "benchmark_bridge_query_hit": True,
+            },
+        },
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={
+            "caroline",
+            "family",
+            "challenge",
+            "parent",
+            "breakup",
+            "friend",
+            "support",
+        },
+        query_terms=("caroline", "relationship", "status"),
+        relation_terms=("relationship", "status"),
+        relation_variant_terms=("parent", "breakup", "family", "support"),
+        relation_category_terms={
+            "status_profile": (
+                "relationship",
+                "status",
+                "parent",
+                "breakup",
+                "family",
+                "support",
+            )
+        },
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"support"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=True,
+        has_sequence_surface=True,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert features.direct_speaker_turn is True
+    assert features.broad_summary is False
+    assert features.focused_turn_score == 0.08
+    assert features.relation_hits == ("parent", "breakup", "family", "support")
+    assert features.relation_categories == ("status_profile",)
+    assert features.relation_category_hits == ("status_profile",)
+    assert features.relation_category_coverage_ratio == 1.0
+    assert features.high_signal_relation_hit_count == 1
+    assert features.source_ref_count == 2
+    assert features.turn_ref_count == 1
+    assert features.source_ref_density == 2.0
+    assert features.source_locality_score == 1.0
+    assert features.source_locality_reason_codes == ("direct_localized_turn",)
+    assert features.source_type == "chunk"
+    assert features.retrieval_sources == ("keyword_chunks",)
+    assert features.query_roles == ("multi_hop_bridge",)
+    assert features.bridge_query_hit is True
+    assert features.duplicate_key == "source_refs:D2:14|conv-26"
+    assert features.source_ref_dedupe_key == "source_turn_refs:D2:14"
+    assert features.answerability_score >= 0.9
+    assert "high_answerability" in features.answerability_reason_codes
+    assert "direct_provenance" in features.answerability_reason_codes
+    diagnostics = features.to_diagnostics()
+    assert diagnostics["schema_version"] == "candidate_evidence_features.v1"
+    assert diagnostics["focused_turn_score"] == 0.08
+    assert diagnostics["source_locality_score"] == 1.0
+    assert diagnostics["source_locality_reason_codes"] == ["direct_localized_turn"]
+    assert diagnostics["answerability_score"] == features.answerability_score
+    assert diagnostics["relation_category_hits"] == ["status_profile"]
+    assert diagnostics["query_roles"] == ["multi_hop_bridge"]
+    assert diagnostics["bridge_query_hit"] is True
+    assert diagnostics["source_ref_dedupe_key"] == "source_turn_refs:D2:14"
+
+
+def test_candidate_features_use_text_turn_refs_for_dedupe_when_source_refs_are_generic() -> None:
+    memory = RetrievedMemory(
+        item_id="fact-with-generic-provenance",
+        rank=1,
+        text="D5:7 Caroline: The support group meets on Thursday evenings.",
+        source_refs=("locomo-conv-5",),
+        metadata={"item_type": "fact"},
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"caroline", "support", "group", "thursday"},
+        query_terms=("caroline", "support", "group"),
+        relation_terms=("support",),
+        relation_variant_terms=("group",),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"support"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert features.turn_ref_count == 1
+    assert features.duplicate_key == "source_refs:locomo-conv-5"
+    assert features.source_ref_dedupe_key == "source_turn_refs:D5:7"
+    assert (
+        features.to_diagnostics()["source_ref_dedupe_key"]
+        == "source_turn_refs:D5:7"
+    )
+
+
+def test_candidate_features_read_retrieval_sources_from_candidate_fusion() -> None:
+    memory = RetrievedMemory(
+        item_id="fusion-only-provenance",
+        rank=1,
+        text="D2:8 Caroline looked into adoption agencies.",
+        metadata={
+            "item_type": "chunk",
+            "diagnostics": {
+                "benchmark_candidate_fusion": {
+                    "source_types": ["chunk", "raw_turn"],
+                    "retrieval_sources": ["semantic_chunks", "keyword_chunks"],
+                    "query_roles": ["original_question", "compact_relation"],
+                }
+            },
+        },
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"caroline", "look", "adoption", "agencies"},
+        query_terms=("caroline", "adoption"),
+        relation_terms=("adoption",),
+        relation_variant_terms=("look", "agency"),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=(),
+        high_signal_relation_terms={"adoption"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert features.source_types == ("chunk", "raw_turn")
+    assert features.retrieval_sources == ("semantic_chunks", "keyword_chunks")
+    assert features.to_diagnostics()["source_types"] == ["chunk", "raw_turn"]
+    assert features.to_diagnostics()["retrieval_sources"] == [
+        "semantic_chunks",
+        "keyword_chunks",
+    ]
+
+
+def test_candidate_features_merge_winner_and_fused_retrieval_sources() -> None:
+    memory = RetrievedMemory(
+        item_id="fused-provenance",
+        rank=1,
+        text="D2:8 Caroline looked into adoption agencies.",
+        metadata={
+            "item_type": "chunk",
+            "diagnostics": {
+                "retrieval_sources": ["semantic_chunks"],
+                "benchmark_candidate_fusion": {
+                    "source_types": ["chunk", "raw_turn"],
+                    "retrieval_sources": ["semantic_chunks", "raw_turns"],
+                },
+            },
+        },
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"caroline", "look", "adoption", "agencies"},
+        query_terms=("caroline", "adoption"),
+        relation_terms=("adoption",),
+        relation_variant_terms=("look", "agency"),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=(),
+        high_signal_relation_terms={"adoption"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert features.source_types == ("chunk", "raw_turn")
+    assert features.retrieval_sources == ("semantic_chunks", "raw_turns")
+    assert features.to_diagnostics()["retrieval_sources"] == [
+        "semantic_chunks",
+        "raw_turns",
+    ]
+
+
+def test_candidate_features_detect_broad_summary_and_stale_conflict() -> None:
+    memory = RetrievedMemory(
+        item_id="summary",
+        rank=1,
+        text="Observations: related turns D1:1 D1:2 D1:3 mention family support.",
+        metadata={
+            "diagnostics": {
+                "retrieval_sources": ["postgres_facts"],
+                "stale_reason": "superseded",
+            }
+        },
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"family", "support"},
+        query_terms=("family",),
+        relation_terms=("relationship",),
+        relation_variant_terms=("family", "support"),
+        entities=(),
+        entity_hits=(),
+        speaker_hits=(),
+        high_signal_relation_terms={"support"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=True,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=False,
+    )
+
+    assert features.direct_speaker_turn is False
+    assert features.broad_summary is True
+    assert features.focused_turn_score == 0.0
+    assert features.conflict_or_stale is True
+    assert features.source_locality_score == 0.45
+    assert features.source_locality_reason_codes == (
+        "multi_turn_refs",
+        "broad_summary_locality_cap",
+    )
+    assert features.answerability_score < 0.7
+    assert "broad_summary_penalty" in features.answerability_reason_codes
+    assert "conflict_or_stale_penalty" in features.answerability_reason_codes
+    assert features.duplicate_key.startswith("item_id:summary")
+
+
+def test_candidate_features_penalize_broad_turn_provenance_locality() -> None:
+    memory = RetrievedMemory(
+        item_id="wide-summary",
+        rank=1,
+        text=(
+            "Observations: related turns D1:1 D1:2 D1:3 D1:4 D1:5 D1:6 "
+            "mention Caroline and agency support."
+        ),
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"caroline", "agency", "support"},
+        query_terms=("caroline", "agency"),
+        relation_terms=("agency",),
+        relation_variant_terms=("support",),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=(),
+        high_signal_relation_terms={"support"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=False,
+    )
+
+    assert features.broad_summary is True
+    assert features.turn_ref_count == 6
+    assert features.source_locality_score == 0.35
+    assert features.source_locality_reason_codes == (
+        "broad_turn_refs",
+        "broad_summary_locality_cap",
+    )
+    assert "source_provenance" in features.answerability_reason_codes
+
+
+def test_candidate_features_detect_textual_contrast_and_currentness() -> None:
+    memory = RetrievedMemory(
+        item_id="changed-plan",
+        rank=1,
+        text=(
+            "D7:5 Caroline: I used to think about writing, but now I don't. "
+            "Counseling is my current plan."
+        ),
+        source_refs=("D7:5",),
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={
+            "caroline",
+            "used",
+            "writing",
+            "counseling",
+            "current",
+            "plan",
+        },
+        query_terms=("caroline", "current", "plan"),
+        relation_terms=("current", "plan"),
+        relation_variant_terms=("writing", "counseling"),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"plan"},
+        is_temporal_query=True,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=True,
+        has_sequence_surface=True,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert features.conflict_or_stale is False
+    assert features.negation_surface is True
+    assert features.currentness_surface is True
+    assert features.stale_surface is True
+    assert features.contrast_surface is True
+    diagnostics = features.to_diagnostics()
+    assert diagnostics["contrast_surface"] is True
+    assert diagnostics["currentness_surface"] is True
+
+
+def test_candidate_features_score_contrast_intent_from_old_new_surfaces() -> None:
+    current_only = build_candidate_evidence_features(
+        RetrievedMemory(
+            item_id="current-only",
+            rank=1,
+            text="D7:4 Caroline: My current career path is still about work.",
+            source_refs=("D7:4",),
+        ),
+        memory_terms={"caroline", "current", "career", "path", "work"},
+        query_terms=("caroline", "current", "career", "path", "different", "before"),
+        relation_terms=("current", "career", "path", "different"),
+        relation_variant_terms=("previous", "before", "earlier"),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"different"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        is_contrast_query=True,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+    old_new = build_candidate_evidence_features(
+        RetrievedMemory(
+            item_id="old-new",
+            rank=2,
+            text=(
+                "D7:5 Caroline: It used to be different before, but now "
+                "my current career path is clearer."
+            ),
+            source_refs=("D7:5",),
+        ),
+        memory_terms={
+            "caroline",
+            "used",
+            "different",
+            "before",
+            "now",
+            "current",
+            "career",
+            "path",
+        },
+        query_terms=("caroline", "current", "career", "path", "different", "before"),
+        relation_terms=("current", "career", "path", "different"),
+        relation_variant_terms=("previous", "before", "earlier"),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"different"},
+        is_temporal_query=False,
+        is_preference_query=False,
+        is_contrast_query=True,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert current_only.is_contrast_query is True
+    assert current_only.currentness_surface is True
+    assert current_only.stale_surface is False
+    assert "intent_partial" in current_only.answerability_reason_codes
+    assert old_new.contrast_surface is True
+    assert old_new.currentness_surface is True
+    assert old_new.stale_surface is True
+    assert "intent_satisfied" in old_new.answerability_reason_codes
+    assert old_new.answerability_score > current_only.answerability_score
+    assert old_new.to_diagnostics()["is_contrast_query"] is True
+
+
+def test_candidate_features_score_typed_duration_temporal_evidence() -> None:
+    duration = build_candidate_evidence_features(
+        RetrievedMemory(
+            item_id="known-friends-duration",
+            rank=1,
+            text="D2:4 Caroline: I have known those friends for 4 years.",
+            source_refs=("D2:4",),
+        ),
+        memory_terms={"caroline", "known", "friend", "4", "year"},
+        query_terms=("caroline", "known", "friend"),
+        relation_terms=("known", "friend"),
+        relation_variant_terms=(),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"known"},
+        is_temporal_query=True,
+        time_intent_kind="duration",
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=True,
+        has_sequence_surface=True,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+    relative_only = build_candidate_evidence_features(
+        RetrievedMemory(
+            item_id="known-friends-relative",
+            rank=2,
+            text="D2:5 Caroline: I have known those friends since yesterday.",
+            source_refs=("D2:5",),
+        ),
+        memory_terms={"caroline", "known", "friend", "yesterday"},
+        query_terms=("caroline", "known", "friend"),
+        relation_terms=("known", "friend"),
+        relation_variant_terms=(),
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=("caroline",),
+        high_signal_relation_terms={"known"},
+        is_temporal_query=True,
+        time_intent_kind="duration",
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=False,
+        has_temporal_surface=True,
+        has_sequence_surface=True,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=True,
+    )
+
+    assert duration.time_intent_kind == "duration"
+    assert duration.has_duration_surface is True
+    assert relative_only.has_relative_time_surface is True
+    assert relative_only.has_duration_surface is False
+    assert "duration_temporal_evidence" in duration.answerability_reason_codes
+    assert (
+        "duration_temporal_evidence_partial"
+        in relative_only.answerability_reason_codes
+    )
+    assert duration.answerability_score > relative_only.answerability_score
+    assert duration.to_diagnostics()["time_intent_kind"] == "duration"
+
+
+def test_candidate_features_do_not_count_question_echo_as_category_hit() -> None:
+    memory = RetrievedMemory(
+        item_id="current-group-distractor",
+        rank=1,
+        text="Caroline mentioned a current group chat with friends.",
+    )
+
+    features = build_candidate_evidence_features(
+        memory,
+        memory_terms={"caroline", "current", "group", "friend"},
+        query_terms=("caroline", "current", "group", "friend"),
+        relation_terms=("current", "group", "friend"),
+        relation_variant_terms=("known", "year", "been"),
+        relation_category_terms={
+            "temporal": ("current", "known", "year", "been")
+        },
+        entities=("caroline",),
+        entity_hits=("caroline",),
+        speaker_hits=(),
+        high_signal_relation_terms={"year"},
+        is_temporal_query=True,
+        is_preference_query=False,
+        has_visual_terms=False,
+        has_multi_hop_markers=True,
+        has_temporal_surface=False,
+        has_sequence_surface=False,
+        has_preference_evidence=False,
+        has_visual_evidence=False,
+        has_focused_turn_surface=False,
+    )
+
+    assert features.relation_categories == ("temporal",)
+    assert features.relation_category_hits == ()
+    assert features.relation_category_coverage_ratio == 0.0
